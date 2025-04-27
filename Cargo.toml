@@ -1,0 +1,8 @@
+[package]
+name = "golem-gpu-imager"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+directories = "6.0.0"
+iced = { git = "https://github.com/iced-rs/iced.git", features = ["canvas", "tokio", "svg"] }

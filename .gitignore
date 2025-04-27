@@ -1,0 +1,25 @@
+# Rust build artifacts
+/target/
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Backup files
+*~
+*.bak
+
+# macOS system files
+.DS_Store
+
+# Downloaded OS images
+/downloads/
+
+# Generated binaries
+/dist/
+
+# Dependency directory
+/.cargo/

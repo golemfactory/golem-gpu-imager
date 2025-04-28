@@ -2,10 +2,14 @@
 name = "golem-gpu-imager"
 version = "0.1.0"
 edition = "2024"
+build = "build.rs"
 
 [dependencies]
 directories = "6.0.0"
 iced = { git = "https://github.com/iced-rs/iced.git", features = ["canvas", "tokio", "svg"] }
+
+[target.'cfg(windows)'.build-dependencies]
+winres = "0.1.12"
 
 [profile.release]
 lto = true

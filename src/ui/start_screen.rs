@@ -28,6 +28,7 @@ pub fn view_start_screen() -> Element<'static, Message> {
         .width(250)
         .padding(14)
         .style(button::primary)
+        .
         .on_press(Message::FlashNewImage);
 
     let edit_button = button("Edit Existing Disk")

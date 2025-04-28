@@ -6,3 +6,10 @@ edition = "2024"
 [dependencies]
 directories = "6.0.0"
 iced = { git = "https://github.com/iced-rs/iced.git", features = ["canvas", "tokio", "svg"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 3
+strip = true
+

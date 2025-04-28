@@ -1,0 +1,448 @@
+use iced::alignment::Horizontal;
+use iced::{Border, Theme};
+use iced::widget::{button, column, container, progress_bar, row, scrollable, svg, text, Column, Container};
+use iced::{Alignment, Color, Element, Length};
+
+use crate::models::{OsImage, StorageDevice, Message};
+use crate::style;
+use crate::ui::LOGO_SVG;
+
+pub fn view_select_os_image<'a>(
+    os_images: &'a [OsImage],
+    selected_os_image: Option<usize>
+) -> Element<'a, Message> {
+    // Page header
+    let header = container(
+        text("Select OS Image")
+            .size(28)
+    )
+    .width(Length::Fill)
+    .padding(15)
+    .style(crate::style::bordered_box);
+
+    // Create OS image cards
+    let os_image_list = column(
+        os_images.iter().enumerate().map(|(i, image)| {
+            let is_selected = selected_os_image == Some(i);
+            
+            let image_info = column![
+                text(&image.name)
+                    .size(20),
+                text(format!("Version: {}", image.version))
+                    .size(15),
+                text(&image.description)
+                    .size(14),
+            ]
+            .spacing(8)
+            .width(Length::Fill);
+
+            let action_button = if image.downloaded {
+                button("Select")
+                .on_press(Message::SelectOsImage(i))
+                .padding(10)
+                .style(if is_selected {
+                    button::success
+                } else {
+                    button::primary
+                })
+            } else {
+                button("Download")
+                .on_press(Message::DownloadOsImage(i))
+                .padding(10)
+                .style(button::secondary)
+            };
+
+            // Create a container for each OS image item
+            container(
+                row![image_info, action_button]
+                    .spacing(15)
+                    .align_y(Alignment::Center)
+            )
+            .width(Length::Fill)
+            .padding(15)
+            .style(if is_selected {
+                container::success
+            } else {
+                crate::style::bordered_box
+            })
+            .into()
+        })
+    )
+    .spacing(15)
+    .width(Length::Fill);
+
+    // Make scrollable in case we have many images
+    let scrollable_content = scrollable(os_image_list).height(Length::Fill);
+
+    // Navigation buttons
+    let next_button = if selected_os_image.is_some() {
+        button("Next: Configure Settings")
+        .on_press(Message::ConfigureSettings)
+        .padding(12)
+        .width(220)
+        .style(button::primary)
+    } else {
+        button("Next: Configure Settings")
+        .padding(12)
+        .width(220)
+        .style(button::primary)
+    };
+
+    let back_button = button("Back")
+        .on_press(Message::BackToMainMenu)
+        .padding(12)
+        .width(100)
+        .style(button::secondary);
+
+    let navigation = container(
+        row![back_button, next_button]
+            .spacing(15)
+            .width(Length::Fill)
+            .align_y(Alignment::Center)
+    )
+    .width(Length::Fill)
+    .padding(15)
+    .style(crate::style::bordered_box);
+
+    // Main content
+    let content = column![
+        header,
+        scrollable_content,
+        navigation,
+    ]
+    .width(Length::Fill);
+
+    container(content)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .style(crate::style::main_box)
+        .into()
+}
+
+pub fn view_configure_settings(selected_os_image: Option<usize>) -> Element<'static, Message> {
+    let title = text("Configure OS Settings")
+        .size(30)
+        .width(Length::Fill)
+        .align_x(Horizontal::Center);
+
+    // In a real app, we would have form fields here for hostname, user/password, network settings, etc.
+    // For this example, we'll just use placeholder text
+
+    let hostname = text("Hostname: golem-gpu").size(16);
+    let password = text("Password: ********").size(16);
+    let network = text("Network: DHCP").size(16);
+    let ssh = text("SSH: Enabled").size(16);
+
+    // Add a spacer to push buttons to the bottom
+    let spacer = Container::new(Column::new())
+        .height(Length::Fill)
+        .width(Length::Fill);
+
+    let back_button = button("Back to OS Selection")
+        .on_press(Message::SelectOsImage(selected_os_image.unwrap_or(0)))
+        .padding(10);
+
+    let next_button = button("Next: Select Target Device")
+        .on_press(Message::SelectTargetDevice(0))
+        .padding(10);
+
+    let buttons = row![back_button, next_button,]
+        .spacing(10)
+        .width(Length::Fill)
+        .align_y(Alignment::Center);
+
+    let content = column![title, hostname, password, network, ssh, spacer, buttons,]
+        .spacing(20)
+        .padding(20)
+        .width(Length::Fill);
+
+    Container::new(content)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .center_x(Length::Fill)
+        .into()
+}
+
+pub fn view_select_target_device<'a>(storage_devices: &'a [StorageDevice]) -> Element<'a, Message> {
+    let title = text("Select Target Device")
+        .size(30)
+        .width(Length::Fill)
+        .align_x(Horizontal::Center);
+
+    let warning = text("Warning: All data on the selected device will be erased!")
+        .size(16)
+        .color(Color::from_rgb(1.0, 0.0, 0.0));
+
+    let device_list = column(storage_devices.iter().enumerate().map(|(i, device)| {
+        let device_info = column![
+            text(&device.name).size(20),
+            text(format!("Path: {}", device.path)).size(16),
+            text(format!("Size: {}", device.size)).size(16),
+        ]
+        .spacing(5)
+        .width(Length::Fill);
+
+        let select_button = button("Select")
+            .on_press(Message::SelectTargetDevice(i))
+            .padding(10);
+
+        row![device_info, select_button,]
+            .spacing(20)
+            .padding(10)
+            .width(Length::Fill)
+            .into()
+    }))
+    .spacing(10)
+    .width(Length::Fill);
+
+    // Add a spacer to push buttons to the bottom
+    let spacer = Container::new(Column::new())
+        .height(Length::Fill)
+        .width(Length::Fill);
+
+    let back_button = button("Back to Configure Settings")
+        .on_press(Message::ConfigureSettings)
+        .padding(10);
+
+    let write_button = button("Write Image")
+        .on_press(Message::WriteImage)
+        .padding(10);
+
+    let buttons = row![back_button, write_button,]
+        .spacing(10)
+        .width(Length::Fill)
+        .align_y(Alignment::Center);
+
+    let content = column![title, warning, device_list, spacer, buttons,]
+        .spacing(20)
+        .padding(20)
+        .width(Length::Fill);
+
+    Container::new(content)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .center_x(Length::Fill)
+        .into()
+}
+
+pub fn view_writing_process(progress: f32) -> Element<'static, Message> {
+    // Page header
+    let header = container(
+        text("Writing Image")
+            .size(28)
+            .style(text::primary)
+    )
+    .width(Length::Fill)
+    .padding(15)
+    .style(container::secondary);
+
+    // Create an icon to represent the writing process
+    let writing_icon = svg::Svg::new(svg::Handle::from_memory(LOGO_SVG))
+        .width(100)
+        .height(100);
+
+    // Create a nice styled progress bar
+    let progress_value = progress_bar(0.0..=1.0, progress)
+        .style(progress_bar::secondary);
+
+    // Display progress percentage
+    let progress_percentage = (progress * 100.0) as i32;
+    let progress_text = text(format!("{}%", progress_percentage))
+        .size(25);
+
+    // Description text
+    let step_text = text(match progress_percentage {
+        0..=33 => "Preparing disk...",
+        34..=66 => "Writing image data...",
+        _ => "Verifying written data...",
+    })
+    .size(16);
+
+    // Information container
+    let info_container = container(
+        column![
+            writing_icon,
+            text("Writing Golem GPU OS to device")
+                .size(20),
+            row![progress_text].padding(10),
+            step_text,
+            column![].height(20),  // Small spacer
+            progress_value,
+        ]
+        .spacing(10)
+        .align_x(Alignment::Center)
+    )
+    .width(Length::Fill)
+    .padding(20)
+    .style(|theme: &Theme| {
+        let palette = theme.extended_palette();
+
+        container::Style::default()
+            .background(palette.background.weak.color)
+            .border(Border {
+                radius: 8.0.into(),
+                width: 1.0,
+                color: palette.primary.base.color,
+            })
+    });
+
+    // Add a spacer to push the button to the bottom
+    let spacer = Container::new(Column::new())
+        .height(Length::Fill)
+        .width(Length::Fill);
+
+    // Cancel button
+    let cancel_button = button(
+        text("Cancel")
+            .align_x(Horizontal::Center)
+            .size(16)
+    )
+    .on_press(Message::CancelWrite)
+    .padding(12)
+    .width(120)
+    .style(button::danger);
+
+    // Button container
+    let button_container = container(cancel_button)
+        .width(Length::Fill)
+        .align_x(Horizontal::Center)
+        .padding(15);
+
+    // Main content
+    let content = column![
+        header,
+        container(column![
+            Container::new(Column::new()).height(40),  // Top spacing
+            info_container,
+            spacer,
+            button_container,
+        ])
+        .padding(20)
+        .width(Length::Fill)
+        .height(Length::Fill),
+    ]
+    .width(Length::Fill);
+
+    Container::new(content)
+        .width(Length::Fill)
+        .height(Length::Fill)            
+        .into()
+}
+
+pub fn view_flash_completion(success: bool) -> Element<'static, Message> {
+    // Page header with success/error status
+    let header = container(
+        text(if success { "Success" } else { "Error" })
+            .size(28)
+    )
+    .width(Length::Fill)
+    .padding(15)
+    .style(if success {
+        container::success
+    } else {
+        container::danger
+    });
+
+    // Create an icon to represent the status
+    let status_icon = svg::Svg::new(svg::Handle::from_memory(LOGO_SVG))
+        .width(100)
+        .height(100);
+
+    // Status title
+    let status_title = text(if success { "Operation Completed Successfully!" } else { "Operation Failed" })
+        .size(26)
+        .style(if success { text::success } else { text::danger });
+
+    // Status message
+    let status_message = text(
+        if success {
+            "The Golem GPU OS image was successfully written to the device.\nYour device is now ready to use."
+        } else {
+            "There was an error writing the image to the device.\nPlease check your device and try again."
+        }
+    )
+    .size(16);
+
+    // Information container
+    let success_clone = success;
+    let info_container = container(
+        column![
+            status_icon,
+            status_title,
+            column![].height(15),  // Small spacer
+            status_message,
+        ]
+        .spacing(10)
+        .align_x(Alignment::Center)
+    )
+    .width(Length::Fill)
+    .padding(30)
+    .style(move |theme: &Theme| container::secondary(theme).border(
+        Border {
+            radius: 8.0.into(),
+            width: 2.0,
+            color: if success_clone { 
+                style::SUCCESS.scale_alpha(0.5) 
+            } else { 
+                style::ERROR.scale_alpha(0.5) 
+            },
+        })
+    );
+
+    // Add a spacer to push the buttons to the bottom
+    let spacer = Container::new(Column::new())
+        .height(Length::Fill)
+        .width(Length::Fill);
+
+    // Create styled buttons
+    let flash_another_button = button(
+        text("Flash Another Device")
+            .align_x(Horizontal::Center)
+            .size(16)
+    )
+    .on_press(Message::FlashAnother)
+    .padding(12)
+    .width(200)
+    .style(button::primary);
+
+    let exit_button = button(
+        text("Exit")
+            .align_x(Horizontal::Center)
+            .size(16)
+    )
+    .on_press(Message::Exit)
+    .padding(12)
+    .width(100)
+    .style(button::secondary);
+
+    // Button container
+    let buttons_container = container(
+        row![flash_another_button, exit_button]
+            .spacing(15)
+            .width(Length::Fill)
+            .align_y(Alignment::Center)
+    )
+    .width(Length::Fill)
+    .padding(15)
+    .style(container::dark);
+
+    // Main content
+    let content = column![
+        header,
+        container(column![
+            Container::new(Column::new()).height(40),  // Top spacing
+            info_container,
+            spacer,
+        ])
+        .padding(20)
+        .width(Length::Fill)
+        .height(Length::Fill),
+        buttons_container,
+    ]
+    .width(Length::Fill);
+
+    Container::new(content)
+        .width(Length::Fill)
+        .height(Length::Fill)            
+        .into()
+}

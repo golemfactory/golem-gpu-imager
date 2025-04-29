@@ -1,4 +1,4 @@
-use iced::Element;
+use iced::{Element, Task};
 
 use crate::models::{AppMode, EditState, FlashState, Message, OsImage, StorageDevice};
 use crate::ui;
@@ -50,7 +50,7 @@ impl GolemGpuImager {
         String::from("Golem GPU Imager")
     }
 
-    pub fn update(&mut self, message: Message) {
+    pub fn update(&mut self, message: Message) -> iced::Task<Message> {
         match message {
             Message::FlashNewImage => {
                 self.mode = AppMode::FlashNewImage(FlashState::SelectOsImage);
@@ -60,6 +60,16 @@ impl GolemGpuImager {
             Message::EditExistingDisk => {
                 self.mode = AppMode::EditExistingDisk(EditState::SelectDevice);
                 self.selected_device = None;
+                let devices = rs_drivelist::drive_list().unwrap();
+                self.storage_devices = devices
+                    .into_iter()
+                    .filter(|d| d.isRemovable && !d.isVirtual)
+                    .map(|d| StorageDevice {
+                        name: d.description,
+                        path: d.device,
+                        size: format!("{:.2} GB", d.size as f64 / 1000.0 / 1000.0 / 1000.0),
+                    })
+                    .collect()
             }
             Message::SelectOsImage(index) => {
                 self.selected_os_image = Some(index);
@@ -108,9 +118,6 @@ impl GolemGpuImager {
             }
             Message::SelectExistingDevice(index) => {
                 self.selected_device = Some(index);
-                if let AppMode::EditExistingDisk(_) = &self.mode {
-                    self.mode = AppMode::EditExistingDisk(EditState::EditConfiguration);
-                }
             }
             Message::SaveConfiguration => {
                 if let AppMode::EditExistingDisk(_) = &self.mode {
@@ -122,20 +129,29 @@ impl GolemGpuImager {
                 self.mode = AppMode::StartScreen;
             }
         }
+        Task::none()
     }
 
     pub fn view(&self) -> Element<'_, Message> {
         match &self.mode {
             AppMode::StartScreen => ui::view_start_screen(),
             AppMode::FlashNewImage(state) => match state {
-                FlashState::SelectOsImage => ui::view_select_os_image(&self.os_images, self.selected_os_image),
-                FlashState::ConfigureSettings => ui::view_configure_settings(self.selected_os_image),
-                FlashState::SelectTargetDevice => ui::view_select_target_device(&self.storage_devices),
+                FlashState::SelectOsImage => {
+                    ui::view_select_os_image(&self.os_images, self.selected_os_image)
+                }
+                FlashState::ConfigureSettings => {
+                    ui::view_configure_settings(self.selected_os_image)
+                }
+                FlashState::SelectTargetDevice => {
+                    ui::view_select_target_device(&self.storage_devices)
+                }
                 FlashState::WritingProcess(progress) => ui::view_writing_process(*progress),
                 FlashState::Completion(success) => ui::view_flash_completion(*success),
             },
             AppMode::EditExistingDisk(state) => match state {
-                EditState::SelectDevice => ui::view_select_existing_device(&self.storage_devices),
+                EditState::SelectDevice => {
+                    ui::view_select_existing_device(self.selected_device, &self.storage_devices)
+                }
                 EditState::EditConfiguration => ui::view_edit_configuration(self.selected_device),
                 EditState::Completion(success) => ui::view_edit_completion(*success),
             },

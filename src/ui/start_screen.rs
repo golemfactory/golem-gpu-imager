@@ -1,9 +1,9 @@
 use iced::alignment::Horizontal;
 use iced::widget::{button, column, container, svg, text};
-use iced::{Alignment, Element, Length};
+use iced::{Alignment, Color, Element, Font, Length, Shadow, Theme, Vector};
 
 use crate::models::Message;
-use crate::ui::LOGO_SVG;
+use crate::ui::{LOGO_SVG, icons};
 
 pub fn view_start_screen() -> Element<'static, Message> {
     // Create the logo widget from the included SVG data
@@ -24,29 +24,44 @@ pub fn view_start_screen() -> Element<'static, Message> {
     .align_x(Horizontal::Center);
 
     // Create buttons
-    let flash_button = button("Flash New Image")
-        .width(250)
-        .padding(14)
-        .style(button::primary)
-        .
-        .on_press(Message::FlashNewImage);
+    let flash_button = button(
+        container(iced::widget::row![icons::start(), "Flash New Image",]).center_x(Length::Fill),
+    )
+    .width(250)
+    .padding(14)
+    .style(|theme: &Theme, state| {
+        let is_hover = matches!(state, button::Status::Hovered);
+        let palette = theme.extended_palette();
+        let mut style = button::primary(theme, state);
+        style.shadow = Shadow {
+            color: if is_hover {
+                palette.background.strongest.color
+            } else {
+                palette.background.strong.color
+            },
+            offset: Vector::new(4.0, 4.0),
+            blur_radius: if is_hover { 2.0 } else { 1.0 },
+        };
+        style
+    })
+    .on_press(Message::FlashNewImage);
 
-    let edit_button = button("Edit Existing Disk")
+    let edit_button = button(container("Edit Existing Disk").center_x(Length::Fill))
         .width(250)
         .padding(14)
         .style(button::secondary)
         .on_press(Message::EditExistingDisk);
 
     // Add version info
-    let version_text = text("v0.1.0")
-        .size(12);
+    let version_text = text(crate::version::VERSION).size(12);
 
     // Main content column
     let content = column![
         logo,
-        title, 
+        title,
         container(description).padding([0, 20]),
-        flash_button, 
+        container(iced::widget::row![]).height(Length::Fill),
+        flash_button,
         edit_button,
         container(column![]).height(Length::Fill),
         version_text

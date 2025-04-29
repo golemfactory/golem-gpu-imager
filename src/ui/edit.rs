@@ -1,20 +1,27 @@
 use iced::alignment::Horizontal;
-use iced::widget::{button, column, row, text, Column, Container};
+use iced::widget::{Column, Container, button, column, container, row, text};
 use iced::{Alignment, Color, Element, Length};
 
-use crate::models::{StorageDevice, Message};
+use crate::models::{Message, StorageDevice};
+use crate::ui::icons;
 
-pub fn view_select_existing_device<'a>(storage_devices: &'a [StorageDevice]) -> Element<'a, Message> {
+pub fn view_select_existing_device<'a>(
+    selected_device: Option<usize>,
+    storage_devices: &'a [StorageDevice],
+) -> Element<'a, Message> {
     let title = text("Select Existing Device")
         .size(30)
         .width(Length::Fill)
         .align_x(Horizontal::Center);
 
     let device_list = column(storage_devices.iter().enumerate().map(|(i, device)| {
-        let device_info = column![
-            text(&device.name).size(20),
-            text(format!("Path: {}", device.path)).size(16),
-            text(format!("Size: {}", device.size)).size(16),
+        let device_info = row![
+            icons::storage().size(40).width(45),
+            column![
+                text(device.name.as_str().trim_start()).size(20),
+                text(format!("Path: {}", device.path)).size(16),
+                text(format!("Size: {}", device.size)).size(16),
+            ]
         ]
         .spacing(5)
         .width(Length::Fill);
@@ -23,11 +30,21 @@ pub fn view_select_existing_device<'a>(storage_devices: &'a [StorageDevice]) -> 
             .on_press(Message::SelectExistingDevice(i))
             .padding(10);
 
-        row![device_info, select_button,]
-            .spacing(20)
-            .padding(10)
-            .width(Length::Fill)
-            .into()
+        let is_selected = Some(i) == selected_device;
+
+        container(
+            row![device_info, select_button,]
+                .spacing(15)
+                .align_y(Alignment::Center),
+        )
+        .width(Length::Fill)
+        .padding(15)
+        .style(if is_selected {
+            container::success
+        } else {
+            crate::style::bordered_box
+        })
+        .into()
     }))
     .spacing(10)
     .width(Length::Fill);
@@ -37,11 +54,18 @@ pub fn view_select_existing_device<'a>(storage_devices: &'a [StorageDevice]) -> 
         .height(Length::Fill)
         .width(Length::Fill);
 
-    let back_button = button("Back to Main Menu")
+    let back_button = button(row![icons::navigate_before(), "Back to Main Menu"])
         .on_press(Message::BackToMainMenu)
         .padding(10);
 
-    let content = column![title, device_list, spacer, back_button,]
+    let refresh_button = button(row![icons::refresh(), "Refresh Devices"])
+        .on_press(Message::BackToMainMenu)
+        .style(button::secondary)
+        .padding(10);
+
+
+    let content = column![title, device_list, spacer, 
+        row![back_button, refresh_button].spacing(20)]
         .spacing(20)
         .padding(20)
         .width(Length::Fill);
@@ -72,9 +96,7 @@ pub fn view_edit_configuration(selected_device: Option<usize>) -> Element<'stati
         .width(Length::Fill);
 
     let back_button = button("Back to Device Selection")
-        .on_press(Message::SelectExistingDevice(
-            selected_device.unwrap_or(0),
-        ))
+        .on_press(Message::SelectExistingDevice(selected_device.unwrap_or(0)))
         .padding(10);
 
     let save_button = button("Save Changes")
@@ -114,7 +136,7 @@ pub fn view_edit_completion(success: bool) -> Element<'static, Message> {
     } else {
         text("There was an error saving the configuration.")
     };
-    
+
     // Add a spacer to push the button to the bottom
     let spacer = Container::new(Column::new())
         .height(Length::Fill)

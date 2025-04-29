@@ -6,10 +6,13 @@ build = "build.rs"
 
 [dependencies]
 directories = "6.0.0"
-iced = { git = "https://github.com/iced-rs/iced.git", features = ["canvas", "tokio", "svg"] }
+fatfs = "0.3.6"
+#gpt-parser = "0.0.10"
+iced = { git = "https://github.com/iced-rs/iced.git", features = ["canvas", "tokio", "svg", "image"] }
+rs-drivelist = "0.9.4"
 
-[target.'cfg(windows)'.build-dependencies]
-winres = "0.1.12"
+[build-dependencies]
+windows_exe_info = {  version = "0.5", features = ["manifest", "versioninfo", "icon_ico"] }
 
 [profile.release]
 lto = true
@@ -17,3 +20,4 @@ codegen-units = 1
 opt-level = 3
 strip = true
 
+[package.metadata.winres]

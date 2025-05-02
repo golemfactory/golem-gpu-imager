@@ -4,6 +4,7 @@ mod models;
 mod style;
 mod ui;
 mod version;
+mod utils;
 
 pub fn main() -> iced::Result {
     let mut settings = Settings::default();
@@ -22,4 +23,53 @@ pub fn main() -> iced::Result {
     .theme(|_| style::custom_theme())
     .centered()
     .run()
+}
+
+#[cfg(test)]
+mod test {
+    use std::collections::HashMap;
+    use std::io::Read;
+    use std::os::fd::FromRawFd;
+    use udisks2::Client;
+    use udisks2::zbus::zvariant::OwnedObjectPath;
+
+    type DynError = Box<dyn std::error::Error>;
+
+    async fn resovle_device(client :&Client, path : &str) -> Result<OwnedObjectPath, DynError> {
+        let mut spec = HashMap::new();
+        spec.insert("path", path.into());
+        let mut obj = client.manager().resolve_device(spec, HashMap::default()).await?;
+
+        Ok(obj.pop().ok_or("no device found")?)
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    #[ignore]
+    async fn test_list() -> Result<(), DynError>{
+        eprintln!("Hello, world!");
+        let ds = rs_drivelist::drive_list()?;
+        for drive in ds {
+            eprintln!("{:?}", drive);
+        }
+
+        use udisks2::*;
+        use libc::{O_EXCL, O_SYNC, O_CLOEXEC};
+
+        let client = Client::new().await?;
+        let drive_path = resovle_device(&client, "/dev/mmcblk0").await?;
+        eprintln!("{:?}", drive_path);
+        let block = client.object(drive_path)?.block().await?;
+        //let block = client.block_for_drive(&drive, true).await.unwrap();
+        let flags = O_EXCL | O_SYNC | O_CLOEXEC;
+        let owned_fd = block.open_device("r", [("flags", zbus::zvariant::Value::from(flags))].into_iter().collect()).await?;
+        if let zbus::zvariant::Fd::Owned(owned_fd) = owned_fd.into() {
+            let mut buf = [0u8; 1024];
+            let mut file = std::fs::File::from(owned_fd);
+            file.read_exact(&mut buf[..]).unwrap();
+            eprintln!("{:?}", buf);
+        }
+
+
+        Ok(())
+    }
 }

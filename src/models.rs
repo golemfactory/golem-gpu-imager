@@ -1,9 +1,12 @@
 #[derive(Debug, Clone)]
 pub struct OsImage {
-    pub name: String,
-    pub version: String,
-    pub description: String,
-    pub downloaded: bool,
+    pub name: String,         // Channel name
+    pub version: String,      // Version id
+    pub description: String,  // Human-readable description
+    pub downloaded: bool,     // Whether the image is already downloaded
+    pub path: Option<String>, // Path to the image file if downloaded
+    pub created: String,      // Creation date from metadata
+    pub sha256: String,       // SHA256 hash for verification
 }
 
 #[derive(Debug, Clone)]
@@ -39,6 +42,9 @@ pub enum Message {
     EditExistingDisk,
     SelectOsImage(usize),
     DownloadOsImage(usize),
+    DownloadProgress(String, f32),  // Version ID and progress (0.0-1.0)
+    DownloadCompleted(String),      // Version ID of completed download
+    DownloadFailed(String, String), // Version ID and error message
     ConfigureSettings,
     SelectTargetDevice(usize),
     WriteImage,
@@ -48,4 +54,7 @@ pub enum Message {
     SelectExistingDevice(usize),
     SaveConfiguration,
     BackToMainMenu,
+    RepoDataLoaded(Vec<OsImage>),
+    RepoLoadFailed,
+    RefreshRepoData,
 }

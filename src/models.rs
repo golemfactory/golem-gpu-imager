@@ -24,10 +24,32 @@ pub enum AppMode {
 
 pub enum FlashState {
     SelectOsImage,
-    ConfigureSettings,
+    DownloadingImage {
+        version_id: String,
+        progress: f32,
+        channel: String,
+        created_date: String,
+    },
     SelectTargetDevice,
+    ConfigureSettings {
+        payment_network: PaymentNetwork,
+        subnet: String,
+        network_type: NetworkType,
+    },
     WritingProcess(f32), // Progress 0.0 - 1.0
     Completion(bool),    // Success or failure
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PaymentNetwork {
+    Testnet,
+    Mainnet,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum NetworkType {
+    Hybrid,
+    Central,
 }
 
 pub enum EditState {
@@ -45,7 +67,10 @@ pub enum Message {
     DownloadProgress(String, f32),  // Version ID and progress (0.0-1.0)
     DownloadCompleted(String),      // Version ID of completed download
     DownloadFailed(String, String), // Version ID and error message
-    ConfigureSettings,
+    GotoConfigureSettings,         // Go to image configuration screen
+    SetPaymentNetwork(PaymentNetwork),
+    SetSubnet(String),
+    SetNetworkType(NetworkType),
     SelectTargetDevice(usize),
     WriteImage,
     CancelWrite,

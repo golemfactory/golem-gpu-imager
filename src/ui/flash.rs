@@ -5,7 +5,7 @@ use iced::widget::{
 use iced::{Alignment, Color, Element, Length};
 use iced::{Border, Theme};
 
-use crate::models::{Message, OsImage, StorageDevice};
+use crate::models::{Message, OsImage, StorageDevice, PaymentNetwork, NetworkType};
 use crate::style;
 use crate::ui::{LOGO_SVG, icons};
 
@@ -41,7 +41,7 @@ pub fn view_select_os_image<'a>(
                     button::primary
                 })
         } else {
-            button("Download")
+            button(text("Download"))
                 .on_press(Message::DownloadOsImage(i))
                 .padding(10)
                 .style(button::secondary)
@@ -71,7 +71,7 @@ pub fn view_select_os_image<'a>(
     // Navigation buttons
     let next_button = if selected_os_image.is_some() {
         button(container("Next: Configure Settings").center_x(Length::Fill))
-            .on_press(Message::ConfigureSettings)
+            .on_press(Message::GotoConfigureSettings)
             .padding(12)
             .width(220)
             .style(button::primary)
@@ -108,48 +108,145 @@ pub fn view_select_os_image<'a>(
         .into()
 }
 
-pub fn view_configure_settings(selected_os_image: Option<usize>) -> Element<'static, Message> {
-    let title = text("Configure OS Settings")
+pub fn view_downloading_image(
+    version_id: &str,
+    progress: f32,
+    channel: &str,
+    created_date: &str,
+) -> Element<'static, Message> {
+    let title = text("Downloading OS Image")
         .size(30)
         .width(Length::Fill)
         .align_x(Horizontal::Center);
-
-    // In a real app, we would have form fields here for hostname, user/password, network settings, etc.
-    // For this example, we'll just use placeholder text
-
-    let hostname = text("Hostname: golem-gpu").size(16);
-    let password = text("Password: ********").size(16);
-    let network = text("Network: DHCP").size(16);
-    let ssh = text("SSH: Enabled").size(16);
-
-    // Add a spacer to push buttons to the bottom
-    let spacer = Container::new(Column::new())
-        .height(Length::Fill)
-        .width(Length::Fill);
-
-    let back_button = button("Back to OS Selection")
-        .on_press(Message::SelectOsImage(selected_os_image.unwrap_or(0)))
+        
+    // Image details at the top
+    let image_details = column![
+        text(format!("Channel: {}", channel)).size(18),
+        text(format!("Version: {}", version_id)).size(18),
+        text(format!("Created: {}", created_date)).size(16),
+    ]
+    .spacing(10)
+    .width(Length::Fill)
+    .align_x(Alignment::Center);
+    
+    // Progress indicator
+    let progress_percentage = (progress * 100.0) as i32;
+    let progress_text = text(format!("{}%", progress_percentage)).size(25);
+    let progress_bar = progress_bar(0.0..=1.0, progress)
+        .style(progress_bar::secondary);
+        
+    // Optional cancel button
+    let cancel_button = button("Cancel Download")
+        .on_press(Message::CancelWrite)
         .padding(10);
-
-    let next_button = button("Next: Select Target Device")
-        .on_press(Message::SelectTargetDevice(0))
-        .padding(10);
-
-    let buttons = row![back_button, next_button,]
-        .spacing(10)
-        .width(Length::Fill)
-        .align_y(Alignment::Center);
-
-    let content = column![title, hostname, password, network, ssh, spacer, buttons,]
-        .spacing(20)
-        .padding(20)
-        .width(Length::Fill);
-
+        
+    let content = column![
+        title,
+        image_details,
+        container(column![])
+            .height(Length::Fill)
+            .width(Length::Fill),
+        progress_text,
+        progress_bar,
+        text("Download in progress, please wait...").size(16),
+        container(column![])
+            .height(Length::Fill)
+            .width(Length::Fill),
+        cancel_button,
+    ]
+    .spacing(20)
+    .padding(20)
+    .width(Length::Fill)
+    .align_x(Alignment::Center);
+    
     Container::new(content)
         .width(Length::Fill)
         .height(Length::Fill)
         .center_x(Length::Fill)
         .into()
+}
+
+pub fn view_configure_settings(
+    payment_network: PaymentNetwork,
+    subnet: String,
+    network_type: NetworkType,
+) -> Element<'static, Message> {
+    let title = text("Configure OS Image")
+        .size(30);
+        
+    // Create simplified settings UI
+    let description = text("Configure the OS image with the following options:")
+        .size(16);
+        
+    // Network selection
+    let network_label = text(format!("Payment Network: {:?}", payment_network))
+        .size(18);
+        
+    let network_buttons = row![
+        button("Testnet")
+            .on_press(Message::SetPaymentNetwork(PaymentNetwork::Testnet))
+            .style(if matches!(payment_network, PaymentNetwork::Testnet) {
+                button::primary
+            } else {
+                button::secondary
+            }),
+        button("Mainnet")
+            .on_press(Message::SetPaymentNetwork(PaymentNetwork::Mainnet))
+            .style(if matches!(payment_network, PaymentNetwork::Mainnet) {
+                button::primary
+            } else {
+                button::secondary
+            })
+    ];
+    
+    // Subnet display
+    let subnet_label = text(format!("Subnet: {}", subnet))
+        .size(18);
+        
+    // Network type
+    let type_label = text(format!("Network Type: {:?}", network_type))
+        .size(18);
+        
+    let type_buttons = row![
+        button("Hybrid")
+            .on_press(Message::SetNetworkType(NetworkType::Hybrid))
+            .style(if matches!(network_type, NetworkType::Hybrid) {
+                button::primary
+            } else {
+                button::secondary
+            }),
+        button("Central")
+            .on_press(Message::SetNetworkType(NetworkType::Central))
+            .style(if matches!(network_type, NetworkType::Central) {
+                button::primary
+            } else {
+                button::secondary
+            })
+    ];
+    
+    // Navigation buttons
+    let back_button = button("Back")
+        .on_press(Message::SelectTargetDevice(0));
+        
+    let next_button = button("Start Writing")
+        .on_press(Message::WriteImage);
+        
+    let navigation = row![back_button, next_button].spacing(10);
+    
+    // Layout
+    column![
+        title,
+        description,
+        network_label,
+        network_buttons,
+        subnet_label,
+        type_label,
+        type_buttons,
+        navigation
+    ]
+    .spacing(20)
+    .padding(20)
+    .into()
 }
 
 pub fn view_select_target_device<'a>(storage_devices: &'a [StorageDevice]) -> Element<'a, Message> {
@@ -190,7 +287,7 @@ pub fn view_select_target_device<'a>(storage_devices: &'a [StorageDevice]) -> El
         .width(Length::Fill);
 
     let back_button = button("Back to Configure Settings")
-        .on_press(Message::ConfigureSettings)
+        .on_press(Message::GotoConfigureSettings)
         .padding(10);
 
     let write_button = button("Write Image")
@@ -202,12 +299,12 @@ pub fn view_select_target_device<'a>(storage_devices: &'a [StorageDevice]) -> El
         .width(Length::Fill)
         .align_y(Alignment::Center);
 
-    let content = column![title, warning, device_list, spacer, buttons,]
+    let content = column![title, warning, device_list, spacer, buttons]
         .spacing(20)
         .padding(20)
         .width(Length::Fill);
 
-    Container::new(content)
+    container(content)
         .width(Length::Fill)
         .height(Length::Fill)
         .center_x(Length::Fill)

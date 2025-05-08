@@ -63,12 +63,15 @@ pub fn view_select_existing_device<'a>(
         .style(button::secondary)
         .padding(10);
 
-
-    let content = column![title, device_list, spacer, 
-        row![back_button, refresh_button].spacing(20)]
-        .spacing(20)
-        .padding(20)
-        .width(Length::Fill);
+    let content = column![
+        title,
+        device_list,
+        spacer,
+        row![back_button, refresh_button].spacing(20)
+    ]
+    .spacing(20)
+    .padding(20)
+    .width(Length::Fill);
 
     Container::new(content)
         .width(Length::Fill)

@@ -19,6 +19,17 @@ pub struct ConfigurationPreset {
     pub is_default: bool,
 }
 
+// Implement Display trait so pick_list can properly show the preset
+impl std::fmt::Display for ConfigurationPreset {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.is_default {
+            write!(f, "{} (Default)", self.name)
+        } else {
+            write!(f, "{}", self.name)
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct StorageDevice {
     pub name: String,
@@ -58,10 +69,30 @@ pub enum PaymentNetwork {
     Mainnet,
 }
 
+// Implement Display trait for PaymentNetwork so combo_box can display it properly
+impl std::fmt::Display for PaymentNetwork {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PaymentNetwork::Testnet => write!(f, "Testnet"),
+            PaymentNetwork::Mainnet => write!(f, "Mainnet"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum NetworkType {
     Hybrid,
     Central,
+}
+
+// Implement Display trait for NetworkType so combo_box can display it properly
+impl std::fmt::Display for NetworkType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NetworkType::Hybrid => write!(f, "Hybrid"),
+            NetworkType::Central => write!(f, "Central"),
+        }
+    }
 }
 
 pub enum EditState {
@@ -111,4 +142,5 @@ pub enum Message {
     SavePresetsToStorage,           // Save presets to persistent storage
     LoadPresetsFromStorage,         // Load presets from persistent storage
     SetPresetName(String),          // Set name for new preset
+    TogglePresetManager,            // Toggle preset management UI visibility
 }

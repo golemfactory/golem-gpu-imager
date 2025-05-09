@@ -1,7 +1,5 @@
 use iced::alignment::Horizontal;
-use iced::widget::{
-    Column, Container, button, column, container, progress_bar, row, scrollable, svg, text,
-};
+use iced::widget::{Column, Container, button, column, container, progress_bar, row, scrollable, svg, text, pick_list};
 use iced::{Alignment, Color, Element, Length};
 use iced::{Border, Theme};
 
@@ -191,22 +189,14 @@ pub fn view_configuration_editor<'a>(
     // Network selection
     let network_label = text("Payment Network").size(18);
 
-    let network_buttons = row![
-        button("Testnet")
-            .on_press(Message::SetPaymentNetwork(PaymentNetwork::Testnet))
-            .style(if matches!(payment_network, PaymentNetwork::Testnet) {
-                button::primary
-            } else {
-                button::secondary
-            }),
-        button("Mainnet")
-            .on_press(Message::SetPaymentNetwork(PaymentNetwork::Mainnet))
-            .style(if matches!(payment_network, PaymentNetwork::Mainnet) {
-                button::primary
-            } else {
-                button::secondary
-            })
-    ];
+    let network_pl = pick_list(
+        &[PaymentNetwork::Testnet, PaymentNetwork::Mainnet][..],
+        Some(payment_network),
+        Message::SetPaymentNetwork
+    )
+    .style(crate::style::pick_list_style);
+
+    
 
     // Subnet field with text input
     let subnet_label = text("Subnet").size(18);
@@ -257,25 +247,15 @@ pub fn view_configuration_editor<'a>(
         container(row![text("").size(14)])
     };
 
-    // Network type
+    // Network type using pick list
     let type_label = text("Network Type").size(18);
 
-    let type_buttons = row![
-        button("Hybrid")
-            .on_press(Message::SetNetworkType(NetworkType::Hybrid))
-            .style(if matches!(network_type, NetworkType::Hybrid) {
-                button::primary
-            } else {
-                button::secondary
-            }),
-        button("Central")
-            .on_press(Message::SetNetworkType(NetworkType::Central))
-            .style(if matches!(network_type, NetworkType::Central) {
-                button::primary
-            } else {
-                button::secondary
-            })
-    ];
+    let type_pl = pick_list(
+        &[NetworkType::Hybrid, NetworkType::Central][..],
+        Some(network_type),
+        Message::SetNetworkType
+    )
+    .style(crate::style::pick_list_style);
 
     // Navigation buttons
     let back_button = button(back_label).on_press(back_action);
@@ -287,14 +267,14 @@ pub fn view_configuration_editor<'a>(
     // Main configuration content
     let config_content = column![
         network_label,
-        network_buttons,
+        network_pl.width(Length::Fill),
         subnet_label,
         subnet_input,
         wallet_label,
         wallet_input,
         validation_message,
         type_label,
-        type_buttons,
+        type_pl.width(Length::Fill),
     ]
     .spacing(10)
     .width(Length::Fill);
@@ -443,34 +423,57 @@ pub fn view_configuration_editor<'a>(
             title,
             description,
 
-            // Preset picker at the top
+            // Preset picker at the top using pick_list
             container(
                 row![
                     text("Preset:").size(16),
-                    container(
-                        row![
-                            icons::tune(),
-                            if let Some(idx) = selected_preset {
-                                if idx < configuration_presets.len() {
-                                    let preset = &configuration_presets[idx];
-                                    let label = if preset.is_default {
-                                        format!("{} (Default)", preset.name)
-                                    } else {
-                                        preset.name.clone()
-                                    };
-                                    text(label).size(16)
-                                } else {
-                                    text("Select a preset").size(16)
-                                }
+
+                    if !configuration_presets.is_empty() {
+                        // Get the currently selected preset, if any
+                        let selected = selected_preset.and_then(|idx| {
+                            if idx < configuration_presets.len() {
+                                Some(&configuration_presets[idx])
                             } else {
-                                text("Select a preset").size(16)
+                                None
                             }
-                        ]
+                        });
+
+                        // Create a pick_list for selecting presets
+                        let preset_picker = pick_list(
+                            configuration_presets,
+                            selected,
+                            |preset| {
+                                // Find the index of the selected preset
+                                let idx = configuration_presets.iter()
+                                    .position(|p| p.name == preset.name)
+                                    .unwrap_or(0);
+
+                                Message::SelectPreset(idx)
+                            }
+                        )
+                        .width(Length::Fill)
+                        .style(crate::style::pick_list_style);
+
+                        let row_with_icon = row![
+                            icons::tune(),
+                            preset_picker
+                        ].spacing(5).align_y(Alignment::Center).width(Length::Fill);
+
+                        let preset_container: Element<'_, Message> = container(row_with_icon)
+                            .width(Length::Fill)
+                            .into();
+
+                        preset_container
+                    } else {
+                        // Show a disabled text input when no presets are available
+                        container(
+                            text("No presets available").size(16)
+                        )
+                        .width(Length::Fill)
                         .padding(8)
-                        .spacing(5)
-                    )
-                    .style(crate::style::bordered_box)
-                    .width(Length::Fill),
+                        .style(crate::style::bordered_box)
+                        .into()
+                    },
 
                     button(
                         row![

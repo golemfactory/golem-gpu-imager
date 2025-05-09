@@ -146,3 +146,39 @@ pub fn default_text_input(
         selection: palette.primary.weak.color,
     }
 }
+
+// Container style for selected items (like selected preset)
+pub fn selected_container(theme: &Theme) -> container::Style {
+    let palette = theme.extended_palette();
+
+    container::Style {
+        background: Some(palette.primary.weak.color.into()),
+        border: Border {
+            width: 2.0,
+            radius: 5.0.into(),
+            color: palette.primary.base.color,
+        },
+        text_color: Some(palette.primary.strong.text),
+        ..container::Style::default()
+    }
+}
+
+// Style for pick lists
+pub fn pick_list_style(
+    theme: &Theme,
+    _status: iced::widget::pick_list::Status
+) -> iced::widget::pick_list::Style {
+    let palette = theme.extended_palette();
+
+    iced::widget::pick_list::Style {
+        text_color: theme.palette().text,
+        placeholder_color: palette.background.strong.text,
+        background: iced::Background::Color(palette.background.weak.color),
+        handle_color: palette.background.strong.color,
+        border: Border {
+            width: 1.0,
+            radius: 5.0.into(),
+            color: palette.background.strong.color,
+        },
+    }
+}

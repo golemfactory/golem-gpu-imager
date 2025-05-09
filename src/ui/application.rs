@@ -18,6 +18,7 @@ pub struct GolemGpuImager {
     pub configuration_presets: Vec<ConfigurationPreset>,
     pub selected_preset: Option<usize>,
     pub new_preset_name: String,
+    pub show_preset_manager: bool,
 }
 
 impl GolemGpuImager {
@@ -67,6 +68,7 @@ impl GolemGpuImager {
             configuration_presets: default_presets,
             selected_preset: None,
             new_preset_name: String::new(),
+            show_preset_manager: false,
         }
     }
 
@@ -709,6 +711,10 @@ impl GolemGpuImager {
                 // This would be implemented with actual persistence
                 println!("Loaded presets from storage");
             }
+            Message::TogglePresetManager => {
+                // Toggle preset management UI visibility
+                self.show_preset_manager = !self.show_preset_manager;
+            }
         }
         Task::none()
     }
@@ -755,6 +761,7 @@ impl GolemGpuImager {
                     &self.configuration_presets,
                     self.selected_preset,
                     &self.new_preset_name,
+                    self.show_preset_manager,
                 ),
                 FlashState::WritingProcess(progress) => ui::flash::view_writing_process(*progress),
                 FlashState::Completion(success) => ui::flash::view_flash_completion(*success),
@@ -779,6 +786,7 @@ impl GolemGpuImager {
                     &self.configuration_presets,
                     self.selected_preset,
                     &self.new_preset_name,
+                    self.show_preset_manager,
                 ),
                 EditState::Completion(success) => ui::view_edit_completion(*success),
             },

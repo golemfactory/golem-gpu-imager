@@ -9,6 +9,16 @@ pub struct OsImage {
     pub sha256: String,       // SHA256 hash for verification
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConfigurationPreset {
+    pub name: String,
+    pub payment_network: PaymentNetwork,
+    pub subnet: String,
+    pub network_type: NetworkType,
+    pub wallet_address: String,
+    pub is_default: bool,
+}
+
 #[derive(Debug, Clone)]
 pub struct StorageDevice {
     pub name: String,
@@ -92,4 +102,13 @@ pub enum Message {
     RepoDataLoaded(Vec<OsImage>),
     RepoLoadFailed,
     RefreshRepoData,
+    // Configuration preset management
+    SaveAsPreset,                   // Save current configuration as a new preset
+    SelectPreset(usize),            // Select a preset by index
+    DeletePreset(usize),            // Delete a preset by index
+    SetDefaultPreset(usize),        // Set a preset as default
+    EditPresetName(usize, String),  // Edit a preset name
+    SavePresetsToStorage,           // Save presets to persistent storage
+    LoadPresetsFromStorage,         // Load presets from persistent storage
+    SetPresetName(String),          // Set name for new preset
 }

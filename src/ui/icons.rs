@@ -64,3 +64,28 @@ pub fn checkmark() -> iced::widget::Text<'static> {
 pub fn error() -> iced::widget::Text<'static> {
     icon('\u{E000}')
 }
+
+// Preset management icons
+pub fn star() -> iced::widget::Text<'static> {
+    icon('\u{E838}')
+}
+
+pub fn star_border() -> iced::widget::Text<'static> {
+    icon('\u{E83A}')
+}
+
+pub fn delete() -> iced::widget::Text<'static> {
+    icon('\u{E872}')
+}
+
+pub fn save() -> iced::widget::Text<'static> {
+    icon('\u{E161}')
+}
+
+pub fn settings() -> iced::widget::Text<'static> {
+    icon('\u{E8B8}')
+}
+
+pub fn tune() -> iced::widget::Text<'static> {
+    icon('\u{E429}')
+}

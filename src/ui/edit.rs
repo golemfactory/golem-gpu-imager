@@ -91,14 +91,18 @@ pub fn view_select_existing_device<'a>(
         .into()
 }
 
-pub fn view_edit_configuration(
+pub fn view_edit_configuration<'a>(
     payment_network: PaymentNetwork,
     subnet: String,
     network_type: NetworkType,
     wallet_address: String,
     is_wallet_valid: bool,
     selected_device: Option<usize>,
-) -> Element<'static, Message> {
+    configuration_presets: &'a [crate::models::ConfigurationPreset],
+    selected_preset: Option<usize>,
+    new_preset_name: &'a str,
+    show_preset_manager: bool,
+) -> Element<'a, Message> {
     crate::ui::flash::view_configuration_editor(
         payment_network,
         subnet,
@@ -111,6 +115,10 @@ pub fn view_edit_configuration(
         Message::SaveConfiguration,
         "Back to Device Selection",
         "Save Changes",
+        configuration_presets,
+        selected_preset,
+        new_preset_name,
+        show_preset_manager,
     )
 }
 

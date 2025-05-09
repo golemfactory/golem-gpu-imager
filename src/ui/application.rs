@@ -1,4 +1,4 @@
-use crate::models::{AppMode, EditState, FlashState, Message, OsImage, StorageDevice};
+use crate::models::{AppMode, ConfigurationPreset, EditState, FlashState, Message, NetworkType, OsImage, PaymentNetwork, StorageDevice};
 use crate::ui;
 use crate::utils::repo::{DownloadStatus, ImageRepo, Version};
 use futures_util::FutureExt;
@@ -15,11 +15,34 @@ pub struct GolemGpuImager {
     pub image_repo: Arc<ImageRepo>,
     pub is_loading_repo: bool,
     pub downloads_in_progress: Vec<(String, f32)>, // (version_id, progress)
+    pub configuration_presets: Vec<ConfigurationPreset>,
+    pub selected_preset: Option<usize>,
+    pub new_preset_name: String,
 }
 
 impl GolemGpuImager {
     pub fn new() -> Self {
         let image_repo = Arc::new(ImageRepo::new());
+
+        // Create some example presets
+        let default_presets = vec![
+            ConfigurationPreset {
+                name: "Testnet Development".to_string(),
+                payment_network: PaymentNetwork::Testnet,
+                subnet: "public".to_string(),
+                network_type: NetworkType::Hybrid,
+                wallet_address: "0x742d35Cc6634C0532925a3b844Bc454e4438f44e".to_string(),
+                is_default: true,
+            },
+            ConfigurationPreset {
+                name: "Mainnet Production".to_string(),
+                payment_network: PaymentNetwork::Mainnet,
+                subnet: "production".to_string(),
+                network_type: NetworkType::Central,
+                wallet_address: "0x742d35Cc6634C0532925a3b844Bc454e4438f44e".to_string(),
+                is_default: false,
+            },
+        ];
 
         Self {
             mode: AppMode::StartScreen,
@@ -41,6 +64,9 @@ impl GolemGpuImager {
             image_repo,
             is_loading_repo: false,
             downloads_in_progress: Vec::new(),
+            configuration_presets: default_presets,
+            selected_preset: None,
+            new_preset_name: String::new(),
         }
     }
 
@@ -310,14 +336,38 @@ impl GolemGpuImager {
             }
             Message::GotoConfigureSettings => {
                 if let AppMode::FlashNewImage(_) = &self.mode {
-                    // Initialize with default values
-                    self.mode = AppMode::FlashNewImage(FlashState::ConfigureSettings {
-                        payment_network: crate::models::PaymentNetwork::Testnet,
-                        subnet: "public".to_string(),
-                        network_type: crate::models::NetworkType::Hybrid,
-                        wallet_address: "".to_string(),
-                        is_wallet_valid: false,
-                    });
+                    // Check if we have a default preset
+                    if let Some(default_preset) = self.get_default_preset() {
+                        let is_wallet_valid = if default_preset.wallet_address.is_empty() {
+                            false
+                        } else {
+                            crate::utils::eth::is_valid_eth_address(&default_preset.wallet_address)
+                        };
+
+                        // Use the default preset values
+                        self.mode = AppMode::FlashNewImage(FlashState::ConfigureSettings {
+                            payment_network: default_preset.payment_network,
+                            subnet: default_preset.subnet.clone(),
+                            network_type: default_preset.network_type,
+                            wallet_address: default_preset.wallet_address.clone(),
+                            is_wallet_valid,
+                        });
+
+                        // Find and select the default preset
+                        self.selected_preset = self.configuration_presets
+                            .iter()
+                            .position(|p| p.is_default);
+                    } else {
+                        // Initialize with default values if no preset
+                        self.mode = AppMode::FlashNewImage(FlashState::ConfigureSettings {
+                            payment_network: crate::models::PaymentNetwork::Testnet,
+                            subnet: "public".to_string(),
+                            network_type: crate::models::NetworkType::Hybrid,
+                            wallet_address: "".to_string(),
+                            is_wallet_valid: false,
+                        });
+                        self.selected_preset = None;
+                    }
                 }
             }
             Message::SetPaymentNetwork(network) => {
@@ -543,15 +593,42 @@ impl GolemGpuImager {
             }
             Message::GotoEditConfiguration => {
                 if let AppMode::EditExistingDisk(_) = &self.mode {
-                    // Initialize with default values or read from device
-                    // In a real application, you would read these values from the device
-                    self.mode = AppMode::EditExistingDisk(EditState::EditConfiguration {
-                        payment_network: crate::models::PaymentNetwork::Testnet,
-                        subnet: "public".to_string(),
-                        network_type: crate::models::NetworkType::Hybrid,
-                        wallet_address: "".to_string(),
-                        is_wallet_valid: false,
-                    });
+                    // Check if we have a default preset
+                    if let Some(default_preset) = self.get_default_preset() {
+                        let is_wallet_valid = if default_preset.wallet_address.is_empty() {
+                            false
+                        } else {
+                            crate::utils::eth::is_valid_eth_address(&default_preset.wallet_address)
+                        };
+
+                        // In a real application, you would first read device values,
+                        // then apply preset values as a starting point for editing
+
+                        // Use the default preset values
+                        self.mode = AppMode::EditExistingDisk(EditState::EditConfiguration {
+                            payment_network: default_preset.payment_network,
+                            subnet: default_preset.subnet.clone(),
+                            network_type: default_preset.network_type,
+                            wallet_address: default_preset.wallet_address.clone(),
+                            is_wallet_valid,
+                        });
+
+                        // Find and select the default preset
+                        self.selected_preset = self.configuration_presets
+                            .iter()
+                            .position(|p| p.is_default);
+                    } else {
+                        // Initialize with default values or read from device
+                        // In a real application, you would read these values from the device
+                        self.mode = AppMode::EditExistingDisk(EditState::EditConfiguration {
+                            payment_network: crate::models::PaymentNetwork::Testnet,
+                            subnet: "public".to_string(),
+                            network_type: crate::models::NetworkType::Hybrid,
+                            wallet_address: "".to_string(),
+                            is_wallet_valid: false,
+                        });
+                        self.selected_preset = None;
+                    }
                 }
             }
             Message::SaveConfiguration => {
@@ -584,6 +661,53 @@ impl GolemGpuImager {
             }
             Message::BackToMainMenu => {
                 self.mode = AppMode::StartScreen;
+            }
+            // Handle preset-related messages
+            Message::SaveAsPreset => {
+                if !self.new_preset_name.is_empty() {
+                    if let Some(preset) = self.create_preset_from_current_config(self.new_preset_name.clone()) {
+                        // If this is the first preset, set it as default
+                        let is_first = self.configuration_presets.is_empty();
+                        if is_first {
+                            let mut preset = preset;
+                            preset.is_default = true;
+                            self.configuration_presets.push(preset);
+                        } else {
+                            self.configuration_presets.push(preset);
+                        }
+
+                        // Select the new preset
+                        self.selected_preset = Some(self.configuration_presets.len() - 1);
+
+                        // Clear the new preset name
+                        self.new_preset_name = String::new();
+                    }
+                }
+            }
+            Message::SelectPreset(index) => {
+                self.apply_preset(index);
+            }
+            Message::DeletePreset(index) => {
+                self.delete_preset(index);
+            }
+            Message::SetDefaultPreset(index) => {
+                self.set_default_preset(index);
+            }
+            Message::EditPresetName(index, name) => {
+                if index < self.configuration_presets.len() && !name.is_empty() {
+                    self.configuration_presets[index].name = name;
+                }
+            }
+            Message::SetPresetName(name) => {
+                self.new_preset_name = name;
+            }
+            Message::SavePresetsToStorage => {
+                // This would be implemented with actual persistence
+                println!("Saved {} presets to storage", self.configuration_presets.len());
+            }
+            Message::LoadPresetsFromStorage => {
+                // This would be implemented with actual persistence
+                println!("Loaded presets from storage");
             }
         }
         Task::none()
@@ -628,6 +752,9 @@ impl GolemGpuImager {
                     *network_type,
                     wallet_address.clone(),
                     *is_wallet_valid,
+                    &self.configuration_presets,
+                    self.selected_preset,
+                    &self.new_preset_name,
                 ),
                 FlashState::WritingProcess(progress) => ui::flash::view_writing_process(*progress),
                 FlashState::Completion(success) => ui::flash::view_flash_completion(*success),
@@ -649,6 +776,9 @@ impl GolemGpuImager {
                     wallet_address.clone(),
                     *is_wallet_valid,
                     self.selected_device,
+                    &self.configuration_presets,
+                    self.selected_preset,
+                    &self.new_preset_name,
                 ),
                 EditState::Completion(success) => ui::view_edit_completion(*success),
             },
@@ -698,5 +828,142 @@ impl GolemGpuImager {
     // Required to implement Application trait in main.rs
     pub fn subscription(&self) -> iced::Subscription<Message> {
         iced::Subscription::none()
+    }
+
+    // Get the default preset if one exists
+    fn get_default_preset(&self) -> Option<&ConfigurationPreset> {
+        self.configuration_presets
+            .iter()
+            .find(|preset| preset.is_default)
+    }
+
+    // Create a preset from current configuration
+    fn create_preset_from_current_config(&self, name: String) -> Option<ConfigurationPreset> {
+        match &self.mode {
+            AppMode::FlashNewImage(FlashState::ConfigureSettings {
+                payment_network,
+                subnet,
+                network_type,
+                wallet_address,
+                is_wallet_valid,
+            }) => {
+                if *is_wallet_valid || wallet_address.is_empty() {
+                    Some(ConfigurationPreset {
+                        name,
+                        payment_network: *payment_network,
+                        subnet: subnet.clone(),
+                        network_type: *network_type,
+                        wallet_address: wallet_address.clone(),
+                        is_default: false,
+                    })
+                } else {
+                    None // Don't create a preset with invalid wallet
+                }
+            }
+            AppMode::EditExistingDisk(EditState::EditConfiguration {
+                payment_network,
+                subnet,
+                network_type,
+                wallet_address,
+                is_wallet_valid,
+            }) => {
+                if *is_wallet_valid || wallet_address.is_empty() {
+                    Some(ConfigurationPreset {
+                        name,
+                        payment_network: *payment_network,
+                        subnet: subnet.clone(),
+                        network_type: *network_type,
+                        wallet_address: wallet_address.clone(),
+                        is_default: false,
+                    })
+                } else {
+                    None // Don't create a preset with invalid wallet
+                }
+            }
+            _ => None,
+        }
+    }
+
+    // Apply a preset configuration
+    fn apply_preset(&mut self, preset_index: usize) {
+        if preset_index >= self.configuration_presets.len() {
+            return;
+        }
+
+        let preset = &self.configuration_presets[preset_index];
+
+        // Determine wallet validity
+        let is_wallet_valid = if preset.wallet_address.is_empty() {
+            false
+        } else {
+            crate::utils::eth::is_valid_eth_address(&preset.wallet_address)
+        };
+
+        // Apply preset based on current mode
+        match &mut self.mode {
+            AppMode::FlashNewImage(FlashState::ConfigureSettings { .. }) => {
+                self.mode = AppMode::FlashNewImage(FlashState::ConfigureSettings {
+                    payment_network: preset.payment_network,
+                    subnet: preset.subnet.clone(),
+                    network_type: preset.network_type,
+                    wallet_address: preset.wallet_address.clone(),
+                    is_wallet_valid,
+                });
+            }
+            AppMode::EditExistingDisk(EditState::EditConfiguration { .. }) => {
+                self.mode = AppMode::EditExistingDisk(EditState::EditConfiguration {
+                    payment_network: preset.payment_network,
+                    subnet: preset.subnet.clone(),
+                    network_type: preset.network_type,
+                    wallet_address: preset.wallet_address.clone(),
+                    is_wallet_valid,
+                });
+            }
+            _ => {
+                // Not in a configuration mode, nothing to apply
+            }
+        }
+
+        self.selected_preset = Some(preset_index);
+    }
+
+    // Set a preset as the default
+    fn set_default_preset(&mut self, preset_index: usize) {
+        if preset_index >= self.configuration_presets.len() {
+            return;
+        }
+
+        // Clear all default flags
+        for preset in &mut self.configuration_presets {
+            preset.is_default = false;
+        }
+
+        // Set the selected preset as default
+        self.configuration_presets[preset_index].is_default = true;
+    }
+
+    // Delete a preset
+    fn delete_preset(&mut self, preset_index: usize) {
+        if preset_index >= self.configuration_presets.len() {
+            return;
+        }
+
+        // Remove the preset
+        self.configuration_presets.remove(preset_index);
+
+        // Adjust selected preset if necessary
+        if let Some(selected) = self.selected_preset {
+            if selected == preset_index {
+                self.selected_preset = None;
+            } else if selected > preset_index {
+                self.selected_preset = Some(selected - 1);
+            }
+        }
+
+        // If we deleted the default preset and there are still presets,
+        // make the first one default
+        if !self.configuration_presets.is_empty() && self.get_default_preset().is_none() {
+            self.configuration_presets[0].is_default = true;
+        }
     }
 }

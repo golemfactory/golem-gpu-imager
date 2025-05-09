@@ -178,6 +178,10 @@ pub fn view_configuration_editor<'a>(
     next_action: Message,
     back_label: &'a str,
     next_label: &'a str,
+    configuration_presets: &'a [crate::models::ConfigurationPreset],
+    selected_preset: Option<usize>,
+    new_preset_name: &'a str,
+    show_preset_manager: bool,
 ) -> Element<'a, Message> {
     let title = text(title_text).size(30);
 
@@ -278,10 +282,10 @@ pub fn view_configuration_editor<'a>(
     let next_button = button(next_label).on_press(next_action);
     let navigation = row![back_button, next_button].spacing(10);
 
-    // Layout
-    column![
-        title,
-        description,
+    // We'll create all UI components inline for better type inference
+
+    // Main configuration content
+    let config_content = column![
         network_label,
         network_buttons,
         subnet_label,
@@ -291,20 +295,244 @@ pub fn view_configuration_editor<'a>(
         validation_message,
         type_label,
         type_buttons,
-        navigation
     ]
-    .spacing(20)
-    .padding(20)
-    .into()
+    .spacing(10)
+    .width(Length::Fill);
+
+    // Either show the normal configuration UI or the preset manager UI
+    if show_preset_manager {
+        // Create a preset management UI that allows detailed management of presets
+        let preset_list = if configuration_presets.is_empty() {
+            container(text("No presets defined. Create your first preset.").size(16))
+                .width(Length::Fill)
+                .padding(20)
+                .center_x(Length::Fill)
+        } else {
+            let mut preset_rows = column![];
+
+            // Create an entry for each preset with full management options
+            for (idx, preset) in configuration_presets.iter().enumerate() {
+                let is_selected = selected_preset == Some(idx);
+                let is_default = preset.is_default;
+
+                // Create a row for each preset with name, actions, and info
+                let preset_row = container(
+                    row![
+                        // Star icon for default preset
+                        if is_default { icons::star() } else { icons::star_border() },
+
+                        // Preset name
+                        text(&preset.name).size(16).width(Length::Fill),
+
+                        // Network info
+                        column![
+                            text(format!("Network: {:?}", preset.payment_network)).size(14),
+                            text(format!("Type: {:?}", preset.network_type)).size(14),
+                        ].width(Length::Fill),
+
+                        // Action buttons
+                        button(
+                            row![icons::delete(), text("Delete")]
+                                .spacing(5)
+                                .align_y(Alignment::Center)
+                        )
+                        .on_press(Message::DeletePreset(idx))
+                        .style(button::danger)
+                        .padding(8),
+
+                        button(
+                            row![icons::star(), text("Set Default")]
+                                .spacing(5)
+                                .align_y(Alignment::Center)
+                        )
+                        .on_press(Message::SetDefaultPreset(idx))
+                        .style(if is_default { button::success } else { button::secondary })
+                        .padding(8),
+
+                        button(
+                            row![icons::tune(), text("Load")]
+                                .spacing(5)
+                                .align_y(Alignment::Center)
+                        )
+                        .on_press(Message::SelectPreset(idx))
+                        .style(if is_selected { button::primary } else { button::secondary })
+                        .padding(8)
+                    ]
+                    .spacing(10)
+                    .align_y(Alignment::Center)
+                )
+                .padding(10)
+                .style(if is_selected {
+                    crate::style::selected_container
+                } else {
+                    crate::style::bordered_box
+                })
+                .width(Length::Fill);
+
+                preset_rows = column![preset_rows, preset_row];
+            }
+
+            container(
+                column![
+                    row![
+                        icons::settings(),
+                        text("Manage Configuration Presets").size(20)
+                    ].spacing(5).align_y(Alignment::Center),
+                    container(preset_rows)
+                        .padding(10)
+                        .style(crate::style::bordered_box)
+                ]
+                .spacing(10)
+            )
+            .width(Length::Fill)
+        };
+
+        // Add new preset form
+        let new_preset_form = container(
+            column![
+                text("Create New Preset").size(18),
+                row![
+                    iced::widget::text_input("Enter preset name", new_preset_name)
+                        .on_input(Message::SetPresetName)
+                        .padding(10)
+                        .width(Length::Fill),
+                    button(
+                        row![icons::save(), text("Save")]
+                            .spacing(5)
+                            .align_y(Alignment::Center)
+                    )
+                    .on_press(Message::SaveAsPreset)
+                    .style(button::primary)
+                    .padding(10),
+                ]
+                .spacing(10)
+            ]
+            .spacing(10)
+        )
+        .padding(15)
+        .style(crate::style::bordered_box)
+        .width(Length::Fill);
+
+        // Return button
+        let back_to_config = button(
+            row![
+                icons::navigate_before(),
+                text("Back to Configuration")
+            ]
+            .spacing(8)
+            .align_y(Alignment::Center)
+        )
+        .on_press(Message::TogglePresetManager)
+        .padding(10)
+        .style(button::secondary);
+
+        // Layout for preset manager view
+        column![
+            title,
+            text("Manage your saved configuration presets").size(16),
+            preset_list,
+            new_preset_form,
+            back_to_config
+        ]
+        .spacing(20)
+        .padding(20)
+        .into()
+    } else {
+        // Main layout with clean vertical organization (normal view)
+        column![
+            title,
+            description,
+
+            // Preset picker at the top
+            container(
+                row![
+                    text("Preset:").size(16),
+                    container(
+                        row![
+                            icons::tune(),
+                            if let Some(idx) = selected_preset {
+                                if idx < configuration_presets.len() {
+                                    let preset = &configuration_presets[idx];
+                                    let label = if preset.is_default {
+                                        format!("{} (Default)", preset.name)
+                                    } else {
+                                        preset.name.clone()
+                                    };
+                                    text(label).size(16)
+                                } else {
+                                    text("Select a preset").size(16)
+                                }
+                            } else {
+                                text("Select a preset").size(16)
+                            }
+                        ]
+                        .padding(8)
+                        .spacing(5)
+                    )
+                    .style(crate::style::bordered_box)
+                    .width(Length::Fill),
+
+                    button(
+                        row![
+                            icons::settings(),
+                            text("Manage").size(14)
+                        ].spacing(5).align_y(Alignment::Center)
+                    )
+                    .on_press(Message::TogglePresetManager)
+                    .padding(8)
+                    .style(button::secondary)
+                ]
+                .spacing(10)
+                .align_y(Alignment::Center)
+            )
+            .padding(10)
+            .style(crate::style::bordered_box)
+            .width(Length::Fill),
+
+            // Main configuration content
+            config_content,
+
+            // Save as preset UI
+            container(
+                row![
+                    icons::save(),
+                    text("Save Current Settings as Preset").size(16),
+                    iced::widget::text_input("Enter preset name", new_preset_name)
+                        .on_input(Message::SetPresetName)
+                        .padding(8)
+                        .width(Length::Fill),
+                    button("Save")
+                        .on_press(Message::SaveAsPreset)
+                        .style(button::primary)
+                        .padding(8)
+                ]
+                .spacing(10)
+                .align_y(Alignment::Center)
+            )
+            .padding(10)
+            .style(crate::style::bordered_box)
+            .width(Length::Fill),
+
+            // Navigation buttons
+            navigation
+        ]
+        .spacing(20)
+        .padding(20)
+        .into()
+    }
 }
 
-pub fn view_configure_settings(
+pub fn view_configure_settings<'a>(
     payment_network: PaymentNetwork,
     subnet: String,
     network_type: NetworkType,
     wallet_address: String,
     is_wallet_valid: bool,
-) -> Element<'static, Message> {
+    configuration_presets: &'a [crate::models::ConfigurationPreset],
+    selected_preset: Option<usize>,
+    new_preset_name: &'a str,
+    show_preset_manager: bool,
+) -> Element<'a, Message> {
     view_configuration_editor(
         payment_network,
         subnet,
@@ -317,6 +545,10 @@ pub fn view_configure_settings(
         Message::WriteImage,
         "Back",
         "Start Writing",
+        configuration_presets,
+        selected_preset,
+        new_preset_name,
+        show_preset_manager,
     )
 }
 

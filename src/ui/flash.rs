@@ -165,17 +165,24 @@ pub fn view_downloading_image(
         .into()
 }
 
-pub fn view_configure_settings(
+/// Shared configuration UI component used in both flash and edit workflows
+pub fn view_configuration_editor<'a>(
     payment_network: PaymentNetwork,
     subnet: String,
     network_type: NetworkType,
     wallet_address: String,
     is_wallet_valid: bool,
-) -> Element<'static, Message> {
-    let title = text("Configure OS Image").size(30);
+    title_text: &'a str,
+    description_text: &'a str,
+    back_action: Message,
+    next_action: Message,
+    back_label: &'a str,
+    next_label: &'a str,
+) -> Element<'a, Message> {
+    let title = text(title_text).size(30);
 
     // Create simplified settings UI
-    let description = text("Configure the OS image with the following options:").size(16);
+    let description = text(description_text).size(16);
 
     // Network selection
     let network_label = text("Payment Network").size(18);
@@ -267,10 +274,8 @@ pub fn view_configure_settings(
     ];
 
     // Navigation buttons
-    let back_button = button("Back").on_press(Message::SelectTargetDevice(0));
-
-    let next_button = button("Start Writing").on_press(Message::WriteImage);
-
+    let back_button = button(back_label).on_press(back_action);
+    let next_button = button(next_label).on_press(next_action);
     let navigation = row![back_button, next_button].spacing(10);
 
     // Layout
@@ -291,6 +296,28 @@ pub fn view_configure_settings(
     .spacing(20)
     .padding(20)
     .into()
+}
+
+pub fn view_configure_settings(
+    payment_network: PaymentNetwork,
+    subnet: String,
+    network_type: NetworkType,
+    wallet_address: String,
+    is_wallet_valid: bool,
+) -> Element<'static, Message> {
+    view_configuration_editor(
+        payment_network,
+        subnet,
+        network_type,
+        wallet_address,
+        is_wallet_valid,
+        "Configure OS Image",
+        "Configure the OS image with the following options:",
+        Message::SelectTargetDevice(0),
+        Message::WriteImage,
+        "Back",
+        "Start Writing",
+    )
 }
 
 pub fn view_select_target_device<'a>(storage_devices: &'a [StorageDevice]) -> Element<'a, Message> {

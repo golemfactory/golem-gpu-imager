@@ -2,7 +2,7 @@ use iced::alignment::Horizontal;
 use iced::widget::{Column, Container, button, column, container, row, text};
 use iced::{Alignment, Color, Element, Length};
 
-use crate::models::{Message, StorageDevice};
+use crate::models::{Message, NetworkType, PaymentNetwork, StorageDevice};
 use crate::ui::icons;
 
 pub fn view_select_existing_device<'a>(
@@ -63,11 +63,22 @@ pub fn view_select_existing_device<'a>(
         .style(button::secondary)
         .padding(10);
 
+    let edit_config_button = if selected_device.is_some() {
+        button("Edit Configuration")
+            .on_press(Message::GotoEditConfiguration)
+            .style(button::primary)
+            .padding(10)
+    } else {
+        button("Edit Configuration")
+            .style(button::primary)
+            .padding(10)
+    };
+
     let content = column![
         title,
         device_list,
         spacer,
-        row![back_button, refresh_button].spacing(20)
+        row![back_button, refresh_button, edit_config_button].spacing(20)
     ]
     .spacing(20)
     .padding(20)
@@ -80,47 +91,27 @@ pub fn view_select_existing_device<'a>(
         .into()
 }
 
-pub fn view_edit_configuration(selected_device: Option<usize>) -> Element<'static, Message> {
-    let title = text("Edit Configuration")
-        .size(30)
-        .width(Length::Fill)
-        .align_x(Horizontal::Center);
-
-    // In a real app, we would have form fields here for hostname, network settings, etc.
-    // For this example, we'll just use placeholder text
-
-    let hostname = text("Hostname: golem-gpu").size(16);
-    let network = text("Network: DHCP").size(16);
-    let ssh = text("SSH: Enabled").size(16);
-
-    // Add a spacer to push buttons to the bottom
-    let spacer = Container::new(Column::new())
-        .height(Length::Fill)
-        .width(Length::Fill);
-
-    let back_button = button("Back to Device Selection")
-        .on_press(Message::SelectExistingDevice(selected_device.unwrap_or(0)))
-        .padding(10);
-
-    let save_button = button("Save Changes")
-        .on_press(Message::SaveConfiguration)
-        .padding(10);
-
-    let buttons = row![back_button, save_button,]
-        .spacing(10)
-        .width(Length::Fill)
-        .align_y(Alignment::Center);
-
-    let content = column![title, hostname, network, ssh, spacer, buttons,]
-        .spacing(20)
-        .padding(20)
-        .width(Length::Fill);
-
-    Container::new(content)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .center_x(Length::Shrink)
-        .into()
+pub fn view_edit_configuration(
+    payment_network: PaymentNetwork,
+    subnet: String,
+    network_type: NetworkType,
+    wallet_address: String,
+    is_wallet_valid: bool,
+    selected_device: Option<usize>,
+) -> Element<'static, Message> {
+    crate::ui::flash::view_configuration_editor(
+        payment_network,
+        subnet,
+        network_type,
+        wallet_address,
+        is_wallet_valid,
+        "Edit Configuration",
+        "Edit the configuration settings for your device:",
+        Message::SelectExistingDevice(selected_device.unwrap_or(0)),
+        Message::SaveConfiguration,
+        "Back to Device Selection",
+        "Save Changes",
+    )
 }
 
 pub fn view_edit_completion(success: bool) -> Element<'static, Message> {

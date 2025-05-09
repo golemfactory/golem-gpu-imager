@@ -321,6 +321,7 @@ impl GolemGpuImager {
                 }
             }
             Message::SetPaymentNetwork(network) => {
+                // Handle payment network update in flash mode
                 if let AppMode::FlashNewImage(FlashState::ConfigureSettings {
                     subnet,
                     network_type,
@@ -337,8 +338,26 @@ impl GolemGpuImager {
                         is_wallet_valid: *is_wallet_valid,
                     });
                 }
+                // Handle payment network update in edit mode
+                else if let AppMode::EditExistingDisk(EditState::EditConfiguration {
+                    subnet,
+                    network_type,
+                    wallet_address,
+                    is_wallet_valid,
+                    ..
+                }) = &self.mode
+                {
+                    self.mode = AppMode::EditExistingDisk(EditState::EditConfiguration {
+                        payment_network: network,
+                        subnet: subnet.clone(),
+                        network_type: *network_type,
+                        wallet_address: wallet_address.clone(),
+                        is_wallet_valid: *is_wallet_valid,
+                    });
+                }
             }
             Message::SetSubnet(new_subnet) => {
+                // Handle subnet update in flash mode
                 if let AppMode::FlashNewImage(FlashState::ConfigureSettings {
                     payment_network,
                     network_type,
@@ -355,8 +374,26 @@ impl GolemGpuImager {
                         is_wallet_valid: *is_wallet_valid,
                     });
                 }
+                // Handle subnet update in edit mode
+                else if let AppMode::EditExistingDisk(EditState::EditConfiguration {
+                    payment_network,
+                    network_type,
+                    wallet_address,
+                    is_wallet_valid,
+                    ..
+                }) = &self.mode
+                {
+                    self.mode = AppMode::EditExistingDisk(EditState::EditConfiguration {
+                        payment_network: *payment_network,
+                        subnet: new_subnet,
+                        network_type: *network_type,
+                        wallet_address: wallet_address.clone(),
+                        is_wallet_valid: *is_wallet_valid,
+                    });
+                }
             }
             Message::SetNetworkType(network_type) => {
+                // Handle network type update in flash mode
                 if let AppMode::FlashNewImage(FlashState::ConfigureSettings {
                     payment_network,
                     subnet,
@@ -373,8 +410,26 @@ impl GolemGpuImager {
                         is_wallet_valid: *is_wallet_valid,
                     });
                 }
+                // Handle network type update in edit mode
+                else if let AppMode::EditExistingDisk(EditState::EditConfiguration {
+                    payment_network,
+                    subnet,
+                    wallet_address,
+                    is_wallet_valid,
+                    ..
+                }) = &self.mode
+                {
+                    self.mode = AppMode::EditExistingDisk(EditState::EditConfiguration {
+                        payment_network: *payment_network,
+                        subnet: subnet.clone(),
+                        network_type,
+                        wallet_address: wallet_address.clone(),
+                        is_wallet_valid: *is_wallet_valid,
+                    });
+                }
             }
             Message::SetWalletAddress(new_address) => {
+                // Handle wallet address update in flash mode
                 if let AppMode::FlashNewImage(FlashState::ConfigureSettings {
                     payment_network,
                     subnet,
@@ -390,6 +445,29 @@ impl GolemGpuImager {
                     };
 
                     self.mode = AppMode::FlashNewImage(FlashState::ConfigureSettings {
+                        payment_network: *payment_network,
+                        subnet: subnet.clone(),
+                        network_type: *network_type,
+                        wallet_address: new_address,
+                        is_wallet_valid: is_valid,
+                    });
+                }
+                // Handle wallet address update in edit mode
+                else if let AppMode::EditExistingDisk(EditState::EditConfiguration {
+                    payment_network,
+                    subnet,
+                    network_type,
+                    ..
+                }) = &self.mode
+                {
+                    // Validate the Ethereum address
+                    let is_valid = if new_address.is_empty() {
+                        false
+                    } else {
+                        crate::utils::eth::is_valid_eth_address(&new_address)
+                    };
+
+                    self.mode = AppMode::EditExistingDisk(EditState::EditConfiguration {
                         payment_network: *payment_network,
                         subnet: subnet.clone(),
                         network_type: *network_type,
@@ -463,9 +541,44 @@ impl GolemGpuImager {
             Message::SelectExistingDevice(index) => {
                 self.selected_device = Some(index);
             }
-            Message::SaveConfiguration => {
+            Message::GotoEditConfiguration => {
                 if let AppMode::EditExistingDisk(_) = &self.mode {
+                    // Initialize with default values or read from device
+                    // In a real application, you would read these values from the device
+                    self.mode = AppMode::EditExistingDisk(EditState::EditConfiguration {
+                        payment_network: crate::models::PaymentNetwork::Testnet,
+                        subnet: "public".to_string(),
+                        network_type: crate::models::NetworkType::Hybrid,
+                        wallet_address: "".to_string(),
+                        is_wallet_valid: false,
+                    });
+                }
+            }
+            Message::SaveConfiguration => {
+                if let AppMode::EditExistingDisk(EditState::EditConfiguration {
+                    payment_network,
+                    subnet,
+                    network_type,
+                    wallet_address,
+                    is_wallet_valid,
+                }) = &self.mode {
+                    // Check if wallet address is valid before proceeding
+                    if !wallet_address.is_empty() && !is_wallet_valid {
+                        // Show error or return (we'll just return for now, but ideally
+                        // there should be some error shown to the user)
+                        println!(
+                            "Cannot save, wallet address is invalid: {}",
+                            wallet_address
+                        );
+                        return Task::none();
+                    }
+
                     // In a real app, we would save the configuration here
+                    println!(
+                        "Saving config: {:?} {:?} {} {}",
+                        payment_network, network_type, subnet, wallet_address
+                    );
+
                     self.mode = AppMode::EditExistingDisk(EditState::Completion(true));
                 }
             }
@@ -523,7 +636,20 @@ impl GolemGpuImager {
                 EditState::SelectDevice => {
                     ui::view_select_existing_device(self.selected_device, &self.storage_devices)
                 }
-                EditState::EditConfiguration => ui::view_edit_configuration(self.selected_device),
+                EditState::EditConfiguration {
+                    payment_network,
+                    subnet,
+                    network_type,
+                    wallet_address,
+                    is_wallet_valid,
+                } => ui::view_edit_configuration(
+                    *payment_network,
+                    subnet.clone(),
+                    *network_type,
+                    wallet_address.clone(),
+                    *is_wallet_valid,
+                    self.selected_device,
+                ),
                 EditState::Completion(success) => ui::view_edit_completion(*success),
             },
         }

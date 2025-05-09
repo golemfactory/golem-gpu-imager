@@ -56,7 +56,13 @@ pub enum NetworkType {
 
 pub enum EditState {
     SelectDevice,
-    EditConfiguration,
+    EditConfiguration {
+        payment_network: PaymentNetwork,
+        subnet: String,
+        network_type: NetworkType,
+        wallet_address: String,
+        is_wallet_valid: bool,
+    },
     Completion(bool), // Success or failure
 }
 
@@ -80,6 +86,7 @@ pub enum Message {
     FlashAnother,
     Exit,
     SelectExistingDevice(usize),
+    GotoEditConfiguration,          // Go to edit configuration screen
     SaveConfiguration,
     BackToMainMenu,
     RepoDataLoaded(Vec<OsImage>),

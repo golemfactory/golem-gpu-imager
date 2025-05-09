@@ -1,4 +1,5 @@
 use iced::window::{Settings, icon};
+use tracing_subscriber::EnvFilter;
 
 mod models;
 mod style;
@@ -7,6 +8,10 @@ mod utils;
 mod version;
 
 pub fn main() -> iced::Result {
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("info,iced_winit=error"));
+    tracing_subscriber::fmt().with_env_filter(filter).init();
+
     let mut settings = Settings::default();
 
     settings.icon = Some(icon::from_file_data(include_bytes!("./assets/icon.png"), None).unwrap());

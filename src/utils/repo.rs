@@ -1,5 +1,7 @@
 use directories::ProjectDirs;
 use futures_util::StreamExt;
+use iced::task;
+use iced::task::Sipper;
 use reqwest;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -9,7 +11,6 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use tokio::io::AsyncWriteExt;
-use tokio::sync::mpsc;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Version {
@@ -44,6 +45,35 @@ pub enum DownloadStatus {
     Failed {
         error: String,
     },
+}
+
+#[derive(Debug, Clone)]
+pub struct Error(String);
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl std::error::Error for Error {}
+
+impl From<String> for Error {
+    fn from(s: String) -> Self {
+        Error(s)
+    }
+}
+
+impl From<std::io::Error> for Error {
+    fn from(e: std::io::Error) -> Self {
+        Error(e.to_string())
+    }
+}
+
+impl From<reqwest::Error> for Error {
+    fn from(e: reqwest::Error) -> Self {
+        Error(e.to_string())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -143,7 +173,7 @@ impl ImageRepo {
 
     pub fn is_image_downloaded(&self, version: &Version) -> bool {
         let path = self.get_image_path(version);
-        path.exists() && self.verify_hash(&path, &version.sha256).is_ok()
+        path.exists()
     }
 
     fn verify_hash(&self, file_path: &Path, expected_hash: &str) -> Result<(), String> {
@@ -178,190 +208,215 @@ impl ImageRepo {
         }
     }
 
-    pub async fn start_download(
-        &self,
-        _channel_name: &str,
+    pub fn start_download(
+        self: Arc<Self>,
+        channel_name: &str,
         version: Version,
-    ) -> Result<mpsc::Receiver<DownloadStatus>, String> {
-        // Create cache directory if it doesn't exist
-        let cache_dir = self.project_dirs.cache_dir();
-        fs::create_dir_all(cache_dir)
-            .map_err(|e| format!("Failed to create cache directory: {}", e))?;
-
-        let final_path = self.get_image_path(&version);
-
-        // If already downloaded and verified, return completed status
-        if final_path.exists() {
-            if let Ok(()) = self.verify_hash(&final_path, &version.sha256) {
-                let (tx, rx) = mpsc::channel(100);
-                let status = DownloadStatus::Completed { path: final_path };
-                self.downloads
-                    .lock()
-                    .unwrap()
-                    .insert(version.id.clone(), status.clone());
-                let _ = tx.try_send(status);
-                return Ok(rx);
-            }
-        }
-
-        // Use a temporary file during download
-        let temp_path = cache_dir.join(format!("{}.download", version.path));
-
-        // Set initial status
-        let status = DownloadStatus::InProgress {
-            progress: 0.0,
-            bytes_downloaded: 0,
-            total_bytes: 0,
-        };
-        self.downloads
-            .lock()
-            .unwrap()
-            .insert(version.id.clone(), status.clone());
-
-        // Create channel for sending progress updates
-        let (tx, rx) = mpsc::channel(100);
-
-        // Create a clone of necessary values for the download task
-        let file_url = format!("{}/{}", self.repo_url, version.path);
+    ) -> impl task::Sipper<Result<(), Error>, DownloadStatus> + 'static {
+        let this = self.clone();
+        let channel_name = channel_name.to_string();
         let version_id = version.id.clone();
-        let expected_hash = version.sha256.clone();
-        let downloads = self.downloads.clone();
-        let temp_path_clone = temp_path.clone();
-        let final_path_clone = final_path.clone();
+        task::sipper(async move |mut sipper| -> Result<(), Error> {
+            let this = this.clone();
+            let repo_url = &this.repo_url;
+            let file_url = format!("{}/{}", repo_url, version.path);
+            let expected_hash = version.sha256.clone();
+            let version_clone = version.clone();
 
-        // Spawn download task
-        tokio::spawn(async move {
-            let download_result = async {
-                // Make the request
-                let response = match reqwest::get(&file_url).await {
-                    Ok(resp) => resp,
-                    Err(e) => return Err(format!("Failed to fetch file: {}", e)),
-                };
+            // Create cache directory if it doesn't exist
+            let cache_dir = this.project_dirs.cache_dir();
+            fs::create_dir_all(cache_dir)?;
 
-                if !response.status().is_success() {
-                    return Err(format!(
-                        "Failed to download file, status: {}",
-                        response.status()
-                    ));
-                }
+            let final_path = {
+                let cache_dir = this.project_dirs.cache_dir().to_path_buf();
+                cache_dir.join(&version_clone.path)
+            };
 
-                let total_size = response.content_length().unwrap_or(0);
-                let mut downloaded = 0u64;
-                let mut output_file = match tokio::fs::File::create(&temp_path).await {
-                    Ok(file) => file,
-                    Err(e) => return Err(format!("Failed to create output file: {}", e)),
-                };
-                let mut stream = response.bytes_stream();
-
-                while let Some(item) = stream.next().await {
-                    let chunk = match item {
-                        Ok(chunk) => chunk,
-                        Err(e) => return Err(format!("Failed to download chunk: {}", e)),
-                    };
-
-                    if let Err(e) = output_file.write_all(&chunk).await {
-                        return Err(format!("Failed to write chunk: {}", e));
-                    }
-
-                    downloaded += chunk.len() as u64;
-                    let progress = if total_size > 0 {
-                        downloaded as f32 / total_size as f32
-                    } else {
-                        0.0
-                    };
-
-                    // Update status
-                    let status = DownloadStatus::InProgress {
-                        progress,
-                        bytes_downloaded: downloaded,
-                        total_bytes: total_size,
-                    };
-
-                    downloads
-                        .lock()
-                        .unwrap()
-                        .insert(version_id.clone(), status.clone());
-                    let _ = tx.send(status).await;
-                }
-
-                // Close the file
-                if let Err(e) = output_file.flush().await {
-                    return Err(format!("Failed to flush file: {}", e));
-                }
-                drop(output_file);
-
-                // Verify the hash
+            // If already downloaded and verified, return completed status immediately
+            if final_path.exists() {
+                // Verify hash in a blocking task
+                let existing_path = final_path.clone();
+                let expected_hash_clone = expected_hash.clone();
                 match tokio::task::spawn_blocking(move || {
-                    // Use a standalone hash verification function since we can't directly reference self.verify_hash
-                    let mut file = match File::open(&temp_path_clone) {
-                        Ok(f) => f,
-                        Err(e) => {
-                            return Err(format!("Failed to open file for hash verification: {}", e));
-                        }
-                    };
-
+                    let mut file = File::open(&existing_path)?;
                     let mut hasher = Sha256::new();
                     let mut buffer = [0; 8192];
 
                     loop {
-                        let bytes_read = match file.read(&mut buffer) {
-                            Ok(bytes) => bytes,
-                            Err(e) => {
-                                return Err(format!(
-                                    "Failed to read file during hash verification: {}",
-                                    e
-                                ));
-                            }
-                        };
-
+                        let bytes_read = file.read(&mut buffer)?;
                         if bytes_read == 0 {
                             break;
                         }
-
                         hasher.update(&buffer[..bytes_read]);
                     }
 
                     let hash = hasher.finalize();
                     let hash_hex = hex::encode(hash);
 
-                    if hash_hex != expected_hash.to_lowercase() {
-                        let _ = fs::remove_file(&temp_path_clone);
-                        return Err(format!(
+                    if hash_hex == expected_hash_clone.to_lowercase() {
+                        Ok(())
+                    } else {
+                        Err(Error(format!(
                             "Hash verification failed. Expected: {}, got: {}",
-                            expected_hash, hash_hex
-                        ));
+                            expected_hash_clone, hash_hex
+                        )))
                     }
-
-                    // Move temporary file to final location
-                    if let Err(e) = fs::rename(&temp_path_clone, &final_path_clone) {
-                        let _ = fs::remove_file(&temp_path_clone);
-                        return Err(format!("Failed to rename file: {}", e));
-                    }
-
-                    Ok(final_path_clone)
                 })
                 .await
                 {
-                    Ok(result) => result,
-                    Err(e) => Err(format!("Task panicked: {}", e)),
+                    Ok(Ok(_)) => {
+                        let status = DownloadStatus::Completed {
+                            path: final_path.clone(),
+                        };
+                        this.downloads
+                            .lock()
+                            .unwrap()
+                            .insert(version_id.clone(), status.clone());
+                        sipper.send(status).await;
+                        return Ok(());
+                    }
+                    Ok(Err(_)) | Err(_) => {
+                        // Continue with download if verification fails
+                    }
                 }
             }
-            .await;
 
-            // Update final status
-            let final_status = match download_result {
-                Ok(path) => DownloadStatus::Completed { path },
-                Err(e) => DownloadStatus::Failed { error: e },
+            // Use a temporary file during download
+            let temp_path = cache_dir.join(format!("{}.download", version_clone.path));
+
+            // Set initial status
+            let status = DownloadStatus::InProgress {
+                progress: 0.0,
+                bytes_downloaded: 0,
+                total_bytes: 0,
             };
-
-            downloads
+            this.downloads
                 .lock()
                 .unwrap()
-                .insert(version_id.clone(), final_status.clone());
-            let _ = tx.send(final_status).await;
-        });
+                .insert(version_id.clone(), status.clone());
+            sipper.send(status).await;
 
-        Ok(rx)
+            // Make the request
+            let response = reqwest::get(&file_url).await?;
+
+            if !response.status().is_success() {
+                return Err(Error(format!(
+                    "Failed to download file, status: {}",
+                    response.status()
+                )));
+            }
+
+            let total_size = response.content_length().unwrap_or(0);
+            let mut downloaded = 0u64;
+            let mut output_file = tokio::fs::File::create(&temp_path).await?;
+            let mut stream = response.bytes_stream();
+
+            while let Some(item) = stream.next().await {
+                let chunk = item?;
+
+                output_file.write_all(&chunk).await?;
+
+                downloaded += chunk.len() as u64;
+                let progress = if total_size > 0 {
+                    downloaded as f32 / total_size as f32
+                } else {
+                    0.0
+                };
+
+                // Update status and send progress
+                let status = DownloadStatus::InProgress {
+                    progress,
+                    bytes_downloaded: downloaded,
+                    total_bytes: total_size,
+                };
+
+                this.downloads
+                    .lock()
+                    .unwrap()
+                    .insert(version_id.clone(), status.clone());
+                sipper.send(status).await;
+            }
+
+            // Close the file
+            output_file.flush().await?;
+            drop(output_file);
+
+            // Verify the hash in a blocking task
+            let temp_path_clone = temp_path.clone();
+            let final_path_clone = final_path.clone();
+            let expected_hash_clone = expected_hash.clone();
+
+            match tokio::task::spawn_blocking(move || -> Result<PathBuf, Error> {
+                // Verify hash
+                let mut file = File::open(&temp_path_clone)?;
+                let mut hasher = Sha256::new();
+                let mut buffer = [0; 8192];
+
+                loop {
+                    let bytes_read = file.read(&mut buffer)?;
+                    if bytes_read == 0 {
+                        break;
+                    }
+                    hasher.update(&buffer[..bytes_read]);
+                }
+
+                let hash = hasher.finalize();
+                let hash_hex = hex::encode(hash);
+
+                if hash_hex != expected_hash_clone.to_lowercase() {
+                    let _ = fs::remove_file(&temp_path_clone);
+                    return Err(Error(format!(
+                        "Hash verification failed. Expected: {}, got: {}",
+                        expected_hash_clone, hash_hex
+                    )));
+                }
+
+                // Move temporary file to final location
+                if let Err(e) = fs::rename(&temp_path_clone, &final_path_clone) {
+                    let _ = fs::remove_file(&temp_path_clone);
+                    return Err(e.into());
+                }
+
+                Ok(final_path_clone)
+            })
+            .await
+            {
+                Ok(Ok(path)) => {
+                    // Update final status to completed
+                    let final_status = DownloadStatus::Completed { path };
+                    this.downloads
+                        .lock()
+                        .unwrap()
+                        .insert(version_id.clone(), final_status.clone());
+                    sipper.send(final_status).await;
+                    Ok(())
+                }
+                Ok(Err(e)) => {
+                    // Update final status to failed
+                    let error_msg = e.0.clone();
+                    let final_status = DownloadStatus::Failed { error: error_msg };
+                    this.downloads
+                        .lock()
+                        .unwrap()
+                        .insert(version_id.clone(), final_status.clone());
+                    sipper.send(final_status).await;
+                    Err(e)
+                }
+                Err(e) => {
+                    // Handle task join error
+                    let error_msg = format!("Task panicked: {}", e);
+                    let final_status = DownloadStatus::Failed {
+                        error: error_msg.clone(),
+                    };
+                    this.downloads
+                        .lock()
+                        .unwrap()
+                        .insert(version_id.clone(), final_status.clone());
+                    sipper.send(final_status).await;
+                    Err(Error(error_msg))
+                }
+            }
+        })
     }
 
     pub fn clean_cache(&self) -> Result<(), String> {

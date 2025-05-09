@@ -1,4 +1,4 @@
-use iced::widget::container;
+use iced::widget::{container, text, text_input};
 use iced::{Border, Color, Theme};
 use std::sync::Arc;
 
@@ -49,5 +49,100 @@ pub fn bordered_box(theme: &Theme) -> container::Style {
             color: palette.background.strong.color,
         },
         ..container::Style::default()
+    }
+}
+
+// Style function for valid wallet input
+pub fn valid_wallet_input(
+    theme: &Theme,
+    status: iced::widget::text_input::Status,
+) -> text_input::Style {
+    let palette = theme.extended_palette();
+
+    text_input::Style {
+        background: palette.background.weak.color.into(),
+        border: Border {
+            radius: 5.0.into(),
+            width: 2.0,
+            color: SUCCESS,
+        },
+        icon: TEXT,
+        placeholder: palette.background.strong.color,
+        value: TEXT,
+        selection: palette.primary.weak.color,
+    }
+}
+
+// Style function for invalid wallet input
+pub fn invalid_wallet_input(
+    theme: &Theme,
+    status: iced::widget::text_input::Status,
+) -> text_input::Style {
+    let palette = theme.extended_palette();
+
+    text_input::Style {
+        background: palette.background.weak.color.into(),
+        border: Border {
+            radius: 5.0.into(),
+            width: 2.0,
+            color: ERROR,
+        },
+        icon: TEXT,
+        placeholder: palette.background.strong.color,
+        value: TEXT,
+        selection: palette.primary.weak.color,
+    }
+}
+
+// Style function for validation success text
+pub fn valid_text_style(theme: &Theme) -> text::Style {
+    text::Style {
+        color: Some(SUCCESS),
+        ..text::Style::default()
+    }
+}
+
+// Style function for validation error text
+pub fn invalid_text_style(theme: &Theme) -> text::Style {
+    text::Style {
+        color: Some(ERROR),
+        ..text::Style::default()
+    }
+}
+
+// Container style for validation success message
+pub fn valid_message_container(_theme: &Theme) -> container::Style {
+    container::Style {
+        text_color: Some(SUCCESS),
+        ..container::Style::default()
+    }
+}
+
+// Container style for validation error message
+pub fn invalid_message_container(_theme: &Theme) -> container::Style {
+    container::Style {
+        text_color: Some(ERROR),
+        ..container::Style::default()
+    }
+}
+
+// Default text input style
+pub fn default_text_input(
+    theme: &Theme,
+    status: iced::widget::text_input::Status,
+) -> text_input::Style {
+    let palette = theme.extended_palette();
+
+    text_input::Style {
+        background: palette.background.weak.color.into(),
+        border: Border {
+            radius: 5.0.into(),
+            width: 1.0,
+            color: palette.background.strong.color,
+        },
+        icon: TEXT,
+        placeholder: palette.background.strong.color,
+        value: TEXT,
+        selection: palette.primary.weak.color,
     }
 }

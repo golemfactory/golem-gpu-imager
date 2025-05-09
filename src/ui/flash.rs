@@ -5,7 +5,7 @@ use iced::widget::{
 use iced::{Alignment, Color, Element, Length};
 use iced::{Border, Theme};
 
-use crate::models::{Message, OsImage, StorageDevice, PaymentNetwork, NetworkType};
+use crate::models::{Message, NetworkType, OsImage, PaymentNetwork, StorageDevice};
 use crate::style;
 use crate::ui::{LOGO_SVG, icons};
 
@@ -118,7 +118,7 @@ pub fn view_downloading_image(
         .size(30)
         .width(Length::Fill)
         .align_x(Horizontal::Center);
-        
+
     // Image details at the top
     let image_details = column![
         text(format!("Channel: {}", channel)).size(18),
@@ -128,18 +128,17 @@ pub fn view_downloading_image(
     .spacing(10)
     .width(Length::Fill)
     .align_x(Alignment::Center);
-    
+
     // Progress indicator
     let progress_percentage = (progress * 100.0) as i32;
     let progress_text = text(format!("{}%", progress_percentage)).size(25);
-    let progress_bar = progress_bar(0.0..=1.0, progress)
-        .style(progress_bar::secondary);
-        
+    let progress_bar = progress_bar(0.0..=1.0, progress).style(progress_bar::secondary);
+
     // Optional cancel button
     let cancel_button = button("Cancel Download")
         .on_press(Message::CancelWrite)
         .padding(10);
-        
+
     let content = column![
         title,
         image_details,
@@ -158,7 +157,7 @@ pub fn view_downloading_image(
     .padding(20)
     .width(Length::Fill)
     .align_x(Alignment::Center);
-    
+
     Container::new(content)
         .width(Length::Fill)
         .height(Length::Fill)
@@ -170,18 +169,17 @@ pub fn view_configure_settings(
     payment_network: PaymentNetwork,
     subnet: String,
     network_type: NetworkType,
+    wallet_address: String,
+    is_wallet_valid: bool,
 ) -> Element<'static, Message> {
-    let title = text("Configure OS Image")
-        .size(30);
-        
+    let title = text("Configure OS Image").size(30);
+
     // Create simplified settings UI
-    let description = text("Configure the OS image with the following options:")
-        .size(16);
-        
+    let description = text("Configure the OS image with the following options:").size(16);
+
     // Network selection
-    let network_label = text(format!("Payment Network: {:?}", payment_network))
-        .size(18);
-        
+    let network_label = text("Payment Network").size(18);
+
     let network_buttons = row![
         button("Testnet")
             .on_press(Message::SetPaymentNetwork(PaymentNetwork::Testnet))
@@ -198,15 +196,59 @@ pub fn view_configure_settings(
                 button::secondary
             })
     ];
-    
-    // Subnet display
-    let subnet_label = text(format!("Subnet: {}", subnet))
-        .size(18);
-        
+
+    // Subnet field with text input
+    let subnet_label = text("Subnet").size(18);
+    let subnet_input = iced::widget::text_input("Enter subnet", &subnet)
+        .on_input(Message::SetSubnet)
+        .padding(10);
+
+    // Wallet address field with text input and validation indicator
+    let wallet_label = text("Ethereum Wallet Address").size(18);
+
+    // Choose style based on validation state and create input with appropriate styling
+    let wallet_input = if !wallet_address.is_empty() {
+        if is_wallet_valid {
+            iced::widget::text_input("Enter ETH wallet address", &wallet_address)
+                .on_input(Message::SetWalletAddress)
+                .padding(10)
+                .style(crate::style::valid_wallet_input)
+        } else {
+            iced::widget::text_input("Enter ETH wallet address", &wallet_address)
+                .on_input(Message::SetWalletAddress)
+                .padding(10)
+                .style(crate::style::invalid_wallet_input)
+        }
+    } else {
+        // Default styling for empty input
+        iced::widget::text_input("Enter ETH wallet address", &wallet_address)
+            .on_input(Message::SetWalletAddress)
+            .padding(10)
+            .style(crate::style::default_text_input)
+    };
+
+    // Add validation message if address is not empty
+    let validation_message = if !wallet_address.is_empty() {
+        if is_wallet_valid {
+            container(row![icons::checkmark(), text("Valid Ethereum address").size(14)].spacing(5))
+                .style(crate::style::valid_message_container)
+        } else {
+            container(
+                row![
+                    icons::error(),
+                    text("Invalid Ethereum address format").size(14)
+                ]
+                .spacing(5),
+            )
+            .style(crate::style::invalid_message_container)
+        }
+    } else {
+        container(row![text("").size(14)])
+    };
+
     // Network type
-    let type_label = text(format!("Network Type: {:?}", network_type))
-        .size(18);
-        
+    let type_label = text("Network Type").size(18);
+
     let type_buttons = row![
         button("Hybrid")
             .on_press(Message::SetNetworkType(NetworkType::Hybrid))
@@ -223,16 +265,14 @@ pub fn view_configure_settings(
                 button::secondary
             })
     ];
-    
+
     // Navigation buttons
-    let back_button = button("Back")
-        .on_press(Message::SelectTargetDevice(0));
-        
-    let next_button = button("Start Writing")
-        .on_press(Message::WriteImage);
-        
+    let back_button = button("Back").on_press(Message::SelectTargetDevice(0));
+
+    let next_button = button("Start Writing").on_press(Message::WriteImage);
+
     let navigation = row![back_button, next_button].spacing(10);
-    
+
     // Layout
     column![
         title,
@@ -240,6 +280,10 @@ pub fn view_configure_settings(
         network_label,
         network_buttons,
         subnet_label,
+        subnet_input,
+        wallet_label,
+        wallet_input,
+        validation_message,
         type_label,
         type_buttons,
         navigation

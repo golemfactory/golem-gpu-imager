@@ -1,9 +1,10 @@
-use iced::{Alignment, Element, Length, Task};
-use std::sync::Arc;
-
 use crate::models::{AppMode, EditState, FlashState, Message, OsImage, StorageDevice};
 use crate::ui;
-use crate::utils::repo::{ImageRepo, Version};
+use crate::utils::repo::{DownloadStatus, ImageRepo, Version};
+use futures_util::FutureExt;
+use iced::task::Sipper;
+use iced::{Alignment, Element, Length, Task};
+use std::sync::Arc;
 
 pub struct GolemGpuImager {
     pub mode: AppMode,
@@ -177,52 +178,34 @@ impl GolemGpuImager {
                         created: image.created.clone(),
                     };
 
-                    // Create a task that just initiates the download and sets up a background task
-                    return Task::perform(
-                        async move {
-                            // Create a separate instance for the download
-                            let repo_mut = ImageRepo::new();
-                            
-                            match repo_mut.start_download(&channel_name, version.clone()).await {
-                                Ok(mut rx) => {
-                                    // Spawn a background task to monitor the download progress
-                                    tokio::spawn(async move {
-                                        while let Some(status) = rx.recv().await {
-                                            match status {
-                                                crate::utils::repo::DownloadStatus::InProgress { progress, .. } => {
-                                                    // Send progress update to UI
-                                                    iced::window::update::<GolemGpuImager>(Message::DownloadProgress(
-                                                        version_id.clone(),
-                                                        progress,
-                                                    ));
-                                                }
-                                                crate::utils::repo::DownloadStatus::Completed { .. } => {
-                                                    // Send completion to UI
-                                                    iced::window::update::<GolemGpuImager>(Message::DownloadCompleted(
-                                                        version_id.clone(),
-                                                    ));
-                                                    break;
-                                                }
-                                                crate::utils::repo::DownloadStatus::Failed { error } => {
-                                                    // Send failure to UI
-                                                    iced::window::update::<GolemGpuImager>(Message::DownloadFailed(
-                                                        version_id.clone(),
-                                                        error,
-                                                    ));
-                                                    break;
-                                                }
-                                                _ => {}
-                                            }
-                                        }
-                                    });
-                                    
-                                    // Return an initial progress message
-                                    Message::DownloadProgress(version_id.clone(), 0.0)
-                                }
-                                Err(e) => Message::DownloadFailed(version_id, e),
+                    // Create a task that sips from the download straw
+                    let version_id_1 = version_id.clone();
+                    let version_id_2 = version_id.clone();
+                    return Task::sip(
+                        repo.start_download(&channel_name, version),
+                        move |status| match status {
+                            DownloadStatus::NotStarted { .. } => {
+                                Message::DownloadProgress(version_id_2.clone(), 0f32)
+                            }
+                            DownloadStatus::InProgress {
+                                progress,
+                                bytes_downloaded,
+                                total_bytes,
+                            } => Message::DownloadProgress(version_id_2.clone(), progress),
+                            DownloadStatus::Completed { path } => {
+                                Message::DownloadCompleted(version_id_2.clone())
+                            }
+                            DownloadStatus::Failed { error } => {
+                                Message::DownloadFailed(version_id_2.clone(), error)
                             }
                         },
-                        |message| message,
+                        move |done| {
+                            if let Err(e) = done {
+                                Message::DownloadFailed(version_id_1, "Download failed".to_string())
+                            } else {
+                                Message::DownloadCompleted(version_id_1)
+                            }
+                        },
                     );
                 }
             }
@@ -237,12 +220,13 @@ impl GolemGpuImager {
                 }
 
                 // Update UI if we're in downloading state with this version
-                if let AppMode::FlashNewImage(FlashState::DownloadingImage { 
-                    version_id: current_id, 
-                    channel, 
-                    created_date, 
-                    .. 
-                }) = &self.mode {
+                if let AppMode::FlashNewImage(FlashState::DownloadingImage {
+                    version_id: current_id,
+                    channel,
+                    created_date,
+                    ..
+                }) = &self.mode
+                {
                     if current_id == &version_id {
                         self.mode = AppMode::FlashNewImage(FlashState::DownloadingImage {
                             version_id: version_id.clone(),
@@ -331,45 +315,86 @@ impl GolemGpuImager {
                         payment_network: crate::models::PaymentNetwork::Testnet,
                         subnet: "public".to_string(),
                         network_type: crate::models::NetworkType::Hybrid,
+                        wallet_address: "".to_string(),
+                        is_wallet_valid: false,
                     });
                 }
             }
             Message::SetPaymentNetwork(network) => {
-                if let AppMode::FlashNewImage(FlashState::ConfigureSettings { 
-                    subnet, 
-                    network_type, 
-                    .. 
-                }) = &self.mode {
+                if let AppMode::FlashNewImage(FlashState::ConfigureSettings {
+                    subnet,
+                    network_type,
+                    wallet_address,
+                    is_wallet_valid,
+                    ..
+                }) = &self.mode
+                {
                     self.mode = AppMode::FlashNewImage(FlashState::ConfigureSettings {
                         payment_network: network,
                         subnet: subnet.clone(),
                         network_type: *network_type,
+                        wallet_address: wallet_address.clone(),
+                        is_wallet_valid: *is_wallet_valid,
                     });
                 }
             }
             Message::SetSubnet(new_subnet) => {
-                if let AppMode::FlashNewImage(FlashState::ConfigureSettings { 
-                    payment_network, 
-                    network_type, 
-                    .. 
-                }) = &self.mode {
+                if let AppMode::FlashNewImage(FlashState::ConfigureSettings {
+                    payment_network,
+                    network_type,
+                    wallet_address,
+                    is_wallet_valid,
+                    ..
+                }) = &self.mode
+                {
                     self.mode = AppMode::FlashNewImage(FlashState::ConfigureSettings {
                         payment_network: *payment_network,
                         subnet: new_subnet,
                         network_type: *network_type,
+                        wallet_address: wallet_address.clone(),
+                        is_wallet_valid: *is_wallet_valid,
                     });
                 }
             }
             Message::SetNetworkType(network_type) => {
-                if let AppMode::FlashNewImage(FlashState::ConfigureSettings { 
-                    payment_network, 
-                    subnet, 
-                    .. 
-                }) = &self.mode {
+                if let AppMode::FlashNewImage(FlashState::ConfigureSettings {
+                    payment_network,
+                    subnet,
+                    wallet_address,
+                    is_wallet_valid,
+                    ..
+                }) = &self.mode
+                {
                     self.mode = AppMode::FlashNewImage(FlashState::ConfigureSettings {
                         payment_network: *payment_network,
                         subnet: subnet.clone(),
                         network_type,
+                        wallet_address: wallet_address.clone(),
+                        is_wallet_valid: *is_wallet_valid,
+                    });
+                }
+            }
+            Message::SetWalletAddress(new_address) => {
+                if let AppMode::FlashNewImage(FlashState::ConfigureSettings {
+                    payment_network,
+                    subnet,
+                    network_type,
+                    ..
+                }) = &self.mode
+                {
+                    // Validate the Ethereum address
+                    let is_valid = if new_address.is_empty() {
+                        false
+                    } else {
+                        crate::utils::eth::is_valid_eth_address(&new_address)
+                    };
+
+                    self.mode = AppMode::FlashNewImage(FlashState::ConfigureSettings {
+                        payment_network: *payment_network,
+                        subnet: subnet.clone(),
+                        network_type: *network_type,
+                        wallet_address: new_address,
+                        is_wallet_valid: is_valid,
                     });
                 }
             }
@@ -380,22 +405,41 @@ impl GolemGpuImager {
                     payment_network: crate::models::PaymentNetwork::Testnet,
                     subnet: "public".to_string(),
                     network_type: crate::models::NetworkType::Hybrid,
+                    wallet_address: "".to_string(),
+                    is_wallet_valid: false,
                 });
             }
             Message::WriteImage => {
                 // Start the actual writing process based on the configuration
-                if let AppMode::FlashNewImage(FlashState::ConfigureSettings { 
-                    payment_network, 
-                    subnet, 
-                    network_type 
-                }) = &self.mode {
-                    // Here you would apply the configuration (payment_network, subnet, network_type) 
+                if let AppMode::FlashNewImage(FlashState::ConfigureSettings {
+                    payment_network,
+                    subnet,
+                    network_type,
+                    wallet_address,
+                    is_wallet_valid,
+                }) = &self.mode
+                {
+                    // Check if wallet address is valid before proceeding
+                    if !wallet_address.is_empty() && !is_wallet_valid {
+                        // Show error or return (we'll just return for now, but ideally
+                        // there should be some error shown to the user)
+                        println!(
+                            "Cannot proceed, wallet address is invalid: {}",
+                            wallet_address
+                        );
+                        return Task::none();
+                    }
+
+                    // Here you would apply the configuration (payment_network, subnet, network_type, wallet_address)
                     // to the image before flashing
-                    println!("Starting flash with config: {:?} {:?} {}", payment_network, network_type, subnet);
-                    
+                    println!(
+                        "Starting flash with config: {:?} {:?} {} {}",
+                        payment_network, network_type, subnet, wallet_address
+                    );
+
                     // Start the write process
                     self.mode = AppMode::FlashNewImage(FlashState::WritingProcess(0.0));
-                    
+
                     // For now, we'll simulate completion after a moment
                     // This would be replaced by actual flashing with progress updates
                     self.mode = AppMode::FlashNewImage(FlashState::Completion(true));
@@ -448,33 +492,30 @@ impl GolemGpuImager {
                         ui::view_select_os_image(&self.os_images, self.selected_os_image)
                     }
                 }
-                FlashState::DownloadingImage { 
-                    version_id, 
-                    progress, 
-                    channel, 
-                    created_date 
+                FlashState::DownloadingImage {
+                    version_id,
+                    progress,
+                    channel,
+                    created_date,
                 } => {
-                    ui::flash::view_downloading_image(
-                        version_id, 
-                        *progress, 
-                        channel, 
-                        created_date
-                    )
+                    ui::flash::view_downloading_image(version_id, *progress, channel, created_date)
                 }
                 FlashState::SelectTargetDevice => {
                     ui::flash::view_select_target_device(&self.storage_devices)
                 }
-                FlashState::ConfigureSettings { 
+                FlashState::ConfigureSettings {
                     payment_network,
                     subnet,
-                    network_type 
-                } => {
-                    ui::flash::view_configure_settings(
-                        *payment_network,
-                        subnet.clone(),
-                        *network_type
-                    )
-                }
+                    network_type,
+                    wallet_address,
+                    is_wallet_valid,
+                } => ui::flash::view_configure_settings(
+                    *payment_network,
+                    subnet.clone(),
+                    *network_type,
+                    wallet_address.clone(),
+                    *is_wallet_valid,
+                ),
                 FlashState::WritingProcess(progress) => ui::flash::view_writing_process(*progress),
                 FlashState::Completion(success) => ui::flash::view_flash_completion(*success),
             },

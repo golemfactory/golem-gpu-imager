@@ -35,6 +35,8 @@ pub enum FlashState {
         payment_network: PaymentNetwork,
         subnet: String,
         network_type: NetworkType,
+        wallet_address: String,
+        is_wallet_valid: bool,
     },
     WritingProcess(f32), // Progress 0.0 - 1.0
     Completion(bool),    // Success or failure
@@ -67,10 +69,11 @@ pub enum Message {
     DownloadProgress(String, f32),  // Version ID and progress (0.0-1.0)
     DownloadCompleted(String),      // Version ID of completed download
     DownloadFailed(String, String), // Version ID and error message
-    GotoConfigureSettings,         // Go to image configuration screen
+    GotoConfigureSettings,          // Go to image configuration screen
     SetPaymentNetwork(PaymentNetwork),
     SetSubnet(String),
     SetNetworkType(NetworkType),
+    SetWalletAddress(String),
     SelectTargetDevice(usize),
     WriteImage,
     CancelWrite,

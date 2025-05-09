@@ -8,19 +8,7 @@ fn icon(unicode: char) -> iced::widget::Text<'static> {
         .width(25)
         .align_x(iced::Center)
 }
-/*
-icon('\u{}'),
 
-                icon('\u{}'),
-                icon('\u{}'),
-                icon('\u{}'),
-                icon('\u{}'),
-                icon('\u{}'),
-                icon('\u{}'),
-                icon('\u{}'),
-                icon('\u{}'),
-                icon('\u{}'),
- */
 pub fn house() -> iced::widget::Text<'static> {
     icon('\u{E88a}')
 }
@@ -67,4 +55,12 @@ pub fn rocket_launch() -> iced::widget::Text<'static> {
 
 pub fn info() -> iced::widget::Text<'static> {
     icon('\u{E88E}')
+}
+
+pub fn checkmark() -> iced::widget::Text<'static> {
+    icon('\u{E5CA}')
+}
+
+pub fn error() -> iced::widget::Text<'static> {
+    icon('\u{E000}')
 }

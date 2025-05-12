@@ -89,3 +89,7 @@ pub fn settings() -> iced::widget::Text<'static> {
 pub fn tune() -> iced::widget::Text<'static> {
     icon('\u{E429}')
 }
+
+pub fn send() -> iced::widget::Text<'static> {
+    icon('\u{E163}')
+}

@@ -68,7 +68,7 @@ pub fn view_select_os_image<'a>(
 
     // Navigation buttons
     let next_button = if selected_os_image.is_some() {
-        button(container("Next: Configure Settings").center_x(Length::Fill))
+        button(container(row!["Configure Settings", icons::navigate_next()]).center_x(Length::Fill))
             .on_press(Message::GotoConfigureSettings)
             .padding(12)
             .width(220)
@@ -258,9 +258,20 @@ pub fn view_configuration_editor<'a>(
     .style(crate::style::pick_list_style);
 
     // Navigation buttons
-    let back_button = button(back_label).on_press(back_action);
-    let next_button = button(next_label).on_press(next_action);
-    let navigation = row![back_button, next_button].spacing(10);
+    let back_button = button(row![icons::navigate_before(), text(back_label)].spacing(5).align_y(Alignment::Center))
+        .on_press(back_action)
+        .padding(10)
+        .style(button::secondary);
+
+    let next_button = button(row![text(next_label), icons::send()].spacing(5).align_y(Alignment::Center))
+        .on_press(next_action)
+        .padding(10)
+        .style(button::primary);
+
+    let navigation = row![back_button, next_button]
+        .spacing(15)
+        .width(Length::Fill)
+        .align_y(Alignment::Center);
 
     // We'll create all UI components inline for better type inference
 
@@ -592,13 +603,15 @@ pub fn view_select_target_device<'a>(storage_devices: &'a [StorageDevice]) -> El
         .height(Length::Fill)
         .width(Length::Fill);
 
-    let back_button = button("Back to Configure Settings")
+    let back_button = button(row![icons::navigate_before(), "Back to Configure Settings"].spacing(5).align_y(Alignment::Center))
         .on_press(Message::GotoConfigureSettings)
-        .padding(10);
+        .padding(10)
+        .style(button::secondary);
 
-    let write_button = button("Write Image")
+    let write_button = button(row![text("Write Image"), icons::send()].spacing(5).align_y(Alignment::Center))
         .on_press(Message::WriteImage)
-        .padding(10);
+        .padding(10)
+        .style(button::primary);
 
     let buttons = row![back_button, write_button,]
         .spacing(10)

@@ -143,4 +143,5 @@ pub enum Message {
     LoadPresetsFromStorage,         // Load presets from persistent storage
     SetPresetName(String),          // Set name for new preset
     TogglePresetManager,            // Toggle preset management UI visibility
+    BackToSelectOsImage,            // Go back to the OS image selection screen
 }

@@ -555,7 +555,7 @@ pub fn view_configure_settings<'a>(
         is_wallet_valid,
         "Configure OS Image",
         "Configure the OS image with the following options:",
-        Message::SelectTargetDevice(0),
+        Message::BackToSelectOsImage,
         Message::WriteImage,
         "Back",
         "Start Writing",

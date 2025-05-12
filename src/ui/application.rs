@@ -715,6 +715,11 @@ impl GolemGpuImager {
                 // Toggle preset management UI visibility
                 self.show_preset_manager = !self.show_preset_manager;
             }
+            Message::BackToSelectOsImage => {
+                if let AppMode::FlashNewImage(_) = &self.mode {
+                    self.mode = AppMode::FlashNewImage(FlashState::SelectOsImage);
+                }
+            }
         }
         Task::none()
     }

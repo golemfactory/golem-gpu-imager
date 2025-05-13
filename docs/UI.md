@@ -36,11 +36,21 @@ Golem GPU Imager is a desktop utility designed to easily flash official OS image
     - **"Download"** button or **"Select"** if already downloaded.
 
 #### 2.2 Configure OS Settings
-- Optional configuration screen:
-    - Hostname.
-    - User/root password.
-    - Network settings (DHCP / Static IP).
-    - SSH options (enable/disable, set public keys).
+
+- Payment network settings:
+  - Payment network: dropdown selection between Testnet/Mainnet
+  - Subnet: text input field
+  - Network type: dropdown selection between Hybrid/Central
+- Ethereum wallet address with validation
+- Configuration preset management:
+  - Save current settings as preset
+  - Load existing presets from dropdown
+  - Set default preset
+  - Delete presets
+  - Manage presets view with detailed info
+- Navigation controls:
+  - Back button (returns to OS image selection)
+  - Start Writing button (proceeds to target device selection)
 
 #### 2.3 Select Target Device
 - List of connected storage devices:

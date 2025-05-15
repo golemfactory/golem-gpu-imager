@@ -18,7 +18,9 @@ sha2 = "0.10"
 tokio = { version = "1.44.2", features = ["full"] }
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
-ethers-core = "2.0.10"
+ethereum-types = { version = "0.15.1", default-features = false }
+crunchy = "=0.2.2"
+toml = "0.8.2"
 
 [target.'cfg(target_os="linux")'.dependencies]
 udisks2 = "0.3.1"
@@ -41,6 +43,10 @@ lto = true
 codegen-units = 1
 opt-level = 3
 strip = true
+
+[features]
+default = []
+enterprise = []
 
 [package.metadata.bundle]
 name = "Golem GPU Imager"

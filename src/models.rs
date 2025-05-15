@@ -9,7 +9,7 @@ pub struct OsImage {
     pub sha256: String,       // SHA256 hash for verification
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ConfigurationPreset {
     pub name: String,
     pub payment_network: PaymentNetwork,
@@ -63,7 +63,7 @@ pub enum FlashState {
     Completion(bool),    // Success or failure
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum PaymentNetwork {
     Testnet,
     Mainnet,
@@ -79,7 +79,7 @@ impl std::fmt::Display for PaymentNetwork {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum NetworkType {
     Hybrid,
     Central,

@@ -1,6 +1,7 @@
 use crate::models::{AppMode, ConfigurationPreset, EditState, FlashState, Message, NetworkType, OsImage, PaymentNetwork, StorageDevice};
 use crate::ui;
 use crate::utils::repo::{DownloadStatus, ImageRepo, Version};
+use crate::utils::PresetManager;
 use futures_util::FutureExt;
 use iced::task::Sipper;
 use iced::{Alignment, Element, Length, Task};
@@ -19,31 +20,51 @@ pub struct GolemGpuImager {
     pub selected_preset: Option<usize>,
     pub new_preset_name: String,
     pub show_preset_manager: bool,
+    pub preset_manager: Option<PresetManager>,
 }
 
 impl GolemGpuImager {
     pub fn new() -> Self {
         let image_repo = Arc::new(ImageRepo::new());
 
-        // Create some example presets
-        let default_presets = vec![
-            ConfigurationPreset {
-                name: "Testnet Development".to_string(),
-                payment_network: PaymentNetwork::Testnet,
-                subnet: "public".to_string(),
-                network_type: NetworkType::Hybrid,
-                wallet_address: "0x742d35Cc6634C0532925a3b844Bc454e4438f44e".to_string(),
-                is_default: true,
+        // Initialize the PresetManager
+        let preset_manager = match PresetManager::new() {
+            Ok(mut manager) => {
+                // Initialize with default presets if needed
+                let _ = manager.init_with_defaults();
+                Some(manager)
             },
-            ConfigurationPreset {
-                name: "Mainnet Production".to_string(),
-                payment_network: PaymentNetwork::Mainnet,
-                subnet: "production".to_string(),
-                network_type: NetworkType::Central,
-                wallet_address: "0x742d35Cc6634C0532925a3b844Bc454e4438f44e".to_string(),
-                is_default: false,
-            },
-        ];
+            Err(e) => {
+                println!("Failed to initialize preset manager: {}", e);
+                None
+            }
+        };
+
+        // Get presets from the preset manager, or use defaults if manager initialization failed
+        let configuration_presets = match &preset_manager {
+            Some(manager) => manager.get_presets().clone(),
+            None => {
+                // Fallback to hardcoded defaults if preset manager failed
+                vec![
+                    ConfigurationPreset {
+                        name: "Testnet Development".to_string(),
+                        payment_network: PaymentNetwork::Testnet,
+                        subnet: "public".to_string(),
+                        network_type: NetworkType::Hybrid,
+                        wallet_address: "0x742d35Cc6634C0532925a3b844Bc454e4438f44e".to_string(),
+                        is_default: true,
+                    },
+                    ConfigurationPreset {
+                        name: "Mainnet Production".to_string(),
+                        payment_network: PaymentNetwork::Mainnet,
+                        subnet: "production".to_string(),
+                        network_type: NetworkType::Central,
+                        wallet_address: "0x742d35Cc6634C0532925a3b844Bc454e4438f44e".to_string(),
+                        is_default: false,
+                    },
+                ]
+            }
+        };
 
         Self {
             mode: AppMode::StartScreen,
@@ -65,10 +86,11 @@ impl GolemGpuImager {
             image_repo,
             is_loading_repo: false,
             downloads_in_progress: Vec::new(),
-            configuration_presets: default_presets,
+            configuration_presets,
             selected_preset: None,
             new_preset_name: String::new(),
             show_preset_manager: false,
+            preset_manager,
         }
     }
 
@@ -196,7 +218,7 @@ impl GolemGpuImager {
                     // Start actual download
                     let version_id = image.version.clone();
                     let channel_name = image.name.clone();
-                    let repo = Arc::clone(&self.image_repo);
+                    let repo: Arc<ImageRepo> = Arc::clone(&self.image_repo);
 
                     // Create Version struct for download
                     let version = Version {
@@ -668,14 +690,26 @@ impl GolemGpuImager {
             Message::SaveAsPreset => {
                 if !self.new_preset_name.is_empty() {
                     if let Some(preset) = self.create_preset_from_current_config(self.new_preset_name.clone()) {
+                        // Clone the preset before any modifications
+                        let mut new_preset = preset.clone();
+
                         // If this is the first preset, set it as default
                         let is_first = self.configuration_presets.is_empty();
                         if is_first {
-                            let mut preset = preset;
-                            preset.is_default = true;
-                            self.configuration_presets.push(preset);
+                            new_preset.is_default = true;
+                        }
+
+                        // Add the preset to the PresetManager first to persist it
+                        if let Some(manager) = &mut self.preset_manager {
+                            if let Err(e) = manager.add_preset(new_preset.clone()) {
+                                println!("Failed to add preset to manager: {}", e);
+                            }
+
+                            // Refresh our local copy from the manager
+                            self.configuration_presets = manager.get_presets().clone();
                         } else {
-                            self.configuration_presets.push(preset);
+                            // Fall back to just adding to our local copy if no manager
+                            self.configuration_presets.push(new_preset);
                         }
 
                         // Select the new preset
@@ -845,6 +879,12 @@ impl GolemGpuImager {
 
     // Get the default preset if one exists
     fn get_default_preset(&self) -> Option<&ConfigurationPreset> {
+        // Try using the PresetManager first
+        if let Some(manager) = &self.preset_manager {
+            return manager.get_default_preset();
+        }
+
+        // Fall back to the in-memory configuration_presets if PresetManager is not available
         self.configuration_presets
             .iter()
             .find(|preset| preset.is_default)
@@ -953,6 +993,15 @@ impl GolemGpuImager {
 
         // Set the selected preset as default
         self.configuration_presets[preset_index].is_default = true;
+
+        // Update the preset in the PresetManager and persist it
+        if let Some(manager) = &mut self.preset_manager {
+            let mut preset = self.configuration_presets[preset_index].clone();
+            preset.is_default = true;
+            if let Err(e) = manager.set_default_preset(preset_index) {
+                println!("Failed to set default preset in manager: {}", e);
+            }
+        }
     }
 
     // Delete a preset
@@ -961,7 +1010,15 @@ impl GolemGpuImager {
             return;
         }
 
-        // Remove the preset
+        // Delete the preset from the PresetManager first
+        if let Some(manager) = &mut self.preset_manager {
+            if let Err(e) = manager.delete_preset(preset_index) {
+                println!("Failed to delete preset from manager: {}", e);
+            }
+        }
+
+        // Remove the preset from our local copy
+        let was_default = self.configuration_presets[preset_index].is_default;
         self.configuration_presets.remove(preset_index);
 
         // Adjust selected preset if necessary
@@ -975,8 +1032,15 @@ impl GolemGpuImager {
 
         // If we deleted the default preset and there are still presets,
         // make the first one default
-        if !self.configuration_presets.is_empty() && self.get_default_preset().is_none() {
+        if was_default && !self.configuration_presets.is_empty() {
             self.configuration_presets[0].is_default = true;
+
+            // Update the default preset in the PresetManager
+            if let Some(manager) = &mut self.preset_manager {
+                if let Err(e) = manager.set_default_preset(0) {
+                    println!("Failed to set new default preset after deletion: {}", e);
+                }
+            }
         }
     }
 }

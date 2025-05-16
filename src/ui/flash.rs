@@ -181,6 +181,7 @@ pub fn view_configuration_editor<'a>(
     new_preset_name: &'a str,
     show_preset_manager: bool,
 ) -> Element<'a, Message> {
+    // Create the title - simple text by default
     let title = text(title_text).size(30);
 
     // Create simplified settings UI
@@ -263,7 +264,14 @@ pub fn view_configuration_editor<'a>(
         .padding(10)
         .style(button::secondary);
 
-    let next_button = button(row![text(next_label), icons::send()].spacing(5).align_y(Alignment::Center))
+    // Use different icons based on the label
+    let next_icon = if next_label.contains("Save") {
+        icons::save()
+    } else {
+        icons::send()
+    };
+
+    let next_button = button(row![text(next_label), next_icon].spacing(5).align_y(Alignment::Center))
         .on_press(next_action)
         .padding(10)
         .style(button::primary);

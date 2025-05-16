@@ -9,10 +9,17 @@ pub fn view_select_existing_device<'a>(
     selected_device: Option<usize>,
     storage_devices: &'a [StorageDevice],
 ) -> Element<'a, Message> {
-    let title = text("Select Existing Device")
-        .size(30)
-        .width(Length::Fill)
-        .align_x(Horizontal::Center);
+    // Create a title with icon for device selection
+    let title = container(
+        row![
+            icons::edit(),
+            text("Select Existing Device").size(30)
+        ]
+        .spacing(10)
+        .align_y(Alignment::Center)
+    )
+    .width(Length::Fill)
+    .align_x(Horizontal::Center);
 
     let device_list = column(storage_devices.iter().enumerate().map(|(i, device)| {
         let device_info = row![
@@ -64,12 +71,12 @@ pub fn view_select_existing_device<'a>(
         .padding(10);
 
     let edit_config_button = if selected_device.is_some() {
-        button("Edit Configuration")
+        button(row![icons::edit(), "Edit Configuration"].spacing(5).align_y(Alignment::Center))
             .on_press(Message::GotoEditConfiguration)
             .style(button::primary)
             .padding(10)
     } else {
-        button("Edit Configuration")
+        button(row![icons::edit(), "Edit Configuration"].spacing(5).align_y(Alignment::Center))
             .style(button::primary)
             .padding(10)
     };

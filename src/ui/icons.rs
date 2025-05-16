@@ -93,3 +93,7 @@ pub fn tune() -> iced::widget::Text<'static> {
 pub fn send() -> iced::widget::Text<'static> {
     icon('\u{E163}')
 }
+
+pub fn edit() -> iced::widget::Text<'static> {
+    icon('\u{E3C9}')
+}

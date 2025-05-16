@@ -46,7 +46,9 @@ pub fn view_start_screen() -> Element<'static, Message> {
     })
     .on_press(Message::FlashNewImage);
 
-    let edit_button = button(container("Edit Existing Disk").center_x(Length::Fill))
+    let edit_button = button(
+        container(iced::widget::row![icons::edit(), "Edit Existing Disk"]).center_x(Length::Fill),
+    )
         .width(250)
         .padding(14)
         .style(button::secondary)

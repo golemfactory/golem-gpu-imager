@@ -8,9 +8,27 @@ mod utils;
 mod version;
 
 pub fn main() -> iced::Result {
+    // Initialize tracing with different default levels based on build profile
+    let default_level = if cfg!(debug) {
+        // In debug mode, show more detailed logs
+        "debug,golem_gpu_imager=debug,iced_winit=error"
+    } else {
+        // In release mode, only show info and above
+        "info,golem_gpu_imager=info,iced_winit=error"
+    };
+
+    // Allow overriding via environment variable
     let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info,iced_winit=error"));
-    tracing_subscriber::fmt().with_env_filter(filter).init();
+        .unwrap_or_else(|_| EnvFilter::new(default_level));
+
+    // Initialize the tracing subscriber
+    tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_file(true)
+        .with_line_number(true)
+        .init();
+
+    tracing::info!("Starting Golem GPU Imager {}", version::VERSION);
 
     let mut settings = Settings::default();
 
@@ -87,4 +105,33 @@ mod test {
 
         Ok(())
     }
-}
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+    #[ignore]
+    async fn test_find() -> Result<(), DynError> {
+        let client = Client::new().await?;
+        let path = "/dev/sda";
+        let mut spec = HashMap::new();
+        spec.insert("path", path.into());
+        let mut obj = client
+            .manager()
+            .resolve_device(spec, HashMap::default())
+            .await?;
+
+        let drive_path = client.object(obj.pop().unwrap())?.block().await?.drive().await?;
+        let mut spec = HashMap::new();
+        eprintln!("{:?}", drive_path);
+        spec.insert("drive", drive_path.into());
+        let mut obj = client
+            .manager()
+            .resolve_device(spec, HashMap::default())
+            .await?;
+        
+        
+        for obj_path in obj {
+            eprintln!("{:?}", obj_path);
+        }
+        Ok(())
+    }
+        
+    }

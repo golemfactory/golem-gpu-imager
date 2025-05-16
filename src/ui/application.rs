@@ -1,10 +1,11 @@
 use crate::models::{AppMode, ConfigurationPreset, EditState, FlashState, Message, NetworkType, OsImage, PaymentNetwork, StorageDevice};
 use crate::ui;
 use crate::utils::repo::{DownloadStatus, ImageRepo, Version};
-use crate::utils::PresetManager;
+use crate::utils::{PresetManager, Disk};
 use futures_util::FutureExt;
 use iced::task::Sipper;
 use iced::{Alignment, Element, Length, Task};
+use tracing::{debug, error, info, trace, warn};
 use std::sync::Arc;
 
 pub struct GolemGpuImager {
@@ -21,6 +22,8 @@ pub struct GolemGpuImager {
     pub new_preset_name: String,
     pub show_preset_manager: bool,
     pub preset_manager: Option<PresetManager>,
+    pub locked_disk: Option<Disk>,
+    pub error_message: Option<String>,
 }
 
 impl GolemGpuImager {
@@ -35,7 +38,7 @@ impl GolemGpuImager {
                 Some(manager)
             },
             Err(e) => {
-                println!("Failed to initialize preset manager: {}", e);
+                error!("Failed to initialize preset manager: {}", e);
                 None
             }
         };
@@ -91,6 +94,8 @@ impl GolemGpuImager {
             new_preset_name: String::new(),
             show_preset_manager: false,
             preset_manager,
+            locked_disk: None,
+            error_message: None,
         }
     }
 
@@ -185,6 +190,8 @@ impl GolemGpuImager {
             Message::EditExistingDisk => {
                 self.mode = AppMode::EditExistingDisk(EditState::SelectDevice);
                 self.selected_device = None;
+                // Clear any previous error messages
+                self.error_message = None;
                 let devices = rs_drivelist::drive_list().unwrap();
                 self.storage_devices = devices
                     .into_iter()
@@ -343,7 +350,7 @@ impl GolemGpuImager {
                 }
 
                 // Display error in UI or log it
-                println!("Download failed for {}: {}", version_id, error);
+                warn!("Download failed for {}: {}", version_id, error);
             }
             Message::RepoDataLoaded(os_images) => {
                 self.is_loading_repo = false;
@@ -575,7 +582,7 @@ impl GolemGpuImager {
                     if !wallet_address.is_empty() && !is_wallet_valid {
                         // Show error or return (we'll just return for now, but ideally
                         // there should be some error shown to the user)
-                        println!(
+                        warn!(
                             "Cannot proceed, wallet address is invalid: {}",
                             wallet_address
                         );
@@ -584,7 +591,7 @@ impl GolemGpuImager {
 
                     // Here you would apply the configuration (payment_network, subnet, network_type, wallet_address)
                     // to the image before flashing
-                    println!(
+                    info!(
                         "Starting flash with config: {:?} {:?} {} {}",
                         payment_network, network_type, subnet, wallet_address
                     );
@@ -614,45 +621,145 @@ impl GolemGpuImager {
             }
             Message::SelectExistingDevice(index) => {
                 self.selected_device = Some(index);
+                // Update the mode to navigate back to device selection
+                if let AppMode::EditExistingDisk(_) = &self.mode {
+                    // Release any locked disk when going back to device selection
+                    self.locked_disk = None;
+                    // Clear any error messages
+                    self.error_message = None;
+                    self.mode = AppMode::EditExistingDisk(EditState::SelectDevice);
+                }
             }
             Message::GotoEditConfiguration => {
                 if let AppMode::EditExistingDisk(_) = &self.mode {
-                    // Check if we have a default preset
-                    if let Some(default_preset) = self.get_default_preset() {
-                        let is_wallet_valid = if default_preset.wallet_address.is_empty() {
-                            false
-                        } else {
-                            crate::utils::eth::is_valid_eth_address(&default_preset.wallet_address)
-                        };
+                    // Get the selected device path
+                    if let Some(device_index) = self.selected_device {
+                        if let Some(device) = self.storage_devices.get(device_index) {
+                            // Clear any previous error messages
+                            self.error_message = None;
 
-                        // In a real application, you would first read device values,
-                        // then apply preset values as a starting point for editing
+                            // Attempt to lock the device
+                            let device_path = device.path.clone();
 
-                        // Use the default preset values
-                        self.mode = AppMode::EditExistingDisk(EditState::EditConfiguration {
-                            payment_network: default_preset.payment_network,
-                            subnet: default_preset.subnet.clone(),
-                            network_type: default_preset.network_type,
-                            wallet_address: default_preset.wallet_address.clone(),
-                            is_wallet_valid,
-                        });
-
-                        // Find and select the default preset
-                        self.selected_preset = self.configuration_presets
-                            .iter()
-                            .position(|p| p.is_default);
-                    } else {
-                        // Initialize with default values or read from device
-                        // In a real application, you would read these values from the device
-                        self.mode = AppMode::EditExistingDisk(EditState::EditConfiguration {
-                            payment_network: crate::models::PaymentNetwork::Testnet,
-                            subnet: "public".to_string(),
-                            network_type: crate::models::NetworkType::Hybrid,
-                            wallet_address: "".to_string(),
-                            is_wallet_valid: false,
-                        });
-                        self.selected_preset = None;
+                            // Return a task that will lock the device and update the state
+                            return Task::perform(
+                                async move {
+                                    // Try to acquire exclusive lock on the device
+                                    match Disk::lock_path(&device_path).await {
+                                        Ok(disk) => (Some(disk), None),
+                                        Err(err) => {
+                                            // Format a more user-friendly error message
+                                            let error_msg = format!("Failed to lock device {}: {}", device_path, err);
+                                            error!("{}", error_msg);
+                                            (None, Some(error_msg))
+                                        }
+                                    }
+                                },
+                                move |(disk, error)| {
+                                    if let Some(disk) = disk {
+                                        // Successfully locked the device, proceed with configuration
+                                        Message::DeviceLocked(Some(disk))
+                                    } else if let Some(error_msg) = error {
+                                        // Show error message to the user
+                                        Message::ShowError(error_msg)
+                                    } else {
+                                        // This should never happen but handle it just in case
+                                        Message::ShowError("Failed to lock device: Unknown error".to_string())
+                                    }
+                                }
+                            );
+                        }
                     }
+                }
+            }
+
+            Message::DeviceLocked(disk) => {
+                // Store the locked disk
+                self.locked_disk = disk;
+
+                // If this message is a result of the SaveConfiguration task, check current mode
+                if let AppMode::EditExistingDisk(EditState::EditConfiguration { .. }) = &self.mode {
+                    if self.locked_disk.is_some() {
+                        // We got the disk back after writing configuration, proceed to completion
+                        self.mode = AppMode::EditExistingDisk(EditState::Completion(true));
+                    } else {
+                        // Disk was somehow lost, show error
+                        self.error_message = Some("Failed to maintain disk lock after configuration".to_string());
+                        self.mode = AppMode::EditExistingDisk(EditState::Completion(false));
+                    }
+                    return Task::none();
+                }
+
+                // This is initial device locking, not a result of SaveConfiguration
+                // First try to read configuration from the disk
+                let config_partition_uuid = "33b921b8-edc5-46a0-8baa-d0b7ad84fc71";
+                let mut config_from_disk = None;
+
+                if let Some(disk) = &mut self.locked_disk {
+                    // Try to read the configuration from the disk
+                    match disk.read_configuration(config_partition_uuid) {
+                        Ok(config) => {
+                            info!("Successfully read configuration from disk");
+                            config_from_disk = Some(config);
+                        }
+                        Err(e) => {
+                            // Not a fatal error - we'll just use default values
+                            warn!("Failed to read configuration from disk: {}", e);
+                        }
+                    }
+                }
+
+                // If we successfully read the configuration from disk, use it
+                if let Some(config) = config_from_disk {
+                    let is_wallet_valid = if config.wallet_address.is_empty() {
+                        false
+                    } else {
+                        crate::utils::eth::is_valid_eth_address(&config.wallet_address)
+                    };
+
+                    // Use the configuration values from the disk
+                    self.mode = AppMode::EditExistingDisk(EditState::EditConfiguration {
+                        payment_network: config.payment_network,
+                        subnet: config.subnet,
+                        network_type: config.network_type,
+                        wallet_address: config.wallet_address,
+                        is_wallet_valid,
+                    });
+
+                    // Reset selected preset as we're loading from disk
+                    self.selected_preset = None;
+                }
+                // Otherwise check if we have a default preset
+                else if let Some(default_preset) = self.get_default_preset() {
+                    let is_wallet_valid = if default_preset.wallet_address.is_empty() {
+                        false
+                    } else {
+                        crate::utils::eth::is_valid_eth_address(&default_preset.wallet_address)
+                    };
+
+                    // Use the default preset values
+                    self.mode = AppMode::EditExistingDisk(EditState::EditConfiguration {
+                        payment_network: default_preset.payment_network,
+                        subnet: default_preset.subnet.clone(),
+                        network_type: default_preset.network_type,
+                        wallet_address: default_preset.wallet_address.clone(),
+                        is_wallet_valid,
+                    });
+
+                    // Find and select the default preset
+                    self.selected_preset = self.configuration_presets
+                        .iter()
+                        .position(|p| p.is_default);
+                } else {
+                    // Initialize with default values
+                    self.mode = AppMode::EditExistingDisk(EditState::EditConfiguration {
+                        payment_network: crate::models::PaymentNetwork::Testnet,
+                        subnet: "public".to_string(),
+                        network_type: crate::models::NetworkType::Hybrid,
+                        wallet_address: "".to_string(),
+                        is_wallet_valid: false,
+                    });
+                    self.selected_preset = None;
                 }
             }
             Message::SaveConfiguration => {
@@ -665,25 +772,118 @@ impl GolemGpuImager {
                 }) = &self.mode {
                     // Check if wallet address is valid before proceeding
                     if !wallet_address.is_empty() && !is_wallet_valid {
-                        // Show error or return (we'll just return for now, but ideally
-                        // there should be some error shown to the user)
-                        println!(
+                        // Show error to the user
+                        let error_msg = format!(
                             "Cannot save, wallet address is invalid: {}",
                             wallet_address
                         );
+                        error!("{}", error_msg);
+                        self.error_message = Some(error_msg);
                         return Task::none();
                     }
 
-                    // In a real app, we would save the configuration here
-                    println!(
-                        "Saving config: {:?} {:?} {} {}",
-                        payment_network, network_type, subnet, wallet_address
-                    );
+                    // Check if we have a locked disk
+                    if self.locked_disk.is_none() {
+                        let error_msg = "Error: No locked disk available for writing. Device may have been disconnected.";
+                        error!("{}", error_msg);
+                        self.error_message = Some(error_msg.to_string());
+                        self.mode = AppMode::EditExistingDisk(EditState::Completion(false));
+                        return Task::none();
+                    }
 
-                    self.mode = AppMode::EditExistingDisk(EditState::Completion(true));
+                    // Make clones of all data needed for the async task
+                    let payment_network = *payment_network;
+                    let network_type = *network_type;
+                    let subnet = subnet.clone();
+                    let wallet_address = wallet_address.clone();
+
+                    // Create a handle to the locked disk that can be sent to the async task
+                    // We need to do this because we can't send the locked_disk directly (it doesn't implement Clone)
+                    let mut locked_disk = self.locked_disk.take();
+
+                    // Use the config partition UUID
+                    // In a real application, this UUID would be a constant or configuration value
+                    let config_partition_uuid = "33b921b8-edc5-46a0-8baa-d0b7ad84fc71";
+
+                    // Write the configuration in a separate task
+                    return Task::perform(
+                        async move {
+                            // If we don't have a locked disk, we can't write the configuration
+                            if locked_disk.is_none() {
+                                return (false, Some("No locked disk available".to_string()), None);
+                            }
+
+                            let mut disk = locked_disk.unwrap();
+
+                            info!(
+                                "Writing config to disk: {:?} {:?} {} {}",
+                                payment_network, network_type, subnet, wallet_address
+                            );
+
+                            // Use the write_configuration function to write to the disk
+                            match disk.write_configuration(
+                                config_partition_uuid,
+                                payment_network,
+                                network_type,
+                                &subnet,
+                                &wallet_address
+                            ) {
+                                Ok(_) => {
+                                    // Configuration was successfully written
+                                    (true, None, Some(disk))
+                                }
+                                Err(e) => {
+                                    // There was an error writing the configuration
+                                    let error_msg = format!("Failed to write configuration: {}", e);
+                                    (false, Some(error_msg), Some(disk))
+                                }
+                            }
+                        },
+                        |(success, error_msg, disk)| {
+                            // Return the disk to self.locked_disk if available
+                            if let Some(d) = disk {
+                                Message::DeviceLocked(Some(d))
+                            } else if success {
+                                // Configuration saved successfully
+                                Message::ConfigurationSaved
+                            } else {
+                                // Configuration save failed
+                                if let Some(msg) = error_msg {
+                                    Message::ShowError(msg)
+                                } else {
+                                    Message::ConfigurationSaveFailed
+                                }
+                            }
+                        }
+                    );
                 }
+
+                return Task::none();
+            }
+
+            Message::ConfigurationSaved => {
+                // Release the lock on successful save
+                self.locked_disk = None;
+                self.mode = AppMode::EditExistingDisk(EditState::Completion(true));
+            }
+
+            Message::ConfigurationSaveFailed => {
+                // Keep the lock on failure so user can retry
+                self.mode = AppMode::EditExistingDisk(EditState::Completion(false));
+            }
+
+            Message::ShowError(error_msg) => {
+                // Store the error message for display
+                self.error_message = Some(error_msg);
+
+                // Go back to device selection mode
+                self.mode = AppMode::EditExistingDisk(EditState::SelectDevice);
             }
             Message::BackToMainMenu => {
+                // Release any locked disk when going back to main menu
+                self.locked_disk = None;
+                // Clear any error messages
+                self.error_message = None;
                 self.mode = AppMode::StartScreen;
             }
             // Handle preset-related messages
@@ -702,7 +902,7 @@ impl GolemGpuImager {
                         // Add the preset to the PresetManager first to persist it
                         if let Some(manager) = &mut self.preset_manager {
                             if let Err(e) = manager.add_preset(new_preset.clone()) {
-                                println!("Failed to add preset to manager: {}", e);
+                                error!("Failed to add preset to manager: {}", e);
                             }
 
                             // Refresh our local copy from the manager
@@ -739,11 +939,11 @@ impl GolemGpuImager {
             }
             Message::SavePresetsToStorage => {
                 // This would be implemented with actual persistence
-                println!("Saved {} presets to storage", self.configuration_presets.len());
+                info!("Saved {} presets to storage", self.configuration_presets.len());
             }
             Message::LoadPresetsFromStorage => {
                 // This would be implemented with actual persistence
-                println!("Loaded presets from storage");
+                info!("Loaded presets from storage");
             }
             Message::TogglePresetManager => {
                 // Toggle preset management UI visibility
@@ -807,7 +1007,9 @@ impl GolemGpuImager {
             },
             AppMode::EditExistingDisk(state) => match state {
                 EditState::SelectDevice => {
-                    ui::view_select_existing_device(self.selected_device, &self.storage_devices)
+                    // Pass the error message to the view if one exists
+                    let error_ref = self.error_message.as_deref();
+                    ui::view_select_existing_device(self.selected_device, &self.storage_devices, error_ref)
                 }
                 EditState::EditConfiguration {
                     payment_network,
@@ -999,7 +1201,7 @@ impl GolemGpuImager {
             let mut preset = self.configuration_presets[preset_index].clone();
             preset.is_default = true;
             if let Err(e) = manager.set_default_preset(preset_index) {
-                println!("Failed to set default preset in manager: {}", e);
+                error!("Failed to set default preset in manager: {}", e);
             }
         }
     }
@@ -1013,7 +1215,7 @@ impl GolemGpuImager {
         // Delete the preset from the PresetManager first
         if let Some(manager) = &mut self.preset_manager {
             if let Err(e) = manager.delete_preset(preset_index) {
-                println!("Failed to delete preset from manager: {}", e);
+                error!("Failed to delete preset from manager: {}", e);
             }
         }
 
@@ -1038,7 +1240,7 @@ impl GolemGpuImager {
             // Update the default preset in the PresetManager
             if let Some(manager) = &mut self.preset_manager {
                 if let Err(e) = manager.set_default_preset(0) {
-                    println!("Failed to set new default preset after deletion: {}", e);
+                    error!("Failed to set new default preset after deletion: {}", e);
                 }
             }
         }

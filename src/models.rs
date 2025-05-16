@@ -144,4 +144,12 @@ pub enum Message {
     SetPresetName(String),          // Set name for new preset
     TogglePresetManager,            // Toggle preset management UI visibility
     BackToSelectOsImage,            // Go back to the OS image selection screen
+    DeviceLocked(Option<crate::utils::Disk>), // Device has been locked for editing
+    ConfigurationSaved,             // Configuration has been saved to device
+    ConfigurationSaveFailed,        // Failed to save configuration to device
+    ShowError(String),              // Show an error message to the user
+    DeviceLockedForWriting(crate::utils::Disk, String), // Device locked for writing with image path
+    WriteProgress(f32),             // Update the writing progress
+    WriteImageCompleted,            // Image write completed successfully
+    WriteImageFailed(String),       // Image write failed with error message
 }

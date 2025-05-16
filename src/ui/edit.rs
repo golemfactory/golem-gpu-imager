@@ -8,6 +8,7 @@ use crate::ui::icons;
 pub fn view_select_existing_device<'a>(
     selected_device: Option<usize>,
     storage_devices: &'a [StorageDevice],
+    error_message: Option<&'a str>,
 ) -> Element<'a, Message> {
     // Create a title with icon for device selection
     let title = container(
@@ -81,8 +82,38 @@ pub fn view_select_existing_device<'a>(
             .padding(10)
     };
 
+    // Error message container (only shown if error_message is Some)
+    let error_container = if let Some(error) = error_message {
+        container(
+            row![
+                icons::error().color(Color::from_rgb(0.8, 0.0, 0.0)),
+                text(error).size(16).color(Color::from_rgb(0.8, 0.0, 0.0))
+            ]
+            .spacing(10)
+            .align_y(Alignment::Center)
+        )
+        .width(Length::Fill)
+        .padding(15)
+        .style(|theme| {
+            container::Style {
+                text_color: Some(Color::from_rgb(0.8, 0.0, 0.0)),
+                background: Some(Color::from_rgb(1.0, 0.9, 0.9).into()),
+                border: iced::Border {
+                    radius: 5.0.into(),
+                    width: 1.0,
+                    color: Color::from_rgb(0.8, 0.0, 0.0),
+                },
+                ..container::Style::default()
+            }
+        })
+    } else {
+        // Empty container if no error
+        container(text("")).height(0).width(0)
+    };
+
     let content = column![
         title,
+        error_container,  // Add error message container
         device_list,
         spacer,
         row![back_button, refresh_button, edit_config_button].spacing(20)

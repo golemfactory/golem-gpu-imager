@@ -24,3 +24,5 @@
 # Dependency directory
 /.cargo/
 **/CLAUDE.local.md
+
+**/.claude/settings.local.json

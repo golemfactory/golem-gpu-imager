@@ -1,4 +1,4 @@
-use ethers_core::types::Address;
+use ethereum_types::Address;
 use std::str::FromStr;
 
 /// Validates an Ethereum address with checksum validation

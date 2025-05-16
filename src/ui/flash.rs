@@ -68,13 +68,13 @@ pub fn view_select_os_image<'a>(
 
     // Navigation buttons
     let next_button = if selected_os_image.is_some() {
-        button(container(row!["Configure Settings", icons::navigate_next()]).center_x(Length::Fill))
-            .on_press(Message::GotoConfigureSettings)
+        button(container(row!["Select Target Device", icons::navigate_next()]).center_x(Length::Fill))
+            .on_press(Message::DownloadCompleted(selected_os_image.map(|i| os_images[i].version.clone()).unwrap_or_default()))
             .padding(12)
             .width(220)
             .style(button::primary)
     } else {
-        button("Next: Configure Settings")
+        button("Next: Select Target Device")
             .padding(12)
             .width(220)
             .style(button::primary)
@@ -566,7 +566,7 @@ pub fn view_configure_settings<'a>(
         Message::BackToSelectOsImage,
         Message::WriteImage,
         "Back",
-        "Start Writing",
+        "Write Image to Device",
         configuration_presets,
         selected_preset,
         new_preset_name,
@@ -574,7 +574,7 @@ pub fn view_configure_settings<'a>(
     )
 }
 
-pub fn view_select_target_device<'a>(storage_devices: &'a [StorageDevice]) -> Element<'a, Message> {
+pub fn view_select_target_device<'a>(storage_devices: &'a [StorageDevice], selected_device: Option<usize>) -> Element<'a, Message> {
     let title = text("Select Target Device")
         .size(30)
         .width(Length::Fill)
@@ -584,27 +584,65 @@ pub fn view_select_target_device<'a>(storage_devices: &'a [StorageDevice]) -> El
         .size(16)
         .color(Color::from_rgb(1.0, 0.0, 0.0));
 
-    let device_list = column(storage_devices.iter().enumerate().map(|(i, device)| {
-        let device_info = column![
-            text(&device.name).size(20),
-            text(format!("Path: {}", device.path)).size(16),
-            text(format!("Size: {}", device.size)).size(16),
-        ]
-        .spacing(5)
-        .width(Length::Fill);
-
-        let select_button = button("Select")
-            .on_press(Message::SelectTargetDevice(i))
-            .padding(10);
-
-        row![device_info, select_button,]
+    // Device list or message if no devices found
+    let device_list: Element<'a, Message> = if storage_devices.is_empty() {
+        // Show message when no devices are available
+        container(
+            column![
+                text("No storage devices found").size(20),
+                text("Please connect a USB drive or SD card and try again").size(16),
+                button(
+                    row![
+                        icons::refresh(),
+                        text("Refresh Devices").size(16)
+                    ]
+                    .spacing(8)
+                    .align_y(Alignment::Center)
+                )
+                .on_press(Message::RefreshRepoData) // Reuse this message to trigger a refresh
+                .padding(12)
+                .style(button::primary)
+            ]
             .spacing(20)
-            .padding(10)
+            .align_x(Alignment::Center)
+        )
+        .width(Length::Fill)
+        .padding(30)
+        .style(crate::style::bordered_box)
+        .into()
+    } else {
+        // Show actual device list
+        column(storage_devices.iter().enumerate().map(|(i, device)| {
+            let is_selected = selected_device == Some(i);
+            
+            let device_info = column![
+                text(&device.name).size(20),
+                text(format!("Path: {}", device.path)).size(16),
+                text(format!("Size: {}", device.size)).size(16),
+            ]
+            .spacing(5)
+            .width(Length::Fill);
+
+            let select_button = button(if is_selected { "Selected" } else { "Select" })
+                .on_press(Message::SelectTargetDevice(i))
+                .padding(10)
+                .style(if is_selected { button::success } else { button::secondary });
+
+            container(
+                row![device_info, select_button,]
+                    .spacing(20)
+                    .padding(10)
+                    .width(Length::Fill)
+                    .align_y(Alignment::Center)
+            )
+            .style(if is_selected { container::success } else { crate::style::bordered_box })
             .width(Length::Fill)
             .into()
-    }))
-    .spacing(10)
-    .width(Length::Fill);
+        }))
+        .spacing(10)
+        .width(Length::Fill)
+        .into()
+    };
 
     // Add a spacer to push buttons to the bottom
     let spacer = Container::new(Column::new())
@@ -616,12 +654,34 @@ pub fn view_select_target_device<'a>(storage_devices: &'a [StorageDevice]) -> El
         .padding(10)
         .style(button::secondary);
 
-    let write_button = button(row![text("Write Image"), icons::send()].spacing(5).align_y(Alignment::Center))
-        .on_press(Message::WriteImage)
-        .padding(10)
-        .style(button::primary);
+    // Only enable the next button if a device is selected
+    let next_button = if selected_device.is_some() {
+        button(row![text("Next: Configure Settings"), icons::navigate_next()].spacing(5).align_y(Alignment::Center))
+            .on_press(Message::GotoConfigureSettings)
+            .padding(10)
+            .style(button::primary)
+    } else {
+        button(row![text("Select a device to continue"), icons::navigate_next()].spacing(5).align_y(Alignment::Center))
+            .padding(10)
+            // Use a custom style for disabled buttons
+            .style(|theme, _| {
+                let palette = theme.extended_palette();
+                
+                button::Style {
+                    background: Some(palette.background.weak.color.into()),
+                    text_color: palette.background.strong.text,
+                    border: iced::Border {
+                        color: palette.background.weak.color,
+                        width: 1.0,
+                        radius: 2.0.into(),
+                    },
+                    shadow: iced::Shadow::default(),
+                    ..button::Style::default()
+                }
+            })
+    };
 
-    let buttons = row![back_button, write_button,]
+    let buttons = row![back_button, next_button,]
         .spacing(10)
         .width(Length::Fill)
         .align_y(Alignment::Center);
@@ -657,11 +717,13 @@ pub fn view_writing_process(progress: f32) -> Element<'static, Message> {
     let progress_percentage = (progress * 100.0) as i32;
     let progress_text = text(format!("{}%", progress_percentage)).size(25);
 
-    // Description text
+    // Description text - show different steps based on progress
     let step_text = text(match progress_percentage {
-        0..=33 => "Preparing disk...",
-        34..=66 => "Writing image data...",
-        _ => "Verifying written data...",
+        0..=10 => "Preparing disk for write operation...",
+        11..=33 => "Writing partition table and boot sectors...",
+        34..=89 => "Writing OS image data to disk...",
+        90..=99 => "Verifying written data and finalizing...",
+        _ => "Write operation nearly complete...",
     })
     .size(16);
 
@@ -759,9 +821,13 @@ pub fn view_flash_completion(success: bool) -> Element<'static, Message> {
     // Status message
     let status_message = text(
         if success {
-            "The Golem GPU OS image was successfully written to the device.\nYour device is now ready to use."
+            "The Golem GPU OS image was successfully written to the device.\n\
+            Your device is now configured and ready to use with Golem Network.\n\
+            You can safely remove the device and boot your system with it."
         } else {
-            "There was an error writing the image to the device.\nPlease check your device and try again."
+            "There was an error writing the image to the device.\n\
+            This could be due to a write-protected device, insufficient permissions,\n\
+            or hardware issues. Please check your device and try again."
         }
     )
     .size(16);

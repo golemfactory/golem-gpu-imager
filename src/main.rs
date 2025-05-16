@@ -43,7 +43,7 @@ pub fn main() -> iced::Result {
     .title(ui::application::GolemGpuImager::title)
     .font(ui::ICON_FONT)
     .window(settings)
-    .window_size(iced::Size::new(560f32, 720f32))
+    .window_size(iced::Size::new(560f32 + 80f32, 720f32))
     .theme(|_| style::custom_theme())
     .centered()
     .run()

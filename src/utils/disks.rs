@@ -223,6 +223,89 @@ impl Disk {
         }
     }
 
+    /// Write an image file to the disk with progress reporting
+    ///
+    /// # Arguments
+    /// * `image_path` - The path to the OS image file to write
+    /// * `progress_callback` - Callback function to report progress (0.0 to 1.0)
+    ///
+    /// # Returns
+    /// * `Result<()>` - Ok on success, Error on failure
+    pub async fn write_image<F>(&mut self, image_path: &str, progress_callback: F) -> Result<()>
+    where
+        F: FnMut(f32) + Send + 'static,
+    {
+        // Implementation uses a separate task to write the image to the disk
+        // while reporting progress through the callback
+
+        let mut callback = progress_callback;
+
+        // Open the image file
+        let mut image_file = std::fs::File::open(image_path)
+            .with_context(|| format!("Failed to open image file: {}", image_path))?;
+
+        // Get image file size
+        let image_size = image_file.metadata()
+            .with_context(|| format!("Failed to get image file metadata: {}", image_path))?
+            .len();
+
+        if image_size == 0 {
+            return Err(anyhow!("Image file is empty"));
+        }
+
+        // Seek to the beginning of the disk
+        self.file.seek(SeekFrom::Start(0))
+            .context("Failed to seek to beginning of disk")?;
+
+        // Set up a buffer for reading/writing
+        const BUFFER_SIZE: usize = 4 * 1024 * 1024; // 4 MB buffer
+        let mut buffer = vec![0u8; BUFFER_SIZE];
+
+        let mut total_written: u64 = 0;
+
+        // Report initial progress
+        callback(0.0);
+
+        // Read and write in chunks
+        loop {
+            // Read a chunk from the image file
+            let bytes_read = image_file.read(&mut buffer)
+                .context("Failed to read from image file")?;
+
+            if bytes_read == 0 {
+                // End of file reached
+                break;
+            }
+
+            // Write the chunk to the disk
+            self.file.write_all(&buffer[..bytes_read])
+                .context("Failed to write to disk")?;
+
+            // Update progress
+            total_written += bytes_read as u64;
+            let progress = total_written as f32 / image_size as f32;
+            callback(progress);
+
+            // If we've read less than the buffer size, we're at the end
+            if bytes_read < BUFFER_SIZE {
+                break;
+            }
+        }
+
+        // Flush to ensure all data is written
+        self.file.flush()
+            .context("Failed to flush data to disk")?;
+
+        // Sync data to disk
+        self.file.sync_all()
+            .context("Failed to sync data to disk")?;
+
+        // Report completion
+        callback(1.0);
+
+        Ok(())
+    }
+
     /// Read Golem configuration from a partition
     ///
     /// # Arguments

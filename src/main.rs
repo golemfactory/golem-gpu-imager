@@ -9,17 +9,23 @@ mod version;
 
 pub fn main() -> iced::Result {
     // Initialize tracing with different default levels based on build profile
-    let default_level = if cfg!(debug) {
+    let default_level = if cfg!(debug_assertions) {
         // In debug mode, show more detailed logs
         "debug,golem_gpu_imager=debug,iced_winit=error"
     } else {
         // In release mode, only show info and above
         "info,golem_gpu_imager=info,iced_winit=error"
     };
-
+    
+    // On Windows, enable ANSI support for colored terminal output
+    #[cfg(windows)]
+    {
+        enable_ansi_support();
+    }
+    
     // Allow overriding via environment variable
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(default_level));
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_level));
 
     // Initialize the tracing subscriber
     tracing_subscriber::fmt()
@@ -47,6 +53,32 @@ pub fn main() -> iced::Result {
     .theme(|_| style::custom_theme())
     .centered()
     .run()
+}
+
+#[cfg(windows)]
+fn enable_ansi_support() {
+    // Enable ANSI terminal processing on Windows
+    use windows_sys::Win32::System::Console::{GetStdHandle, SetConsoleMode, STD_OUTPUT_HANDLE, ENABLE_VIRTUAL_TERMINAL_PROCESSING};
+    
+    unsafe {
+        let handle = GetStdHandle(STD_OUTPUT_HANDLE);
+        if handle == 0 {
+            return;
+        }
+        
+        let mut mode: u32 = 0;
+        
+        // Get current console mode
+        if windows_sys::Win32::System::Console::GetConsoleMode(handle, &mut mode) == 0 {
+            return;
+        }
+        
+        // Enable ANSI processing
+        mode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+        
+        // Set the new mode
+        let _ = SetConsoleMode(handle, mode);
+    }
 }
 
 #[cfg(test)]
@@ -118,7 +150,12 @@ mod test {
             .resolve_device(spec, HashMap::default())
             .await?;
 
-        let drive_path = client.object(obj.pop().unwrap())?.block().await?.drive().await?;
+        let drive_path = client
+            .object(obj.pop().unwrap())?
+            .block()
+            .await?
+            .drive()
+            .await?;
         let mut spec = HashMap::new();
         eprintln!("{:?}", drive_path);
         spec.insert("drive", drive_path.into());
@@ -126,12 +163,10 @@ mod test {
             .manager()
             .resolve_device(spec, HashMap::default())
             .await?;
-        
-        
+
         for obj_path in obj {
             eprintln!("{:?}", obj_path);
         }
         Ok(())
     }
-        
-    }
+}

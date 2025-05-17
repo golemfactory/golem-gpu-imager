@@ -1,12 +1,16 @@
-use crate::models::{AppMode, ConfigurationPreset, EditState, FlashState, Message, NetworkType, OsImage, PaymentNetwork, StorageDevice};
+use crate::models::{
+    AppMode, ConfigurationPreset, EditState, FlashState, Message, NetworkType, OsImage,
+    PaymentNetwork, StorageDevice,
+};
 use crate::ui;
+use crate::utils::disks::WriteProgress;
 use crate::utils::repo::{DownloadStatus, ImageRepo, Version};
-use crate::utils::{PresetManager, Disk};
-use futures_util::FutureExt;
-use iced::task::Sipper;
+use crate::utils::{Disk, PresetManager};
+use anyhow::anyhow;
+use futures_util::TryStreamExt;
 use iced::{Alignment, Element, Length, Task};
-use tracing::{debug, error, info, trace, warn};
 use std::sync::Arc;
+use tracing::{debug, error, info, warn};
 
 pub struct GolemGpuImager {
     pub mode: AppMode,
@@ -36,7 +40,7 @@ impl GolemGpuImager {
                 // Initialize with default presets if needed
                 let _ = manager.init_with_defaults();
                 Some(manager)
-            },
+            }
             Err(e) => {
                 error!("Failed to initialize preset manager: {}", e);
                 None
@@ -71,7 +75,7 @@ impl GolemGpuImager {
 
         Self {
             mode: AppMode::StartScreen,
-            os_images: vec![], // Will be populated from repo
+            os_images: vec![],       // Will be populated from repo
             storage_devices: vec![], // Will be populated when needed
             selected_os_image: None,
             selected_device: None,
@@ -181,7 +185,7 @@ impl GolemGpuImager {
                 self.selected_device = None;
                 // Clear any previous error messages
                 self.error_message = None;
-                
+
                 // Get list of removable storage devices
                 info!("Getting available storage devices");
                 match rs_drivelist::drive_list() {
@@ -196,14 +200,15 @@ impl GolemGpuImager {
                                 size: format!("{:.2} GB", d.size as f64 / 1000.0 / 1000.0 / 1000.0),
                             })
                             .collect();
-                        
+
                         debug!("Found {} available devices", self.storage_devices.len());
-                    },
+                    }
                     Err(e) => {
                         error!("Failed to get drive list: {}", e);
                         // In case of error, provide an empty list
                         self.storage_devices = vec![];
-                        self.error_message = Some(format!("Failed to detect storage devices: {}", e));
+                        self.error_message =
+                            Some(format!("Failed to detect storage devices: {}", e));
                     }
                 }
             }
@@ -340,19 +345,19 @@ impl GolemGpuImager {
                                 size: format!("{:.2} GB", d.size as f64 / 1000.0 / 1000.0 / 1000.0),
                             })
                             .collect();
-                        
+
                         debug!("Found {} available devices", self.storage_devices.len());
-                        
+
                         // Clear any previous device selection
                         self.selected_device = None;
-                    },
+                    }
                     Err(e) => {
                         error!("Failed to get drive list: {}", e);
                         // In case of error, provide an empty list
                         self.storage_devices = vec![];
                     }
                 }
-                
+
                 // ALWAYS go to the device selection screen after this message
                 // Either after a download completes or when clicking next from image selection
                 debug!("Moving to device selection screen");
@@ -399,15 +404,18 @@ impl GolemGpuImager {
                                 .map(|d| StorageDevice {
                                     name: d.description,
                                     path: d.device,
-                                    size: format!("{:.2} GB", d.size as f64 / 1000.0 / 1000.0 / 1000.0),
+                                    size: format!(
+                                        "{:.2} GB",
+                                        d.size as f64 / 1000.0 / 1000.0 / 1000.0
+                                    ),
                                 })
                                 .collect();
-                            
+
                             debug!("Found {} available devices", self.storage_devices.len());
-                            
+
                             // Clear any previous device selection
                             self.selected_device = None;
-                        },
+                        }
                         Err(e) => {
                             error!("Failed to get drive list: {}", e);
                             // In case of error, provide an empty list
@@ -416,7 +424,7 @@ impl GolemGpuImager {
                     }
                     return Task::none();
                 }
-                
+
                 // Default behavior - refresh repository data
                 if !self.is_loading_repo {
                     return self.load_repo_data();
@@ -430,9 +438,12 @@ impl GolemGpuImager {
                         error!("No device selected");
                         return Task::none();
                     }
-                    
-                    info!("Proceeding to configuration with device {}", self.selected_device.unwrap());
-                
+
+                    info!(
+                        "Proceeding to configuration with device {}",
+                        self.selected_device.unwrap()
+                    );
+
                     // Check if we have a default preset
                     if let Some(default_preset) = self.get_default_preset() {
                         let is_wallet_valid = if default_preset.wallet_address.is_empty() {
@@ -451,9 +462,8 @@ impl GolemGpuImager {
                         });
 
                         // Find and select the default preset
-                        self.selected_preset = self.configuration_presets
-                            .iter()
-                            .position(|p| p.is_default);
+                        self.selected_preset =
+                            self.configuration_presets.iter().position(|p| p.is_default);
                     } else {
                         // Initialize with default values if no preset
                         self.mode = AppMode::FlashNewImage(FlashState::ConfigureSettings {
@@ -627,8 +637,8 @@ impl GolemGpuImager {
                 // Set the selected device index
                 self.selected_device = Some(index);
                 debug!("Selected device index: {}", index);
-                
-                // Stay on the device selection screen - we'll move to configuration 
+
+                // Stay on the device selection screen - we'll move to configuration
                 // only when the user clicks the Write button
                 self.mode = AppMode::FlashNewImage(FlashState::SelectTargetDevice);
             }
@@ -639,12 +649,12 @@ impl GolemGpuImager {
                     error!("No OS image selected for writing");
                     return Task::none();
                 }
-                
+
                 if self.selected_device.is_none() {
                     error!("No target device selected for writing");
                     return Task::none();
                 }
-                
+
                 // Extract needed data from the current mode
                 let config_data = if let AppMode::FlashNewImage(FlashState::ConfigureSettings {
                     payment_network,
@@ -665,120 +675,77 @@ impl GolemGpuImager {
                         return Task::none();
                     }
 
-                    // Collect the data we need for the task 
-                    Some((*payment_network, *network_type, subnet.clone(), wallet_address.clone()))
+                    // Collect the data we need for the task
+                    Some((
+                        *payment_network,
+                        *network_type,
+                        subnet.clone(),
+                        wallet_address.clone(),
+                    ))
                 } else {
                     None
                 };
-                
+
                 // Only proceed if we have valid configuration data
-                if let Some((payment_network_val, network_type_val, subnet_val, wallet_address_val)) = config_data {
+                if let Some((
+                    payment_network_val,
+                    network_type_val,
+                    subnet_val,
+                    wallet_address_val,
+                )) = config_data
+                {
                     // Get the selected OS image and device
-                    if let (Some(image_idx), Some(device_idx)) = (self.selected_os_image, self.selected_device) {
-                        if let (Some(image), Some(device)) = (self.os_images.get(image_idx), self.storage_devices.get(device_idx)) {
+                    if let (Some(image_idx), Some(device_idx)) =
+                        (self.selected_os_image, self.selected_device)
+                    {
+                        if let (Some(image), Some(device)) = (
+                            self.os_images.get(image_idx),
+                            self.storage_devices.get(device_idx),
+                        ) {
                             // Make sure the image is downloaded
                             if let Some(image_path) = &image.path {
                                 // Start the write process with initial 0% progress
                                 self.mode = AppMode::FlashNewImage(FlashState::WritingProcess(0.0));
-                                
+
                                 // Get device path and image path
                                 let device_path = device.path.clone();
                                 let image_path_val = image_path.clone();
-                                
+
                                 info!(
                                     "Starting flash with config: {:?} {:?} {} {} to device {}",
-                                    payment_network_val, network_type_val, subnet_val, wallet_address_val, device_path
+                                    payment_network_val,
+                                    network_type_val,
+                                    subnet_val,
+                                    wallet_address_val,
+                                    device_path
                                 );
 
-                                // Create a task to perform the writing operation
-                                return Task::perform(
-                                    async move {
-                                        // First lock the device
-                                        match Disk::lock_path(&device_path).await {
-                                            Ok(mut disk) => {
-                                                // Configure the task to sip progress updates
-                                                use std::sync::atomic::{AtomicU32, Ordering};
-                                                use std::sync::Arc;
-                                                use tokio::time::Duration;
-                                                
-                                                // Create an atomic for progress tracking shared between thread and callback
-                                                let progress = Arc::new(AtomicU32::new(0));
-                                                let progress_clone = progress.clone();
-                                                
-                                                // Flag to track if the write operation is still running
-                                                let is_running = Arc::new(std::sync::atomic::AtomicBool::new(true));
-                                                let is_running_clone = is_running.clone();
-                                                
-                                                // Spawn a separate thread that will send progress updates
-                                                let progress_handle = tokio::spawn(async move {
-                                                    while is_running_clone.load(Ordering::Relaxed) {
-                                                        let current = progress_clone.load(Ordering::Relaxed) as f32 / 100.0;
-                                                        tokio::time::sleep(Duration::from_millis(100)).await;
-                                                        
-                                                        // Report the progress value
-                                                        let _ = Message::WriteProgress(current);
-                                                    }
-                                                });
-                                                
-                                                // Write the image with a progress callback
-                                                let result = disk.write_image(&image_path_val, move |p| {
-                                                    // Convert 0.0-1.0 to 0-100 for atomic storage
-                                                    let percentage = (p * 100.0).round() as u32;
-                                                    progress.store(percentage, Ordering::Relaxed);
-                                                }).await;
-                                                
-                                                // Signal the progress thread to stop and wait for it
-                                                is_running.store(false, Ordering::Relaxed);
-                                                let _ = progress_handle.await;
-                                                
-                                                // Apply the configuration to the disk if write was successful
-                                                // This simulates writing the configuration to the configuration partition
-                                                if result.is_ok() {
-                                                    // Use UUID of the configuration partition
-                                                    let config_partition_uuid = "33b921b8-edc5-46a0-8baa-d0b7ad84fc71";
-                                                    
-                                                    // Try to apply configuration if the partition exists
-                                                    let config_result = disk.write_configuration(
-                                                        config_partition_uuid,
-                                                        payment_network_val,
-                                                        network_type_val,
-                                                        &subnet_val,
-                                                        &wallet_address_val
-                                                    );
-                                                    
-                                                    if let Err(e) = config_result {
-                                                        // Configuration write failed, but the image was written successfully
-                                                        // This might not be critical in all cases
-                                                        warn!("Image written but failed to apply configuration: {}", e);
-                                                    } else {
-                                                        debug!("Configuration applied successfully");
-                                                    }
-                                                }
-                                                
-                                                match result {
-                                                    Ok(_) => {
-                                                        // Write completed successfully
-                                                        debug!("Image successfully written to {}", device_path);
-                                                        Message::WriteImageCompleted
-                                                    }
-                                                    Err(e) => {
-                                                        // Write failed
-                                                        let error_msg = format!("Failed to write image: {}", e);
-                                                        error!("{}", error_msg);
-                                                        Message::WriteImageFailed(error_msg)
-                                                    }
-                                                }
+                                return Task::future(async move {
+                                    info!("Starting disk image write to {}", device_path);
+                                    Disk::lock_path(&device_path).await
+                                })
+                                .and_then(move |mut disk| {
+                                    // Now write the image and handle progress
+                                    let write_task = Task::sip(
+                                        disk.write_image(&image_path_val),
+                                        |message| match message {
+                                            WriteProgress::Start => Message::WriteProgress(0.0),
+                                            WriteProgress::Write(bytes) => {
+                                                Message::WriteProgress(bytes as f32 / 1000.0)
                                             }
-                                            Err(e) => {
-                                                // Failed to lock the device
-                                                let error_msg = format!("Failed to lock device {}: {}", device_path, e);
-                                                error!("{}", error_msg);
-                                                Message::WriteImageFailed(error_msg)
+                                            WriteProgress::Finish => Message::WriteProgress(100.0),
+                                        },
+                                        |result| match result {
+                                            Ok(WriteProgress::Finish) => {
+                                                Message::WriteImageCompleted
                                             }
-                                        }
-                                    },
-                                    |msg| msg, // Pass the message directly
-                                );
+                                            Ok(_) => todo!(),
+                                            Err(e) => Message::WriteImageFailed(e.to_string()),
+                                        },
+                                    );
+
+                                    write_task
+                                });
                             } else {
                                 // Image not downloaded
                                 error!("Cannot write - image not downloaded: {}", image.name);
@@ -801,7 +768,7 @@ impl GolemGpuImager {
                     // Cancel the writing operation and go back to device selection
                     info!("User cancelled write operation");
                     self.mode = AppMode::FlashNewImage(FlashState::SelectTargetDevice);
-                    
+
                     // Release any disk resources
                     self.locked_disk = None;
                 }
@@ -815,10 +782,99 @@ impl GolemGpuImager {
                 }
             }
             Message::WriteImageCompleted => {
-                // Set the completion state to success
+                // First check if we need to apply configuration
+                if let AppMode::FlashNewImage(FlashState::WritingProcess(_)) = &self.mode {
+                    // Extract the device path from the selected device
+                    if let Some(device_idx) = self.selected_device {
+                        if let Some(device) = self.storage_devices.get(device_idx) {
+                            // Get the device path and config values, similar to WriteImage message handler
+                            let device_path = device.path.clone();
+
+                            // Extract needed data from the previous mode
+                            let config_data =
+                                if let AppMode::FlashNewImage(FlashState::ConfigureSettings {
+                                    payment_network,
+                                    subnet,
+                                    network_type,
+                                    wallet_address,
+                                    ..
+                                }) = &self.mode
+                                {
+                                    Some((
+                                        *payment_network,
+                                        *network_type,
+                                        subnet.clone(),
+                                        wallet_address.clone(),
+                                    ))
+                                } else {
+                                    None
+                                };
+
+                            if let Some((payment_network, network_type, subnet, wallet_address)) =
+                                config_data
+                            {
+                                // Create a task to apply configuration
+                                info!("Image write completed, applying configuration");
+
+                                // Set the mode to completion now, the task will run in the background
+                                self.mode = AppMode::FlashNewImage(FlashState::Completion(true));
+
+                                // Release the current disk handle
+                                self.locked_disk = None;
+
+                                return Task::perform(
+                                    async move {
+                                        // Try to lock the device again to apply configuration
+                                        match Disk::lock_path(&device_path).await {
+                                            Ok(mut disk) => {
+                                                // Config partition UUID
+                                                let config_partition_uuid =
+                                                    "33b921b8-edc5-46a0-8baa-d0b7ad84fc71";
+
+                                                // Format configuration partition if needed before writing
+                                                // This ensures the partition is accessible and properly formatted
+                                                let format_result = disk.find_or_create_partition(config_partition_uuid, true);
+                                                if let Err(e) = format_result {
+                                                    warn!("Failed to prepare configuration partition: {}", e);
+                                                    return;
+                                                }
+                                                
+                                                // Try to apply configuration
+                                                let result = disk.write_configuration(
+                                                    config_partition_uuid,
+                                                    payment_network,
+                                                    network_type,
+                                                    &subnet,
+                                                    &wallet_address,
+                                                );
+
+                                                if let Err(e) = result {
+                                                    warn!("Applied configuration failed: {}", e);
+                                                } else {
+                                                    info!("Applied configuration successfully");
+                                                }
+                                            }
+                                            Err(e) => {
+                                                warn!(
+                                                    "Failed to lock device for configuration: {}",
+                                                    e
+                                                );
+                                            }
+                                        }
+
+                                        // No need to return anything, the UI is already updated
+                                    },
+                                    |_| Message::Exit, // This message is ignored since UI is already updated
+                                );
+                            }
+                        }
+                    }
+                }
+
+                // Default behavior if we can't apply configuration
                 info!("Image write completed successfully");
                 self.mode = AppMode::FlashNewImage(FlashState::Completion(true));
-                
+
                 // Release any disk resources
                 self.locked_disk = None;
             }
@@ -826,7 +882,7 @@ impl GolemGpuImager {
                 // Set the completion state to failure and log the error
                 error!("Image write failed: {}", error_msg);
                 self.mode = AppMode::FlashNewImage(FlashState::Completion(false));
-                
+
                 // Release any disk resources
                 self.locked_disk = None;
             }
@@ -837,63 +893,56 @@ impl GolemGpuImager {
                 // Start writing with 0% progress
                 self.mode = AppMode::FlashNewImage(FlashState::WritingProcess(0.0));
 
-                // Create a task to perform the actual writing
-                return Task::perform(
-                    async move {
-                        // Create a progress tracker
-                        use std::sync::atomic::{AtomicU32, Ordering};
-                        use std::sync::Arc;
+                // Setup a global variable to store progress for subscriptions to access
+                // in a real app this would be better handled with a proper state management system
+                use std::sync::Arc;
+                use std::sync::atomic::{AtomicU32, Ordering};
 
-                        let progress_tracker = Arc::new(AtomicU32::new(0));
-                        let progress_clone = progress_tracker.clone();
+                // Create a static atomic to store progress (as integer percentage)
+                static WRITE_PROGRESS: once_cell::sync::Lazy<Arc<AtomicU32>> =
+                    once_cell::sync::Lazy::new(|| Arc::new(AtomicU32::new(0)));
 
-                        // Track if the task is running
-                        let is_running = Arc::new(std::sync::atomic::AtomicBool::new(true));
-                        let is_running_clone = is_running.clone();
+                // Reset progress to 0
+                WRITE_PROGRESS.store(0, Ordering::SeqCst);
 
-                        // Spawn a separate thread to report progress updates
-                        let progress_handle = tokio::spawn(async move {
-                            while is_running_clone.load(Ordering::Relaxed) {
-                                let current_progress = progress_clone.load(Ordering::Relaxed) as f32 / 100.0;
+                // Create a task to perform the actual write
+                let image_path_clone = image_path.clone();
 
-                                // Report progress
-                                let _ = Message::WriteProgress(current_progress);
+                todo!()
+            }
 
-                                // Delay before next update
-                                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                            }
-                        });
+            Message::PollWriteProgress => {
+                // Check if we're in writing mode
+                if let AppMode::FlashNewImage(FlashState::WritingProcess(_)) = &self.mode {
+                    // Get the current progress from our static atomic
+                    use std::sync::atomic::Ordering;
 
-                        // Extract the actual disk for writing
-                        let mut disk = disk;
+                    // Access the static progress atomic
+                    static WRITE_PROGRESS: once_cell::sync::Lazy<
+                        std::sync::Arc<std::sync::atomic::AtomicU32>,
+                    > = once_cell::sync::Lazy::new(|| {
+                        std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0))
+                    });
 
-                        // Perform the actual writing with progress callback
-                        let result = disk.write_image(&image_path, move |p| {
-                            // Convert 0.0-1.0 to 0-100%
-                            let percentage = (p * 100.0).round() as u32;
-                            progress_tracker.store(percentage, Ordering::Relaxed);
-                        }).await;
+                    // Read the current progress
+                    let progress_int = WRITE_PROGRESS.load(Ordering::SeqCst);
 
-                        // Signal the progress thread to stop
-                        is_running.store(false, Ordering::Relaxed);
-                        let _ = progress_handle.await;
+                    // Convert from integer percentage (0-10000) back to float (0.0-1.0)
+                    let progress = progress_int as f32 / 10000.0;
 
-                        // Return result
-                        result
-                    },
-                    |result| {
-                        match result {
-                            Ok(_) => {
-                                info!("Image written successfully");
-                                Message::WriteImageCompleted
-                            }
-                            Err(e) => {
-                                error!("Failed to write image: {}", e);
-                                Message::WriteImageFailed(format!("Failed to write image: {}", e))
-                            }
+                    // Only update UI if progress has actually changed
+                    if let AppMode::FlashNewImage(FlashState::WritingProcess(current_progress)) =
+                        &self.mode
+                    {
+                        if progress > *current_progress && progress <= 1.0 {
+                            debug!("Updating UI progress: {:.2}%", progress * 100.0);
+
+                            // Update mode with new progress
+                            self.mode =
+                                AppMode::FlashNewImage(FlashState::WritingProcess(progress));
                         }
                     }
-                );
+                }
             }
             Message::FlashAnother => {
                 self.mode = AppMode::FlashNewImage(FlashState::SelectOsImage);
@@ -935,7 +984,10 @@ impl GolemGpuImager {
                                         Ok(disk) => (Some(disk), None),
                                         Err(err) => {
                                             // Format a more user-friendly error message
-                                            let error_msg = format!("Failed to lock device {}: {}", device_path, err);
+                                            let error_msg = format!(
+                                                "Failed to lock device {}: {}",
+                                                device_path, err
+                                            );
                                             error!("{}", error_msg);
                                             (None, Some(error_msg))
                                         }
@@ -950,9 +1002,11 @@ impl GolemGpuImager {
                                         Message::ShowError(error_msg)
                                     } else {
                                         // This should never happen but handle it just in case
-                                        Message::ShowError("Failed to lock device: Unknown error".to_string())
+                                        Message::ShowError(
+                                            "Failed to lock device: Unknown error".to_string(),
+                                        )
                                     }
-                                }
+                                },
                             );
                         }
                     }
@@ -970,7 +1024,8 @@ impl GolemGpuImager {
                         self.mode = AppMode::EditExistingDisk(EditState::Completion(true));
                     } else {
                         // Disk was somehow lost, show error
-                        self.error_message = Some("Failed to maintain disk lock after configuration".to_string());
+                        self.error_message =
+                            Some("Failed to maintain disk lock after configuration".to_string());
                         self.mode = AppMode::EditExistingDisk(EditState::Completion(false));
                     }
                     return Task::none();
@@ -983,14 +1038,25 @@ impl GolemGpuImager {
 
                 if let Some(disk) = &mut self.locked_disk {
                     // Try to read the configuration from the disk
-                    match disk.read_configuration(config_partition_uuid) {
-                        Ok(config) => {
-                            info!("Successfully read configuration from disk");
-                            config_from_disk = Some(config);
+                    // First, use find_or_create_partition to format the configuration partition if needed
+                    match disk.find_or_create_partition(config_partition_uuid, true) {
+                        Ok(fs) => {
+                            info!("Successfully accessed configuration partition");
+                            // Now try to read the configuration
+                            match disk.read_configuration(config_partition_uuid) {
+                                Ok(config) => {
+                                    info!("Successfully read configuration from disk");
+                                    config_from_disk = Some(config);
+                                }
+                                Err(e) => {
+                                    // Not a fatal error - we'll just use default values
+                                    warn!("Failed to read configuration from disk: {}", e);
+                                }
+                            }
                         }
                         Err(e) => {
-                            // Not a fatal error - we'll just use default values
-                            warn!("Failed to read configuration from disk: {}", e);
+                            // Failed to access the partition even with formatting
+                            warn!("Failed to access configuration partition: {}", e);
                         }
                     }
                 }
@@ -1033,9 +1099,8 @@ impl GolemGpuImager {
                     });
 
                     // Find and select the default preset
-                    self.selected_preset = self.configuration_presets
-                        .iter()
-                        .position(|p| p.is_default);
+                    self.selected_preset =
+                        self.configuration_presets.iter().position(|p| p.is_default);
                 } else {
                     // Initialize with default values
                     self.mode = AppMode::EditExistingDisk(EditState::EditConfiguration {
@@ -1055,14 +1120,13 @@ impl GolemGpuImager {
                     network_type,
                     wallet_address,
                     is_wallet_valid,
-                }) = &self.mode {
+                }) = &self.mode
+                {
                     // Check if wallet address is valid before proceeding
                     if !wallet_address.is_empty() && !is_wallet_valid {
                         // Show error to the user
-                        let error_msg = format!(
-                            "Cannot save, wallet address is invalid: {}",
-                            wallet_address
-                        );
+                        let error_msg =
+                            format!("Cannot save, wallet address is invalid: {}", wallet_address);
                         error!("{}", error_msg);
                         self.error_message = Some(error_msg);
                         return Task::none();
@@ -1106,13 +1170,21 @@ impl GolemGpuImager {
                                 payment_network, network_type, subnet, wallet_address
                             );
 
+                            // First make sure the partition is properly formatted
+                            let format_result = disk.find_or_create_partition(config_partition_uuid, true);
+                            if let Err(e) = format_result {
+                                let error_msg = format!("Failed to prepare configuration partition: {}", e);
+                                error!("{}", error_msg);
+                                return (false, Some(error_msg), Some(disk));
+                            }
+                            
                             // Use the write_configuration function to write to the disk
                             match disk.write_configuration(
                                 config_partition_uuid,
                                 payment_network,
                                 network_type,
                                 &subnet,
-                                &wallet_address
+                                &wallet_address,
                             ) {
                                 Ok(_) => {
                                     // Configuration was successfully written
@@ -1140,7 +1212,7 @@ impl GolemGpuImager {
                                     Message::ConfigurationSaveFailed
                                 }
                             }
-                        }
+                        },
                     );
                 }
 
@@ -1175,7 +1247,9 @@ impl GolemGpuImager {
             // Handle preset-related messages
             Message::SaveAsPreset => {
                 if !self.new_preset_name.is_empty() {
-                    if let Some(preset) = self.create_preset_from_current_config(self.new_preset_name.clone()) {
+                    if let Some(preset) =
+                        self.create_preset_from_current_config(self.new_preset_name.clone())
+                    {
                         // Clone the preset before any modifications
                         let mut new_preset = preset.clone();
 
@@ -1225,7 +1299,10 @@ impl GolemGpuImager {
             }
             Message::SavePresetsToStorage => {
                 // This would be implemented with actual persistence
-                info!("Saved {} presets to storage", self.configuration_presets.len());
+                info!(
+                    "Saved {} presets to storage",
+                    self.configuration_presets.len()
+                );
             }
             Message::LoadPresetsFromStorage => {
                 // This would be implemented with actual persistence
@@ -1268,9 +1345,10 @@ impl GolemGpuImager {
                 } => {
                     ui::flash::view_downloading_image(version_id, *progress, channel, created_date)
                 }
-                FlashState::SelectTargetDevice => {
-                    ui::flash::view_select_target_device(&self.storage_devices, self.selected_device)
-                }
+                FlashState::SelectTargetDevice => ui::flash::view_select_target_device(
+                    &self.storage_devices,
+                    self.selected_device,
+                ),
                 FlashState::ConfigureSettings {
                     payment_network,
                     subnet,
@@ -1295,7 +1373,11 @@ impl GolemGpuImager {
                 EditState::SelectDevice => {
                     // Pass the error message to the view if one exists
                     let error_ref = self.error_message.as_deref();
-                    ui::view_select_existing_device(self.selected_device, &self.storage_devices, error_ref)
+                    ui::view_select_existing_device(
+                        self.selected_device,
+                        &self.storage_devices,
+                        error_ref,
+                    )
                 }
                 EditState::EditConfiguration {
                     payment_network,
@@ -1362,9 +1444,18 @@ impl GolemGpuImager {
 
     // Required to implement Application trait in main.rs
     pub fn subscription(&self) -> iced::Subscription<Message> {
-        iced::Subscription::none()
+        // If we're in writing process mode, periodically send progress updates
+        if let AppMode::FlashNewImage(FlashState::WritingProcess(_)) = &self.mode {
+            // Create a timer subscription that periodically updates the progress bar
+            iced::time::every(std::time::Duration::from_millis(200))
+                .map(|_| Message::PollWriteProgress)
+        } else {
+            iced::Subscription::none()
+        }
     }
+}
 
+impl GolemGpuImager {
     // Get the default preset if one exists
     fn get_default_preset(&self) -> Option<&ConfigurationPreset> {
         // Try using the PresetManager first

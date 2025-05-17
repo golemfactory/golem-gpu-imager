@@ -49,10 +49,10 @@ pub fn view_start_screen() -> Element<'static, Message> {
     let edit_button = button(
         container(iced::widget::row![icons::edit(), "Edit Existing Disk"]).center_x(Length::Fill),
     )
-        .width(250)
-        .padding(14)
-        .style(button::secondary)
-        .on_press(Message::EditExistingDisk);
+    .width(250)
+    .padding(14)
+    .style(button::secondary)
+    .on_press(Message::EditExistingDisk);
 
     // Add version info
     let version_text = text(crate::version::VERSION).size(12);

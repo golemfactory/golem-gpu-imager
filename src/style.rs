@@ -166,7 +166,7 @@ pub fn selected_container(theme: &Theme) -> container::Style {
 // Style for pick lists
 pub fn pick_list_style(
     theme: &Theme,
-    _status: iced::widget::pick_list::Status
+    _status: iced::widget::pick_list::Status,
 ) -> iced::widget::pick_list::Style {
     let palette = theme.extended_palette();
 

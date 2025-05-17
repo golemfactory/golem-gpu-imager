@@ -1,5 +1,4 @@
 use iced::Font;
-use iced::wgpu::naga::MathFunction::Length;
 use iced::widget::text;
 
 fn icon(unicode: char) -> iced::widget::Text<'static> {
@@ -96,4 +95,37 @@ pub fn send() -> iced::widget::Text<'static> {
 
 pub fn edit() -> iced::widget::Text<'static> {
     icon('\u{E3C9}')
+}
+
+// Additional icons for improved UI/UX
+pub fn cancel() -> iced::widget::Text<'static> {
+    icon('\u{E5C9}')
+}
+
+pub fn timer() -> iced::widget::Text<'static> {
+    icon('\u{E425}')
+}
+
+pub fn check_circle() -> iced::widget::Text<'static> {
+    icon('\u{E86C}')
+}
+
+pub fn help() -> iced::widget::Text<'static> {
+    icon('\u{E887}')
+}
+
+pub fn warning_amber() -> iced::widget::Text<'static> {
+    icon('\u{E002}')
+}
+
+pub fn downloading() -> iced::widget::Text<'static> {
+    icon('\u{F090}')
+}
+
+pub fn device_hub() -> iced::widget::Text<'static> {
+    icon('\u{E335}')
+}
+
+pub fn install() -> iced::widget::Text<'static> {
+    icon('\u{E923}')
 }

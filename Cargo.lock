@@ -1633,18 +1633,22 @@ dependencies = [
  "hex",
  "iced",
  "libc",
+ "once_cell",
  "reqwest",
  "rs-drivelist",
  "serde",
  "serde_json",
  "sha2",
  "tokio",
+ "tokio-stream",
  "toml",
  "tracing",
  "tracing-subscriber",
  "udisks2",
  "uuid",
+ "windows-sys 0.52.0",
  "windows_exe_info",
+ "xz4rust",
 ]
 
 [[package]]
@@ -4759,6 +4763,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "tokio-stream"
+version = "0.1.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eca58d7bba4a75707817a2c44174253f9236b2d5fbd055602e9d5c07c139a047"
+dependencies = [
+ "futures-core",
+ "pin-project-lite",
+ "tokio",
+]
+
+[[package]]
 name = "tokio-util"
 version = "0.7.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6189,6 +6204,15 @@ name = "xmlwriter"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec7a2a501ed189703dba8b08142f057e887dfc4b2cc4db2d343ac6376ba3e0b9"
+
+[[package]]
+name = "xz4rust"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1053c1562c16e3760559c390d3b690ae6b524c200eb9a7ddb5d43c77d000832d"
+dependencies = [
+ "sha2",
+]
 
 [[package]]
 name = "yazi"

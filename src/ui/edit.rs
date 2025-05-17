@@ -12,12 +12,9 @@ pub fn view_select_existing_device<'a>(
 ) -> Element<'a, Message> {
     // Create a title with icon for device selection
     let title = container(
-        row![
-            icons::edit(),
-            text("Select Existing Device").size(30)
-        ]
-        .spacing(10)
-        .align_y(Alignment::Center)
+        row![icons::edit(), text("Select Existing Device").size(30)]
+            .spacing(10)
+            .align_y(Alignment::Center),
     )
     .width(Length::Fill)
     .align_x(Horizontal::Center);
@@ -72,14 +69,22 @@ pub fn view_select_existing_device<'a>(
         .padding(10);
 
     let edit_config_button = if selected_device.is_some() {
-        button(row![icons::edit(), "Edit Configuration"].spacing(5).align_y(Alignment::Center))
-            .on_press(Message::GotoEditConfiguration)
-            .style(button::primary)
-            .padding(10)
+        button(
+            row![icons::edit(), "Edit Configuration"]
+                .spacing(5)
+                .align_y(Alignment::Center),
+        )
+        .on_press(Message::GotoEditConfiguration)
+        .style(button::primary)
+        .padding(10)
     } else {
-        button(row![icons::edit(), "Edit Configuration"].spacing(5).align_y(Alignment::Center))
-            .style(button::primary)
-            .padding(10)
+        button(
+            row![icons::edit(), "Edit Configuration"]
+                .spacing(5)
+                .align_y(Alignment::Center),
+        )
+        .style(button::primary)
+        .padding(10)
     };
 
     // Error message container (only shown if error_message is Some)
@@ -90,21 +95,19 @@ pub fn view_select_existing_device<'a>(
                 text(error).size(16).color(Color::from_rgb(0.8, 0.0, 0.0))
             ]
             .spacing(10)
-            .align_y(Alignment::Center)
+            .align_y(Alignment::Center),
         )
         .width(Length::Fill)
         .padding(15)
-        .style(|theme| {
-            container::Style {
-                text_color: Some(Color::from_rgb(0.8, 0.0, 0.0)),
-                background: Some(Color::from_rgb(1.0, 0.9, 0.9).into()),
-                border: iced::Border {
-                    radius: 5.0.into(),
-                    width: 1.0,
-                    color: Color::from_rgb(0.8, 0.0, 0.0),
-                },
-                ..container::Style::default()
-            }
+        .style(|theme| container::Style {
+            text_color: Some(Color::from_rgb(0.8, 0.0, 0.0)),
+            background: Some(Color::from_rgb(1.0, 0.9, 0.9).into()),
+            border: iced::Border {
+                radius: 5.0.into(),
+                width: 1.0,
+                color: Color::from_rgb(0.8, 0.0, 0.0),
+            },
+            ..container::Style::default()
         })
     } else {
         // Empty container if no error
@@ -113,7 +116,7 @@ pub fn view_select_existing_device<'a>(
 
     let content = column![
         title,
-        error_container,  // Add error message container
+        error_container, // Add error message container
         device_list,
         spacer,
         row![back_button, refresh_button, edit_config_button].spacing(20)

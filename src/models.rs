@@ -127,29 +127,30 @@ pub enum Message {
     FlashAnother,
     Exit,
     SelectExistingDevice(usize),
-    GotoEditConfiguration,          // Go to edit configuration screen
+    GotoEditConfiguration, // Go to edit configuration screen
     SaveConfiguration,
     BackToMainMenu,
     RepoDataLoaded(Vec<OsImage>),
     RepoLoadFailed,
     RefreshRepoData,
     // Configuration preset management
-    SaveAsPreset,                   // Save current configuration as a new preset
-    SelectPreset(usize),            // Select a preset by index
-    DeletePreset(usize),            // Delete a preset by index
-    SetDefaultPreset(usize),        // Set a preset as default
-    EditPresetName(usize, String),  // Edit a preset name
-    SavePresetsToStorage,           // Save presets to persistent storage
-    LoadPresetsFromStorage,         // Load presets from persistent storage
-    SetPresetName(String),          // Set name for new preset
-    TogglePresetManager,            // Toggle preset management UI visibility
-    BackToSelectOsImage,            // Go back to the OS image selection screen
+    SaveAsPreset,                  // Save current configuration as a new preset
+    SelectPreset(usize),           // Select a preset by index
+    DeletePreset(usize),           // Delete a preset by index
+    SetDefaultPreset(usize),       // Set a preset as default
+    EditPresetName(usize, String), // Edit a preset name
+    SavePresetsToStorage,          // Save presets to persistent storage
+    LoadPresetsFromStorage,        // Load presets from persistent storage
+    SetPresetName(String),         // Set name for new preset
+    TogglePresetManager,           // Toggle preset management UI visibility
+    BackToSelectOsImage,           // Go back to the OS image selection screen
     DeviceLocked(Option<crate::utils::Disk>), // Device has been locked for editing
-    ConfigurationSaved,             // Configuration has been saved to device
-    ConfigurationSaveFailed,        // Failed to save configuration to device
-    ShowError(String),              // Show an error message to the user
+    ConfigurationSaved,            // Configuration has been saved to device
+    ConfigurationSaveFailed,       // Failed to save configuration to device
+    ShowError(String),             // Show an error message to the user
     DeviceLockedForWriting(crate::utils::Disk, String), // Device locked for writing with image path
-    WriteProgress(f32),             // Update the writing progress
-    WriteImageCompleted,            // Image write completed successfully
-    WriteImageFailed(String),       // Image write failed with error message
+    WriteProgress(f32),            // Update the writing progress
+    WriteImageCompleted,           // Image write completed successfully
+    WriteImageFailed(String),      // Image write failed with error message
+    PollWriteProgress,             // Poll for progress updates from the subscription
 }

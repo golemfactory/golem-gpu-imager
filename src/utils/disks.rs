@@ -341,6 +341,33 @@ async fn umount_all(client: &Client, path: ObjectPath<'_>) -> Result<()> {
     Ok(())
 }
 
+#[cfg(windows)]
+/// Helper function to translate Windows error codes to readable messages
+fn get_windows_error_message(code: u32) -> &'static str {
+    match code {
+        0 => "Operation completed successfully",
+        1 => "Incorrect function",
+        2 => "The system cannot find the file specified",
+        3 => "The system cannot find the path specified",
+        4 => "The system cannot open the file",
+        5 => "Access is denied",
+        6 => "The handle is invalid",
+        8 => "Not enough memory resources",
+        13 => "The data is invalid",
+        14 => "Not enough storage is available",
+        19 => "Write fault",
+        21 => "The device does not recognize the command",
+        22 => "Data error (cyclic redundancy check)",
+        23 => "The data area passed to a system call is too small",
+        32 => "The process cannot access the file because it is in use",
+        112 => "There is not enough space on the disk",
+        123 => "The filename, directory name, or volume label syntax is incorrect",
+        1223 => "The operation was canceled by the user",
+        1392 => "The file or directory is corrupted and unreadable",
+        _ => "Unknown error code"
+    }
+}
+
 // Windows-specific implementation for volume dismounting
 #[cfg(windows)]
 async fn dismount_windows_volume(drive_path: &str) -> Result<()> {
@@ -367,7 +394,8 @@ async fn dismount_windows_volume(drive_path: &str) -> Result<()> {
     
     if handle == INVALID_HANDLE_VALUE {
         let error_code = unsafe { GetLastError() };
-        return Err(anyhow!("Failed to open volume, error code: {}", error_code));
+        let error_msg = get_windows_error_message(error_code);
+        return Err(anyhow!("Failed to open volume, error code: {} ({})", error_code, error_msg));
     }
     
     // Lock the volume
@@ -387,8 +415,9 @@ async fn dismount_windows_volume(drive_path: &str) -> Result<()> {
     
     if lock_result == 0 {
         let error_code = unsafe { GetLastError() };
+        let error_msg = get_windows_error_message(error_code);
         unsafe { CloseHandle(handle) };
-        return Err(anyhow!("Failed to lock volume, error code: {}", error_code));
+        return Err(anyhow!("Failed to lock volume, error code: {} ({})", error_code, error_msg));
     }
     
     // Dismount the volume
@@ -407,8 +436,9 @@ async fn dismount_windows_volume(drive_path: &str) -> Result<()> {
     
     if dismount_result == 0 {
         let error_code = unsafe { GetLastError() };
+        let error_msg = get_windows_error_message(error_code);
         unsafe { CloseHandle(handle) };
-        return Err(anyhow!("Failed to dismount volume, error code: {}", error_code));
+        return Err(anyhow!("Failed to dismount volume, error code: {} ({})", error_code, error_msg));
     }
     
     // Close the handle
@@ -547,14 +577,36 @@ impl PartitionFileProxy {
     /// Check if a buffer is aligned for direct I/O on Windows
     /// This is important because Windows requires buffers to be aligned to sector boundaries
     fn is_buffer_aligned(&self, buf: &[u8]) -> bool {
-        // Check if the buffer starts at an address that's aligned to the sector size
+        // Get buffer address details
         let ptr_addr = buf.as_ptr() as usize;
-        let addr_aligned = ptr_addr % self.sector_size as usize == 0;
+        let buffer_len = buf.len();
+        let sector_size = self.sector_size as usize;
+        
+        // Check if the buffer starts at an address that's aligned to the sector size
+        let addr_aligned = ptr_addr % sector_size == 0;
         
         // Check if the buffer length is a multiple of the sector size
-        let len_aligned = buf.len() % self.sector_size as usize == 0;
+        let len_aligned = buffer_len % sector_size == 0;
         
-        addr_aligned && len_aligned
+        let is_aligned = addr_aligned && len_aligned;
+        
+        if !is_aligned {
+            // Log detailed alignment issues for debugging
+            if !addr_aligned {
+                info!("Buffer address misalignment: address 0x{:X} is not aligned to sector size {} (remainder: {})",
+                      ptr_addr, sector_size, ptr_addr % sector_size);
+            }
+            
+            if !len_aligned {
+                info!("Buffer length misalignment: length {} is not a multiple of sector size {} (remainder: {})",
+                      buffer_len, sector_size, buffer_len % sector_size);
+            }
+            
+            info!("Using aligned buffer for Windows direct I/O (original address: 0x{:X}, length: {}, sector size: {})",
+                  ptr_addr, buffer_len, sector_size);
+        }
+        
+        is_aligned
     }
     
     #[cfg(windows)]
@@ -564,17 +616,21 @@ impl PartitionFileProxy {
         use std::alloc::{alloc, Layout};
         
         // Calculate the sector-aligned size (round up to next sector boundary)
-        let aligned_size = ((size + self.sector_size as usize - 1) / self.sector_size as usize) 
-                          * self.sector_size as usize;
+        let sector_size = self.sector_size as usize;
+        let aligned_size = ((size + sector_size - 1) / sector_size) * sector_size;
+        
+        info!("Creating aligned buffer: requested size: {}, aligned size: {}, sector size: {}", 
+              size, aligned_size, sector_size);
         
         // Create an aligned layout
-        let layout = Layout::from_size_align(aligned_size, self.sector_size as usize)
+        let layout = Layout::from_size_align(aligned_size, sector_size)
             .expect("Invalid layout for aligned buffer");
         
         // Allocate aligned memory
         let ptr = unsafe { alloc(layout) };
         if ptr.is_null() {
-            panic!("Failed to allocate aligned memory");
+            error!("Failed to allocate aligned memory of size {} bytes", aligned_size);
+            panic!("Failed to allocate aligned memory of size {} bytes", aligned_size);
         }
         
         // Create a vector that owns this memory
@@ -582,6 +638,18 @@ impl PartitionFileProxy {
         unsafe {
             vec.set_len(aligned_size);
             std::ptr::copy_nonoverlapping(ptr, vec.as_mut_ptr(), aligned_size);
+        }
+        
+        // Verify the new buffer's alignment
+        let new_ptr_addr = vec.as_ptr() as usize;
+        let addr_aligned = new_ptr_addr % sector_size == 0;
+        let len_aligned = vec.len() % sector_size == 0;
+        
+        if !addr_aligned || !len_aligned {
+            error!("Failed to create properly aligned buffer! Address: 0x{:X}, Length: {}, Sector size: {}",
+                  new_ptr_addr, vec.len(), sector_size);
+        } else {
+            info!("Successfully created aligned buffer at address 0x{:X}, length: {}", new_ptr_addr, vec.len());
         }
         
         vec
@@ -641,6 +709,7 @@ impl Read for PartitionFileProxy {
 
         // Check if we're at the end of the partition
         if self.partition_size > 0 && self.current_position == self.partition_size {
+            debug!("Read operation at partition boundary - no more bytes to read");
             return Ok(0); // End of partition, no bytes to read
         }
         
@@ -656,29 +725,57 @@ impl Read for PartitionFileProxy {
         
         // Use a potentially smaller buffer if needed
         let read_size = max_read_size;
+        let current_abs_pos = self.to_absolute_position(self.current_position);
+        
+        debug!("Windows read operation: buffer len={}, max_read_size={}, absolute position={}",
+               buf.len(), max_read_size, current_abs_pos);
         
         // Determine if we need to use an aligned buffer for Windows direct I/O
         let use_aligned_buffer = !self.is_buffer_aligned(buf);
         
         let bytes_read = if use_aligned_buffer {
+            debug!("Using aligned buffer for Windows read operation");
+            
             // Create an aligned buffer for direct I/O
             let mut aligned_buf = self.create_aligned_buffer(read_size);
             
             // Ensure we're at the correct position before reading
-            self.file.seek(SeekFrom::Start(
-                self.to_absolute_position(self.current_position),
-            ))?;
+            let seek_result = self.file.seek(SeekFrom::Start(current_abs_pos));
+            if let Err(e) = &seek_result {
+                error!("Windows seek error before read: {}", e);
+                error!("Attempted to seek to absolute position: {}", current_abs_pos);
+                return Err(io::Error::new(
+                    e.kind(),
+                    format!("Failed to seek to position {} before read: {}", current_abs_pos, e)
+                ));
+            }
             
             // Read into the aligned buffer
-            let bytes_read = self.file.read(&mut aligned_buf[0..read_size])?;
+            debug!("Reading {} bytes into aligned buffer", read_size);
+            let read_result = self.file.read(&mut aligned_buf[0..read_size]);
+            
+            let bytes_read = match read_result {
+                Ok(bytes) => {
+                    debug!("Successfully read {} bytes using aligned buffer", bytes);
+                    bytes
+                },
+                Err(e) => {
+                    error!("Windows read error with aligned buffer: {}", e);
+                    error!("Read attempted at position {} with buffer size {}", current_abs_pos, read_size);
+                    return Err(e);
+                }
+            };
             
             // Copy data from aligned buffer to user buffer
             if bytes_read > 0 {
+                debug!("Copying {} bytes from aligned buffer to user buffer", bytes_read);
                 buf[0..bytes_read].copy_from_slice(&aligned_buf[0..bytes_read]);
             }
             
             bytes_read
         } else {
+            debug!("Using direct buffer for Windows read operation (buffer already aligned)");
+            
             // If the buffer is already aligned, we can use it directly
             let read_buf = if read_size < buf.len() { 
                 &mut buf[0..read_size]
@@ -687,16 +784,36 @@ impl Read for PartitionFileProxy {
             };
             
             // Ensure we're at the correct position before reading
-            self.file.seek(SeekFrom::Start(
-                self.to_absolute_position(self.current_position),
-            ))?;
+            let seek_result = self.file.seek(SeekFrom::Start(current_abs_pos));
+            if let Err(e) = &seek_result {
+                error!("Windows seek error before read: {}", e);
+                error!("Attempted to seek to absolute position: {}", current_abs_pos);
+                return Err(io::Error::new(
+                    e.kind(),
+                    format!("Failed to seek to position {} before read: {}", current_abs_pos, e)
+                ));
+            }
             
             // Perform the read operation directly
-            self.file.read(read_buf)?
+            debug!("Reading {} bytes directly", read_buf.len());
+            let read_result = self.file.read(read_buf);
+            
+            match read_result {
+                Ok(bytes) => {
+                    debug!("Successfully read {} bytes using direct buffer", bytes);
+                    bytes
+                },
+                Err(e) => {
+                    error!("Windows read error with direct buffer: {}", e);
+                    error!("Read attempted at position {} with buffer size {}", current_abs_pos, read_buf.len());
+                    return Err(e);
+                }
+            }
         };
 
         // Update our current position
         self.current_position += bytes_read as u64;
+        debug!("Updated current position to {} after read", self.current_position);
 
         Ok(bytes_read)
     }
@@ -759,6 +876,7 @@ impl Write for PartitionFileProxy {
         
         // Check if we're at the end of the partition
         if self.partition_size > 0 && self.current_position == self.partition_size {
+            info!("Write operation at partition boundary - no more bytes can be written");
             return Ok(0); // End of partition, can't write any bytes
         }
         
@@ -774,11 +892,17 @@ impl Write for PartitionFileProxy {
         
         // Use a potentially smaller buffer size for the write
         let write_size = max_write_size;
+        let current_abs_pos = self.to_absolute_position(self.current_position);
+        
+        debug!("Windows write operation: buffer len={}, max_write_size={}, absolute position={}",
+               buf.len(), max_write_size, current_abs_pos);
         
         // Determine if we need to use an aligned buffer for Windows direct I/O
         let use_aligned_buffer = !self.is_buffer_aligned(buf);
         
         let bytes_written = if use_aligned_buffer {
+            debug!("Using aligned buffer for Windows write operation");
+            
             // Create an aligned buffer for direct I/O
             let mut aligned_buf = self.create_aligned_buffer(write_size);
             
@@ -786,13 +910,32 @@ impl Write for PartitionFileProxy {
             aligned_buf[0..write_size].copy_from_slice(&buf[0..write_size]);
             
             // Ensure we're at the correct position before writing
-            self.file.seek(SeekFrom::Start(
-                self.to_absolute_position(self.current_position),
-            ))?;
+            let seek_result = self.file.seek(SeekFrom::Start(current_abs_pos));
+            if let Err(e) = &seek_result {
+                error!("Windows seek error before write: {}", e);
+                error!("Attempted to seek to absolute position: {}", current_abs_pos);
+                return Err(io::Error::new(
+                    e.kind(),
+                    format!("Failed to seek to position {} before write: {}", current_abs_pos, e)
+                ));
+            }
             
             // Write from the aligned buffer
-            self.file.write(&aligned_buf[0..write_size])?
+            debug!("Writing {} bytes from aligned buffer", write_size);
+            match self.file.write(&aligned_buf[0..write_size]) {
+                Ok(bytes) => {
+                    debug!("Successfully wrote {} bytes to disk using aligned buffer", bytes);
+                    bytes
+                },
+                Err(e) => {
+                    error!("Windows write error with aligned buffer: {}", e);
+                    error!("Write attempted at position {} with buffer size {}", current_abs_pos, write_size);
+                    return Err(e);
+                }
+            }
         } else {
+            debug!("Using direct buffer for Windows write operation (buffer already aligned)");
+            
             // If the buffer is already aligned, we can use it directly
             let write_buf = if write_size < buf.len() { 
                 &buf[0..write_size]
@@ -801,22 +944,50 @@ impl Write for PartitionFileProxy {
             };
             
             // Ensure we're at the correct position before writing
-            self.file.seek(SeekFrom::Start(
-                self.to_absolute_position(self.current_position),
-            ))?;
+            let seek_result = self.file.seek(SeekFrom::Start(current_abs_pos));
+            if let Err(e) = &seek_result {
+                error!("Windows seek error before write: {}", e);
+                error!("Attempted to seek to absolute position: {}", current_abs_pos);
+                return Err(io::Error::new(
+                    e.kind(),
+                    format!("Failed to seek to position {} before write: {}", current_abs_pos, e)
+                ));
+            }
             
             // Perform the write operation directly
-            self.file.write(write_buf)?
+            debug!("Writing {} bytes directly", write_buf.len());
+            match self.file.write(write_buf) {
+                Ok(bytes) => {
+                    debug!("Successfully wrote {} bytes to disk using direct buffer", bytes);
+                    bytes
+                },
+                Err(e) => {
+                    error!("Windows write error with direct buffer: {}", e);
+                    error!("Write attempted at position {} with buffer size {}", current_abs_pos, write_buf.len());
+                    return Err(e);
+                }
+            }
         };
 
         // Update our current position
         self.current_position += bytes_written as u64;
+        debug!("Updated current position to {} after write", self.current_position);
 
         Ok(bytes_written)
     }
 
     fn flush(&mut self) -> io::Result<()> {
-        self.file.flush()
+        debug!("Flushing Windows disk write buffer");
+        match self.file.flush() {
+            Ok(_) => {
+                debug!("Successfully flushed Windows disk write buffer");
+                Ok(())
+            },
+            Err(e) => {
+                error!("Failed to flush Windows disk write buffer: {}", e);
+                Err(e)
+            }
+        }
     }
 }
 
@@ -926,7 +1097,7 @@ impl Disk {
     
     #[cfg(windows)]
     pub async fn lock_path(path: &str) -> Result<Self> {
-        debug!("Locking Windows disk path: {}", path);
+        info!("Locking Windows disk path: {}", path);
         
         // Format the path based on whether it's a physical drive or a volume
         let disk_path = if path.contains("PhysicalDrive") {
@@ -943,14 +1114,18 @@ impl Disk {
             format!(r"\\.\{}", path)
         };
         
-        debug!("Formatted disk path: {}", disk_path);
+        info!("Formatted Windows disk path: {}", disk_path);
+        
+        // Note: We should check if user is admin, but for now we'll just warn that
+        // administrator privileges are required for Windows disk operations
+        warn!("Windows direct disk access typically requires Administrator privileges");
         
         // Try to dismount all associated volumes
         if path.ends_with(":") {
             // If it's a drive letter (like "C:"), attempt to dismount it
-            debug!("Attempting to dismount volume: {}", path);
+            info!("Attempting to dismount volume: {}", path);
             match dismount_windows_volume(path).await {
-                Ok(_) => debug!("Successfully dismounted volume: {}", path),
+                Ok(_) => info!("Successfully dismounted volume: {}", path),
                 Err(e) => {
                     // On Windows, dismounting may fail but we can still continue
                     // This is often the case with removable drives
@@ -961,18 +1136,19 @@ impl Disk {
             // If it's a physical drive, try to enumerate and dismount all its volumes
             // For now we just log a message, but in a full implementation you'd
             // enumerate all volumes and dismount them
-            debug!("Physical drive specified - would need to enumerate and dismount all volumes");
+            info!("Physical drive specified - attempting to access without dismounting volumes");
+            warn!("This may fail if any volumes on this drive are in use by Windows");
             // TODO: Enumerate all volumes on this physical drive and dismount them
         }
         
         // Try to get the sector size for this disk for better performance
         let sector_size = match get_disk_sector_size(path) {
             Ok(size) => {
-                debug!("Detected disk sector size: {} bytes", size);
+                info!("Detected disk sector size: {} bytes", size);
                 size
             },
             Err(e) => {
-                debug!("Failed to detect sector size, using default: {}", e);
+                warn!("Failed to detect sector size, using default: {}", e);
                 512 // Default sector size
             }
         };
@@ -990,6 +1166,8 @@ impl Disk {
         // Initialize file handle to invalid value
         let handle;
         
+        info!("Attempting to open Windows disk device: {}", disk_path);
+        
         unsafe {
             let mut error_code: u32;
             
@@ -997,7 +1175,7 @@ impl Disk {
             // This helps handle the variety of Windows configurations
             
             // 1. Try with GENERIC_READ | GENERIC_WRITE, no sharing
-            debug!("Attempt 1: GENERIC_READ | GENERIC_WRITE, no sharing");
+            info!("Attempt 1: Opening with GENERIC_READ | GENERIC_WRITE, exclusive access");
             let h1 = CreateFileW(
                 path_wide.as_ptr(),
                 GENERIC_READ | GENERIC_WRITE,
@@ -1011,9 +1189,10 @@ impl Disk {
             // 2. If that fails, try with sharing allowed
             if h1 == INVALID_HANDLE_VALUE {
                 error_code = GetLastError();
-                debug!("Attempt 1 failed with error code: {}", error_code);
+                let error_msg = get_windows_error_message(error_code);
+                warn!("Attempt 1 failed with error code: {} ({})", error_code, error_msg);
                 
-                debug!("Attempt 2: GENERIC_READ | GENERIC_WRITE with FILE_SHARE_READ | FILE_SHARE_WRITE");
+                info!("Attempt 2: Opening with GENERIC_READ | GENERIC_WRITE with FILE_SHARE_READ | FILE_SHARE_WRITE");
                 let h2 = CreateFileW(
                     path_wide.as_ptr(),
                     GENERIC_READ | GENERIC_WRITE,
@@ -1027,9 +1206,10 @@ impl Disk {
                 // 3. If that still fails, try with just read access
                 if h2 == INVALID_HANDLE_VALUE {
                     error_code = GetLastError();
-                    debug!("Attempt 2 failed with error code: {}", error_code);
+                    let error_msg = get_windows_error_message(error_code);
+                    warn!("Attempt 2 failed with error code: {} ({})", error_code, error_msg);
                     
-                    debug!("Attempt 3: GENERIC_READ only with sharing");
+                    info!("Attempt 3: Opening with GENERIC_READ only with sharing");
                     let h3 = CreateFileW(
                         path_wide.as_ptr(),
                         GENERIC_READ,
@@ -1040,23 +1220,61 @@ impl Disk {
                         0,
                     );
                     
-                    // If all attempts failed, return an error
+                    // 4. Final attempt with FILE_FLAG_NO_BUFFERING to bypass Windows cache
                     if h3 == INVALID_HANDLE_VALUE {
                         error_code = GetLastError();
-                        debug!("All attempts failed, last error code: {}", error_code);
+                        let error_msg = get_windows_error_message(error_code);
+                        warn!("Attempt 3 failed with error code: {} ({})", error_code, error_msg);
                         
-                        // Windows error 5 is ACCESS_DENIED - offer specific advice
-                        let error_msg = if error_code == 5 {
-                            format!("Access denied for device {}. Make sure you're running as Administrator.", disk_path)
-                        } else {
-                            format!("Failed to open device {}, error code: {}. This might be a permissions issue or the device is in use.", 
-                                   disk_path, error_code)
-                        };
+                        info!("Attempt 4: Final attempt with FILE_FLAG_NO_BUFFERING");
+                        let h4 = CreateFileW(
+                            path_wide.as_ptr(),
+                            GENERIC_READ | GENERIC_WRITE,
+                            FILE_SHARE_READ | FILE_SHARE_WRITE,
+                            std::ptr::null_mut(),
+                            OPEN_EXISTING,
+                            FILE_FLAG_NO_BUFFERING, // Try with direct I/O
+                            0,
+                        );
                         
-                        return Err(anyhow!(error_msg));
+                        // If all attempts failed, return a detailed error
+                        if h4 == INVALID_HANDLE_VALUE {
+                            error_code = GetLastError();
+                            let error_msg = get_windows_error_message(error_code);
+                            error!("All open attempts failed, last error code: {} ({})", error_code, error_msg);
+                            
+                            // Build a detailed error message based on the error code
+                            let error_msg = match error_code {
+                                5 => format!(
+                                    "Access denied for device {}. You must run as Administrator to access disk devices directly.",
+                                    disk_path
+                                ),
+                                32 => format!(
+                                    "The device {} is in use by another process. Close any applications that may be using this disk.",
+                                    disk_path
+                                ),
+                                2 => format!(
+                                    "The device {} was not found. Verify the disk exists and is connected properly.",
+                                    disk_path
+                                ),
+                                123 => format!(
+                                    "Invalid filename syntax for {}. Windows requires specific format for disk devices.",
+                                    disk_path
+                                ),
+                                _ => format!(
+                                    "Failed to open device {}, Windows error code: {} ({}). This might be a permissions issue or the device is in use.",
+                                    disk_path, error_code, error_msg
+                                ),
+                            };
+                            
+                            error!("{}", error_msg);
+                            return Err(anyhow!(error_msg));
+                        }
+                        
+                        handle = h4;
+                    } else {
+                        handle = h3;
                     }
-                    
-                    handle = h3;
                 } else {
                     handle = h2;
                 }
@@ -1065,7 +1283,7 @@ impl Disk {
             }
         }
         
-        debug!("Successfully opened device with access: {}", disk_path);
+        info!("Successfully opened Windows disk device: {}", disk_path);
         
         // Convert Windows HANDLE to Rust File
         let file = unsafe { std::fs::File::from_raw_handle(handle as *mut _) };
@@ -1120,22 +1338,71 @@ impl Disk {
                 // Additional Windows-specific error handling
                 #[cfg(windows)]
                 {
-                    debug!("Windows: Starting image write operation");
+                    info!("Windows: Starting image write operation");
                     // Verify disk is ready for writing
                     let metadata = disk_file.get_ref().metadata();
                     if let Err(e) = metadata {
+                        error!("Windows disk error: Failed to get disk metadata: {}", e);
                         return Err(anyhow::anyhow!("Windows disk error: Failed to get disk metadata: {}", e)
-                            .context("Make sure you're running as Administrator and the disk is accessible")
+                            .context("Disk device is not accessible for writing. Make sure you're running as Administrator.")
                             .into());
                     }
+                    
+                    // Check basic disk access permissions
+                    let metadata_result = disk_file.get_ref().metadata();
+                    if let Err(e) = &metadata_result {
+                        error!("Windows disk error: Cannot get disk metadata: {}", e);
+                        let os_err = e.raw_os_error();
+                        if let Some(code) = os_err {
+                            let msg = get_windows_error_message(code as u32);
+                            error!("Windows error code: {} ({})", code, msg);
+                        }
+                        
+                        if metadata_result.is_err() {
+                            return Err(anyhow::anyhow!("Failed to access disk metadata: {}", e)
+                                .context("Make sure you're running as Administrator and the disk is accessible")
+                                .into());
+                        }
+                    }
+                    
+                    // Check if we can write to the disk by attempting a zero-byte write
+                    // This is safer than trying to use GetFileAttributesW on a device handle
+                    match disk_file.get_ref().try_clone() {
+                        Ok(mut test_file) => {
+                            let write_test = test_file.write(&[]);
+                            if let Err(e) = write_test {
+                                if e.kind() == std::io::ErrorKind::PermissionDenied {
+                                    error!("Windows disk error: Disk is write-protected, permission denied");
+                                    return Err(anyhow::anyhow!("The disk is write-protected and cannot be written to")
+                                        .context("Remove write protection from the device or use a different device")
+                                        .into());
+                                } else {
+                                    warn!("Write test failed: {}", e);
+                                    warn!("Continuing with caution, but write operation may fail later");
+                                }
+                            }
+                        },
+                        Err(e) => {
+                            warn!("Could not clone file handle for write test: {}", e);
+                            warn!("Continuing with caution, but write operation may fail later");
+                        }
+                    }
+                    
+                    info!("Windows: Disk is ready for writing");
                 }
                 
                 // Create XZ reader with our tracked file
+                let buffer_size = NonZeroUsize::new(8_00_000usize).unwrap();
+                info!("Creating XZ reader with buffer size: {} bytes", buffer_size);
+                
+                // XzReader::new_with_buffer_size doesn't return a Result, it returns directly XzReader
                 let mut source_file = XzReader::new_with_buffer_size(
                     tracked_image_file,
-                    NonZeroUsize::new(8_00_000usize).unwrap(),
+                    buffer_size,
                 );
 
+                info!("Starting to copy decompressed image data to disk");
+                
                 // Copy decompressed data to disk
                 let copy_result = io::copy(&mut source_file, &mut disk_file);
                 if let Err(e) = &copy_result {
@@ -1145,31 +1412,96 @@ impl Disk {
                     {
                         // Provide more specific error messages for common Windows errors
                         let os_error = e.raw_os_error();
-                        match os_error {
-                            Some(5) => return Err(anyhow::anyhow!("Access denied when writing to disk")
-                                .context("Make sure you're running as Administrator")
-                                .into()),
-                            Some(1117) => return Err(anyhow::anyhow!("The request could not be performed because of an I/O device error")
-                                .context("The disk may be write-protected or there may be hardware issues")
-                                .into()),
-                            Some(112) => return Err(anyhow::anyhow!("There is not enough space on the disk")
-                                .context("Check that the disk has enough free space for the image")
-                                .into()),
-                            _ => return Err(anyhow::anyhow!("Failed to write image to disk: {}", e).into()),
+                        
+                        // Log error details
+                        if let Some(code) = os_error {
+                            let error_msg = get_windows_error_message(code as u32);
+                            error!("Windows error code: {} ({})", code, error_msg);
+                            
+                            match code {
+                                5 => {
+                                    error!("Access denied error (code 5) when writing to disk");
+                                    return Err(anyhow::anyhow!("Access denied when writing to disk. Error code: 5 ({})", error_msg)
+                                        .context("Make sure you're running with Administrator privileges")
+                                        .context("The disk may be locked by another process or write-protected")
+                                        .into());
+                                },
+                                1117 => {
+                                    error!("I/O device error (code 1117) when writing to disk");
+                                    return Err(anyhow::anyhow!("The request could not be performed because of an I/O device error. Error code: 1117 ({})", error_msg)
+                                        .context("The disk may be write-protected, damaged, or have hardware issues")
+                                        .context("Try using a different USB port or disk")
+                                        .into());
+                                },
+                                112 => {
+                                    error!("Not enough space error (code 112) when writing to disk");
+                                    return Err(anyhow::anyhow!("There is not enough space on the disk. Error code: 112 ({})", error_msg)
+                                        .context("Check that the disk has enough free space for the image")
+                                        .context("Try using a larger capacity disk")
+                                        .into());
+                                },
+                                1224 => {
+                                    error!("Removed media error (code 1224) when writing to disk");
+                                    return Err(anyhow::anyhow!("The disk was removed during the write operation. Error code: 1224 ({})", error_msg)
+                                        .context("The disk was disconnected during the write operation")
+                                        .context("Ensure the disk remains connected throughout the process")
+                                        .into());
+                                },
+                                87 => {
+                                    error!("Invalid parameter error (code 87) when writing to disk");
+                                    return Err(anyhow::anyhow!("The parameter is incorrect. Error code: 87 ({})", error_msg)
+                                        .context("This may be due to mismatched buffer alignment requirements")
+                                        .context("Try restarting the application and using a different USB port")
+                                        .into());
+                                },
+                                _ => {
+                                    error!("Unrecognized Windows error code: {} ({})", code, error_msg);
+                                    return Err(anyhow::anyhow!("Failed to write image to disk. Windows error code: {} ({})", code, error_msg)
+                                        .context("An unexpected Windows error occurred during disk write")
+                                        .context("Try restarting your computer and running the application as Administrator")
+                                        .into());
+                                },
+                            }
+                        } else {
+                            error!("No specific Windows error code available");
+                            return Err(anyhow::anyhow!("Failed to write image to disk: {}", e)
+                                .context("No specific Windows error code was provided")
+                                .context("Make sure you're running as Administrator and the disk is accessible")
+                                .into());
                         }
                     }
                     
-                    return Err(anyhow::anyhow!("Failed to write image to disk: {}", e).into());
+                    #[cfg(not(windows))]
+                    {
+                        return Err(anyhow::anyhow!("Failed to write image to disk: {}", e).into());
+                    }
                 }
+                
+                info!("Image data copy completed, flushing disk buffers");
                 
                 // Ensure all data is written to disk
                 let flush_result = disk_file.flush();
                 if let Err(e) = flush_result {
                     error!("Failed to flush disk buffer: {}", e);
-                    return Err(anyhow::anyhow!("Failed to complete disk write operation: {}", e).into());
+                    
+                    #[cfg(windows)]
+                    {
+                        let os_error = e.raw_os_error();
+                        if let Some(code) = os_error {
+                            let error_msg = get_windows_error_message(code as u32);
+                            error!("Windows flush error code: {} ({})", code, error_msg);
+                        } else {
+                            error!("Windows flush error with no specific error code");
+                        }
+                    }
+                    
+                    return Err(anyhow::anyhow!("Failed to complete disk write operation during flush: {}", e)
+                        .context("Unable to ensure all data was written to disk")
+                        .context("The disk may have been disconnected or experienced an error")
+                        .into());
                 }
                 
-                debug!("Successfully wrote image to disk");
+                info!("Successfully wrote image to disk - operation complete");
                 anyhow::Ok(WriteProgress::Finish)
             })
             .await?;
@@ -1921,7 +2253,8 @@ pub fn get_disk_sector_size(disk_path: &str) -> Result<u32> {
     
     if handle == INVALID_HANDLE_VALUE {
         let error_code = unsafe { GetLastError() };
-        debug!("Failed to open disk for sector size query, error code: {}", error_code);
+        let error_msg = get_windows_error_message(error_code);
+        debug!("Failed to open disk for sector size query, error code: {} ({})", error_code, error_msg);
         return Ok(DEFAULT_SECTOR_SIZE); // Return default on error
     }
     
@@ -1964,7 +2297,8 @@ pub fn get_disk_sector_size(disk_path: &str) -> Result<u32> {
     
     if result == 0 || bytes_returned == 0 {
         let error_code = unsafe { GetLastError() };
-        debug!("DeviceIoControl failed, error code: {}, returning default sector size", error_code);
+        let error_msg = get_windows_error_message(error_code);
+        debug!("DeviceIoControl failed, error code: {} ({}), returning default sector size", error_code, error_msg);
         return Ok(DEFAULT_SECTOR_SIZE);
     }
     

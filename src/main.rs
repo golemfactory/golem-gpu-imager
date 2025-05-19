@@ -1,6 +1,7 @@
 use iced::window::{Settings, icon};
 use tracing_subscriber::EnvFilter;
 
+mod disk;
 mod models;
 mod style;
 mod ui;
@@ -16,13 +17,13 @@ pub fn main() -> iced::Result {
         // In release mode, only show info and above
         "info,golem_gpu_imager=info,iced_winit=error"
     };
-    
+
     // On Windows, enable ANSI support for colored terminal output
     #[cfg(windows)]
     {
         enable_ansi_support();
     }
-    
+
     // Allow overriding via environment variable
     let filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_level));
@@ -58,24 +59,26 @@ pub fn main() -> iced::Result {
 #[cfg(windows)]
 fn enable_ansi_support() {
     // Enable ANSI terminal processing on Windows
-    use windows_sys::Win32::System::Console::{GetStdHandle, SetConsoleMode, STD_OUTPUT_HANDLE, ENABLE_VIRTUAL_TERMINAL_PROCESSING};
-    
+    use windows_sys::Win32::System::Console::{
+        ENABLE_VIRTUAL_TERMINAL_PROCESSING, GetStdHandle, STD_OUTPUT_HANDLE, SetConsoleMode,
+    };
+
     unsafe {
         let handle = GetStdHandle(STD_OUTPUT_HANDLE);
         if handle == 0 {
             return;
         }
-        
+
         let mut mode: u32 = 0;
-        
+
         // Get current console mode
         if windows_sys::Win32::System::Console::GetConsoleMode(handle, &mut mode) == 0 {
             return;
         }
-        
+
         // Enable ANSI processing
         mode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
-        
+
         // Set the new mode
         let _ = SetConsoleMode(handle, mode);
     }

@@ -729,10 +729,14 @@ pub fn view_select_target_device<'a>(
 
 pub fn view_writing_process(progress: f32) -> Element<'static, Message> {
     // Page header with a more welcoming title
-    let header = container(text("Writing Image to Device").size(30).style(text::primary))
-        .width(Length::Fill)
-        .padding(20)
-        .style(container::secondary);
+    let header = container(
+        text("Writing Image to Device")
+            .size(30)
+            .style(text::primary),
+    )
+    .width(Length::Fill)
+    .padding(20)
+    .style(container::secondary);
 
     // Create an icon to represent the writing process
     let writing_icon = svg::Svg::new(svg::Handle::from_memory(LOGO_SVG))
@@ -741,15 +745,13 @@ pub fn view_writing_process(progress: f32) -> Element<'static, Message> {
 
     // Calculate more precise progress information
     let progress_percentage = (progress * 100.0) as i32;
-    
+
     // Create a nice styled progress bar with a pulse animation for low progress
     // This gives better feedback when progress seems stalled
     let progress_value = if progress < 0.02 {
-        progress_bar(0.0..=1.0, progress)
-            .style(progress_bar::primary)
+        progress_bar(0.0..=1.0, progress).style(progress_bar::primary)
     } else {
-        progress_bar(0.0..=1.0, progress)
-            .style(progress_bar::secondary)
+        progress_bar(0.0..=1.0, progress).style(progress_bar::secondary)
     };
 
     // Display progress percentage with larger text
@@ -759,31 +761,31 @@ pub fn view_writing_process(progress: f32) -> Element<'static, Message> {
     let (step_text, step_description) = match progress_percentage {
         0..=5 => (
             "Initializing Write Process",
-            "Preparing disk and validating image data..."
+            "Preparing disk and validating image data...",
         ),
         6..=15 => (
             "Preparing Disk",
-            "Creating partition table and file system structure..."
+            "Creating partition table and file system structure...",
         ),
         16..=30 => (
             "Writing Boot Sectors",
-            "Installing bootloader and system configuration..."
+            "Installing bootloader and system configuration...",
         ),
         31..=75 => (
             "Writing OS Image",
-            "Transferring main system files to device..."
+            "Transferring main system files to device...",
         ),
         76..=90 => (
             "Writing Configuration",
-            "Applying your custom settings to the device..."
+            "Applying your custom settings to the device...",
         ),
         91..=99 => (
             "Finalizing",
-            "Verifying data integrity and completing installation..."
+            "Verifying data integrity and completing installation...",
         ),
         _ => (
             "Completing Installation",
-            "Almost done! Finishing up the final steps..."
+            "Almost done! Finishing up the final steps...",
         ),
     };
 
@@ -799,23 +801,27 @@ pub fn view_writing_process(progress: f32) -> Element<'static, Message> {
         // Don't show estimate when just starting
         0
     };
-    
+
     let time_remaining = if progress > 0.05 && progress < 0.98 {
         if estimated_seconds_left > 60 {
             let minutes = estimated_seconds_left / 60;
             let seconds = estimated_seconds_left % 60;
-            text(format!("Estimated time remaining: {} min {} sec", minutes, seconds))
-                .size(14)
+            text(format!(
+                "Estimated time remaining: {} min {} sec",
+                minutes, seconds
+            ))
+            .size(14)
         } else {
-            text(format!("Estimated time remaining: {} seconds", estimated_seconds_left))
-                .size(14)
+            text(format!(
+                "Estimated time remaining: {} seconds",
+                estimated_seconds_left
+            ))
+            .size(14)
         }
     } else if progress >= 0.98 {
-        text("Finishing up, almost done...")
-            .size(14)
+        text("Finishing up, almost done...").size(14)
     } else {
-        text("Calculating estimated time remaining...")
-            .size(14)
+        text("Calculating estimated time remaining...").size(14)
     };
 
     // Information container with improved visual hierarchy and spacing
@@ -857,33 +863,27 @@ pub fn view_writing_process(progress: f32) -> Element<'static, Message> {
     // Warning text about not disconnecting the device
     let warning_text = text("Please do not disconnect your device during the installation")
         .size(14)
-        .style(|theme: &Theme| text::Style {
+        .style(|_theme: &Theme| text::Style {
             color: Some(crate::style::WARNING),
             ..text::Style::default()
         });
 
     // Cancel button with improved styling
     let cancel_button = button(
-            row![
-                icons::cancel(),
-                text("Cancel Installation").size(16)
-            ]
+        row![icons::cancel(), text("Cancel Installation").size(16)]
             .spacing(8)
-            .align_y(Alignment::Center)
-        )
-        .on_press(Message::CancelWrite)
-        .padding(12)
-        .width(200)
-        .style(button::danger);
+            .align_y(Alignment::Center),
+    )
+    .on_press(Message::CancelWrite)
+    .padding(12)
+    .width(200)
+    .style(button::danger);
 
     // Button container with warning
     let button_container = container(
-        column![
-            warning_text,
-            cancel_button
-        ]
-        .spacing(15)
-        .align_x(Alignment::Center)
+        column![warning_text, cancel_button]
+            .spacing(15)
+            .align_x(Alignment::Center),
     )
     .width(Length::Fill)
     .align_x(Horizontal::Center)
@@ -912,7 +912,11 @@ pub fn view_writing_process(progress: f32) -> Element<'static, Message> {
 
 pub fn view_flash_completion(success: bool) -> Element<'static, Message> {
     // Page header with success/error status with improved styling
-    let header_text = if success { "Installation Successful" } else { "Installation Failed" };
+    let header_text = if success {
+        "Installation Successful"
+    } else {
+        "Installation Failed"
+    };
     let header = container(text(header_text).size(32))
         .width(Length::Fill)
         .padding(20)
@@ -934,12 +938,12 @@ pub fn view_flash_completion(success: bool) -> Element<'static, Message> {
     };
 
     // Status title with icon
-    let status_icon_styled = if success { 
-        icons::check_circle().style(text::success) 
-    } else { 
-        icons::error().style(text::danger) 
+    let status_icon_styled = if success {
+        icons::check_circle().style(text::success)
+    } else {
+        icons::error().style(text::danger)
     };
-    
+
     let status_text = text(if success {
         "Operation Completed Successfully!"
     } else {
@@ -947,13 +951,10 @@ pub fn view_flash_completion(success: bool) -> Element<'static, Message> {
     })
     .size(26)
     .style(if success { text::success } else { text::danger });
-    
-    let status_title = row![
-        status_icon_styled,
-        status_text,
-    ]
-    .spacing(10)
-    .align_y(Alignment::Center);
+
+    let status_title = row![status_icon_styled, status_text,]
+        .spacing(10)
+        .align_y(Alignment::Center);
 
     // Status message with more detailed information
     let status_message = text(if success {
@@ -971,35 +972,53 @@ pub fn view_flash_completion(success: bool) -> Element<'static, Message> {
     let next_steps_content = if success {
         column![
             text("Next Steps:").size(18).style(text::primary),
-            row![icons::checkmark(), text("Insert the device into your target system")].spacing(5),
-            row![icons::checkmark(), text("Boot your system from this device")].spacing(5),
-            row![icons::checkmark(), text("The Golem GPU node will start automatically")].spacing(5),
+            row![
+                icons::checkmark(),
+                text("Insert the device into your target system")
+            ]
+            .spacing(5),
+            row![
+                icons::checkmark(),
+                text("Boot your system from this device")
+            ]
+            .spacing(5),
+            row![
+                icons::checkmark(),
+                text("The Golem GPU node will start automatically")
+            ]
+            .spacing(5),
         ]
         .spacing(10)
     } else {
         column![
             text("Troubleshooting Tips:").size(18).style(text::primary),
-            row![icons::info(), text("Ensure the device is not write-protected")].spacing(5),
-            row![icons::info(), text("Try using a different USB port or device")].spacing(5),
+            row![
+                icons::info(),
+                text("Ensure the device is not write-protected")
+            ]
+            .spacing(5),
+            row![
+                icons::info(),
+                text("Try using a different USB port or device")
+            ]
+            .spacing(5),
             row![icons::info(), text("Check if the device needs formatting")].spacing(5),
         ]
         .spacing(10)
     };
-    
+
     // Wrap in container for styling
     let next_steps = container(next_steps_content)
         .padding(15)
         .width(Length::Fill)
-        .style(|theme: &Theme| {
-            container::Style {
-                background: Some(theme.extended_palette().background.weak.color.into()),
-                border: Border {
-                    radius: 5.0.into(),
-                    width: 1.0,
-                    color: theme.extended_palette().background.strong.color,
-                },
-                ..container::Style::default()
-            }
+        .style(|theme: &Theme| container::Style {
+            background: Some(theme.extended_palette().background.weak.color.into()),
+            border: Border {
+                radius: 5.0.into(),
+                width: 1.0,
+                color: theme.extended_palette().background.strong.color,
+            },
+            ..container::Style::default()
         });
 
     // Information container with improved visual hierarchy
@@ -1037,12 +1056,9 @@ pub fn view_flash_completion(success: bool) -> Element<'static, Message> {
 
     // Create styled buttons with icons for better UX
     let flash_another_button = button(
-        row![
-            icons::install(), 
-            text("Flash Another Device").size(16)
-        ]
-        .spacing(8)
-        .align_y(Alignment::Center)
+        row![icons::install(), text("Flash Another Device").size(16)]
+            .spacing(8)
+            .align_y(Alignment::Center),
     )
     .on_press(Message::FlashAnother)
     .padding(12)
@@ -1050,12 +1066,9 @@ pub fn view_flash_completion(success: bool) -> Element<'static, Message> {
     .style(button::primary);
 
     let exit_button = button(
-        row![
-            icons::house(),
-            text("Return to Home").size(16)
-        ]
-        .spacing(8)
-        .align_y(Alignment::Center)
+        row![icons::house(), text("Return to Home").size(16)]
+            .spacing(8)
+            .align_y(Alignment::Center),
     )
     .on_press(Message::Exit)
     .padding(12)

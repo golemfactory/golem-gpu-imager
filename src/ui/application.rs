@@ -1,12 +1,12 @@
+use crate::disk::{Disk, WriteProgress};
 use crate::models::{
     AppMode, ConfigurationPreset, EditState, FlashState, Message, NetworkType, OsImage,
     PaymentNetwork, StorageDevice,
 };
 use crate::ui;
-use crate::utils::disks::WriteProgress;
+use crate::utils::PresetManager;
 use crate::utils::repo::{DownloadStatus, ImageRepo, Version};
-use crate::utils::{Disk, PresetManager};
-use anyhow::anyhow;
+// Removed unused import: use anyhow::anyhow;
 use futures_util::TryStreamExt;
 use iced::{Alignment, Element, Length, Task};
 use std::sync::Arc;
@@ -833,12 +833,22 @@ impl GolemGpuImager {
 
                                                 // Format configuration partition if needed before writing
                                                 // This ensures the partition is accessible and properly formatted
-                                                let format_result = disk.find_or_create_partition(config_partition_uuid, true);
-                                                if let Err(e) = format_result {
-                                                    warn!("Failed to prepare configuration partition: {}", e);
-                                                    return;
+                                                {
+                                                    let format_result = disk.find_or_create_partition(
+                                                        config_partition_uuid,
+                                                        true,
+                                                    );
+                                                    if let Err(e) = format_result {
+                                                        warn!(
+                                                            "Failed to prepare configuration partition: {}",
+                                                            e
+                                                        );
+                                                        return;
+                                                    }
+                                                    // Using a separate scope to ensure format_result is dropped
+                                                    // before we try to write configuration
                                                 }
-                                                
+
                                                 // Try to apply configuration
                                                 let result = disk.write_configuration(
                                                     config_partition_uuid,
@@ -1039,24 +1049,26 @@ impl GolemGpuImager {
                 if let Some(disk) = &mut self.locked_disk {
                     // Try to read the configuration from the disk
                     // First, use find_or_create_partition to format the configuration partition if needed
-                    match disk.find_or_create_partition(config_partition_uuid, true) {
-                        Ok(fs) => {
-                            info!("Successfully accessed configuration partition");
-                            // Now try to read the configuration
-                            match disk.read_configuration(config_partition_uuid) {
-                                Ok(config) => {
-                                    info!("Successfully read configuration from disk");
-                                    config_from_disk = Some(config);
-                                }
-                                Err(e) => {
-                                    // Not a fatal error - we'll just use default values
-                                    warn!("Failed to read configuration from disk: {}", e);
-                                }
-                            }
-                        }
-                        Err(e) => {
+                    {
+                        // Create a separate scope to ensure filesystem is dropped before read_configuration
+                        let partition_result = disk.find_or_create_partition(config_partition_uuid, true);
+                        if let Err(e) = partition_result {
                             // Failed to access the partition even with formatting
                             warn!("Failed to access configuration partition: {}", e);
+                        } else {
+                            info!("Successfully accessed configuration partition");
+                        }
+                    }
+                    
+                    // Now try to read the configuration
+                    match disk.read_configuration(config_partition_uuid) {
+                        Ok(config) => {
+                            info!("Successfully read configuration from disk");
+                            config_from_disk = Some(config);
+                        }
+                        Err(e) => {
+                            // Not a fatal error - we'll just use default values
+                            warn!("Failed to read configuration from disk: {}", e);
                         }
                     }
                 }
@@ -1171,13 +1183,16 @@ impl GolemGpuImager {
                             );
 
                             // First make sure the partition is properly formatted
-                            let format_result = disk.find_or_create_partition(config_partition_uuid, true);
-                            if let Err(e) = format_result {
-                                let error_msg = format!("Failed to prepare configuration partition: {}", e);
+                            // Run this in a completely separate step before the write
+                            let mut disk_clone = disk.clone();
+                            if let Err(e) = disk_clone.find_or_create_partition(config_partition_uuid, true) {
+                                let error_msg =
+                                    format!("Failed to prepare configuration partition: {}", e);
                                 error!("{}", error_msg);
                                 return (false, Some(error_msg), Some(disk));
                             }
-                            
+                            // If the partition check succeeded, we can proceed with writing the configuration
+
                             // Use the write_configuration function to write to the disk
                             match disk.write_configuration(
                                 config_partition_uuid,

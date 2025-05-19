@@ -1,4 +1,4 @@
-use crate::utils::WriteProgress;
+use crate::disk::WriteProgress;
 use futures_util::Sink;
 use std::io;
 use std::io::Read;
@@ -12,15 +12,21 @@ struct ProgressTracker<R: Read> {
     total_size: u64,
 }
 
-const MB : f64 = 1f64 / 1024f64 / 1024f64;
+const MB: f64 = 1f64 / 1024f64 / 1024f64;
 
 impl<R: Read> Read for ProgressTracker<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let bytes = self.inner.read(buf)?;
         if bytes > 0 {
             self.bytes_read += bytes as u64;
-            info!("Read {} MB / {}", self.bytes_read as f64 * MB, self.total_size as f64 * MB);
-            self.sipper.send(self.bytes_read*1000 / self.total_size).ok();
+            info!(
+                "Read {} MB / {}",
+                self.bytes_read as f64 * MB,
+                self.total_size as f64 * MB
+            );
+            self.sipper
+                .send(self.bytes_read * 1000 / self.total_size)
+                .ok();
         }
         Ok(bytes)
     }

@@ -1,6 +1,6 @@
 use iced::alignment::Horizontal;
 use iced::widget::{button, column, container, svg, text};
-use iced::{Alignment, Color, Element, Font, Length, Shadow, Theme, Vector};
+use iced::{Alignment, Element, Length, Shadow, Theme, Vector};
 
 use crate::models::Message;
 use crate::ui::{LOGO_SVG, icons};

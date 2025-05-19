@@ -99,7 +99,7 @@ pub fn view_select_existing_device<'a>(
         )
         .width(Length::Fill)
         .padding(15)
-        .style(|theme| container::Style {
+        .style(|_theme| container::Style {
             text_color: Some(Color::from_rgb(0.8, 0.0, 0.0)),
             background: Some(Color::from_rgb(1.0, 0.9, 0.9).into()),
             border: iced::Border {

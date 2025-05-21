@@ -27,11 +27,13 @@ impl LinuxDiskAccess {
     ///
     /// # Arguments
     /// * `path` - The path to the disk device (e.g., "/dev/sda")
+    /// * `edit_mode` - When true, we're opening for editing configuration only, not writing an image.
+    ///   Linux implementation still unmounts partitions, but can be extended in the future if needed.
     ///
     /// # Returns
     /// * `Result<(File, Self)>` - A tuple with the disk file handle and platform-specific data
-    pub async fn lock_path(path: &str) -> Result<(File, Self)> {
-        info!("Locking Linux disk path: {}", path);
+    pub async fn lock_path(path: &str, edit_mode: bool) -> Result<(File, Self)> {
+        info!("Locking Linux disk path: {} (edit_mode: {})", path, edit_mode);
 
         // Create the Linux UDisks2 client
         let client = Client::new().await?;
@@ -114,7 +116,14 @@ impl LinuxDiskAccess {
     }
 
     /// Verify disk is ready for writing (Linux implementation)
-    pub fn pre_write_checks(disk_file: &File) -> Result<()> {
+    /// Note: This accepts the same parameters as the Windows version for compatibility,
+    /// but the original_path parameter is unused on Linux as we don't need diskpart.
+    pub fn pre_write_checks(disk_file: &File, original_path: Option<&str>) -> Result<()> {
+        // Log the original path for debugging, but we don't actually use it on Linux
+        if let Some(path) = original_path {
+            debug!("Linux: path provided for pre_write_checks: {}", path);
+        }
+        
         // Check basic disk access permissions
         match disk_file.try_clone() {
             Ok(mut test_file) => {

@@ -32,6 +32,7 @@ use linux::LinuxDiskAccess as PlatformDiskAccess;
 
 #[cfg(windows)]
 use windows::WindowsDiskAccess as PlatformDiskAccess;
+use crate::disk::common::bytes_to_mb;
 
 /// Configuration structure returned by read_configuration
 #[derive(Debug)]
@@ -51,6 +52,10 @@ pub struct Disk {
 
     // Platform-specific data and operations
     platform: PlatformDiskAccess,
+    
+    // Original path used to open this disk - preserved for operations that need path info
+    // This is particularly important for Windows disk cleaning
+    original_path: String,
 }
 
 // We can't #[derive(Clone)] because File doesn't implement Clone
@@ -65,8 +70,53 @@ impl Clone for Disk {
         Disk {
             file,
             platform: self.platform.clone(),
+            original_path: self.original_path.clone(),
         }
     }
+}
+
+#[cfg(windows)]
+fn path_str_from_file(file: &File) -> Option<String> {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Foundation::HANDLE;
+    use windows_sys::Win32::Storage::FileSystem::GetFinalPathNameByHandleW;
+    use windows_sys::Win32::Foundation::GetLastError;
+    
+    match file.try_clone() {
+        Ok(f) => {
+            // Try to get path from file using Windows-specific API
+            let handle = f.as_raw_handle() as HANDLE;
+            let mut name_buf = [0u16; 260]; // MAX_PATH
+            let len = unsafe {
+                GetFinalPathNameByHandleW(
+                    handle,
+                    name_buf.as_mut_ptr(),
+                    name_buf.len() as u32,
+                    0,
+                )
+            };
+            if len > 0 {
+                match String::from_utf16(&name_buf[0..len as usize]) {
+                    Ok(s) => {
+                        // For Windows, this will likely be a path like \\?\GLOBALROOT\Device\HarddiskVolume1
+                        // or \\?\PhysicalDrive0 - we need to check for PhysicalDrive pattern
+                        Some(s)
+                    },
+                    Err(_) => None,
+                }
+            } else {
+                // If we can't get the path, use the disk_number from platform data if available
+                None
+            }
+        },
+        Err(_) => None,
+    }
+}
+
+#[cfg(not(windows))]
+fn path_str_from_file(_file: &File) -> Option<String> {
+    // On non-Windows platforms, this is less critical since we don't use diskpart
+    None
 }
 
 impl Disk {
@@ -75,14 +125,20 @@ impl Disk {
     /// # Arguments
     /// * `path` - The path to the disk device
     ///   (e.g., "/dev/sda" on Linux, "\\.\PhysicalDrive0" or "C:" on Windows)
+    /// * `edit_mode` - When true, we're opening for editing configuration only, not writing an image.
+    ///   This skips diskpart cleaning on Windows, which avoids potential data loss during editing.
     ///
     /// # Returns
     /// * `Result<Self>` - A new Disk instance on success, Error on failure
-    pub async fn lock_path(path: &str) -> Result<Self> {
+    pub async fn lock_path(path: &str, edit_mode: bool) -> Result<Self> {
         // Platform-specific implementation to open and lock disk
-        let (file, platform) = PlatformDiskAccess::lock_path(path).await?;
+        let (file, platform) = PlatformDiskAccess::lock_path(path, edit_mode).await?;
 
-        Ok(Disk { file, platform })
+        Ok(Disk { 
+            file, 
+            platform,
+            original_path: path.to_string(),
+        })
     }
 
     /// Get a cloned file handle to the disk
@@ -98,16 +154,20 @@ impl Disk {
     /// # Returns
     /// * A sipper that reports progress updates as the write proceeds
     pub fn write_image(
-        &mut self,
+        mut self,
         image_path: &str,
+        cancel_token: crate::models::CancelToken,
     ) -> impl Sipper<Result<WriteProgress>, WriteProgress> + Send + 'static {
         debug!("Opening image file: {}", image_path);
         let image_file_r = File::open(image_path)
             .with_context(|| format!("Failed to open image file: {}", image_path));
 
-        // Use a larger buffer for better performance
-        const BUFFER_SIZE: usize = 1024 * 1024; // 1MB buffer
+        // Use a larger buffer for better performance (matching disk-image-writer)
+        const BUFFER_SIZE: usize = 4 * 1024 * 1024; // 4MB buffer
 
+        // Save original path before moving self into the task
+        let original_path = self.original_path.clone();
+        
         let disk_file_r = self.get_cloned_file_handle();
         task::sipper(async move |mut sipper| -> Result<WriteProgress> {
             let image_file = std::io::BufReader::with_capacity(BUFFER_SIZE, image_file_r?);
@@ -136,7 +196,12 @@ impl Disk {
             // Use blocking task for I/O operations to avoid blocking the async runtime
             let r = tokio::task::spawn_blocking(move || {
                 // Platform-specific pre-write checks
-                let pre_write_result = PlatformDiskAccess::pre_write_checks(&disk_file);
+                // Note: Disk cleaning is now done during lock_path, before we have an exclusive lock
+                // We still pass the original path for verification purposes
+                info!("Using original path for final pre-write checks: {}", original_path);
+                
+                // Pass the original_path to pre_write_checks for any platform-specific final checks
+                let pre_write_result = PlatformDiskAccess::pre_write_checks(&disk_file, Some(&original_path));
                 
                 if let Err(e) = pre_write_result {
                     return Err(e);
@@ -166,7 +231,14 @@ impl Disk {
                     
                     // Read from source, write to disk in aligned chunks
                     let mut total_copied: u64 = 0;
+                    let mut total_written: u64 = 0;
                     loop {
+                        // Check if operation was cancelled before reading the next chunk
+                        if cancel_token.is_cancelled() {
+                            info!("Disk write operation cancelled by user");
+                            return Err(anyhow::anyhow!("Operation cancelled by user"));
+                        }
+                        
                         // Read a chunk of data into our aligned buffer
                         let bytes_read = match source_file.read(&mut buffer) {
                             Ok(0) => break, // EOF
@@ -191,6 +263,13 @@ impl Disk {
                             bytes_read + padding
                         };
                         
+                        // Check if operation was cancelled before writing to disk
+                        if cancel_token.is_cancelled() {
+                            info!("Disk write operation cancelled by user after reading data");
+                            return Err(anyhow::anyhow!("Operation cancelled by user"));
+                        }
+
+                        info!("Writing {} bytes to disk", aligned_size);
                         // Write the aligned buffer to disk
                         match disk_file.write_all(&buffer[0..aligned_size]) {
                             Ok(_) => {
@@ -202,10 +281,15 @@ impl Disk {
                                 return Err(anyhow::anyhow!("Failed to write to disk: {}", e));
                             }
                         };
+                        total_written += aligned_size as u64;
+                        info!("Wrote {} bytes to disk, ", bytes_to_mb(total_written) );
+                        info!("Total copied: {} bytes", bytes_to_mb(total_copied));
                     }
                     
                     info!("Successfully copied {} bytes with aligned buffers", total_copied);
                 }
+                
+                info!("Post-copy checks starting");
                 
                 // We already handled the copy with our manual implementation
                 let copy_result = Ok(0); // Placeholder since we already did the copy
@@ -220,10 +304,50 @@ impl Disk {
                     return Err(anyhow::anyhow!("Failed to write image to disk: {}", e));
                 }
 
-                // Ensure all data is written to disk
+                // We need to ensure all data is physically written to disk
+                // First sync to ensure filesystem operations are complete
+                info!("Starting disk sync operation");
+                let sync_start = std::time::Instant::now();
+                #[cfg(unix)]
+                {
+                    use std::os::unix::io::AsRawFd;
+                    let fd = disk_file.as_raw_fd();
+                    unsafe {
+                        info!("Calling fsync on file descriptor...");
+                        let sync_result = libc::fsync(fd);
+                        if sync_result != 0 {
+                            let err = std::io::Error::last_os_error();
+                            warn!("fsync failed: {}", err);
+                        } else {
+                            info!("fsync completed successfully in {:?}", sync_start.elapsed());
+                        }
+                    }
+                }
+                #[cfg(windows)]
+                {
+                    info!("Windows: Using FlushFileBuffers API for disk sync");
+                    use std::os::windows::io::AsRawHandle;
+                    use windows_sys::Win32::Storage::FileSystem::FlushFileBuffers;
+                    
+                    let handle = disk_file.as_raw_handle() as windows_sys::Win32::Foundation::HANDLE;
+                    let sync_result = unsafe { FlushFileBuffers(handle) };
+                    if sync_result == 0 {
+                        let err = std::io::Error::last_os_error();
+                        warn!("FlushFileBuffers failed: {}", err);
+                    } else {
+                        info!("FlushFileBuffers completed successfully in {:?}", sync_start.elapsed());
+                    }
+                }
+
+                // Now do the regular flush
+                info!("Starting disk flush operation");
+                let flush_start = std::time::Instant::now();
+                info!("Attempting to flush disk buffer...");
                 let flush_result = disk_file.flush();
+                let flush_duration = flush_start.elapsed();
+                
                 if let Err(e) = flush_result {
-                    error!("Failed to flush disk buffer: {}", e);
+                    error!("Failed to flush disk buffer after {:?}: {}", flush_duration, e);
 
                     // Platform-specific flush error handling
                     if let Some(error_context) = PlatformDiskAccess::handle_flush_error(&e) {
@@ -233,14 +357,21 @@ impl Disk {
                     return Err(
                         anyhow::anyhow!("Failed to complete disk write operation: {}", e)
                     );
+                } else {
+                    info!("Disk flush completed successfully in {:?}", flush_duration);
                 }
 
+                info!("Starting volume unlock (Windows only)");
                 // On Windows, unlock the volume
                 #[cfg(windows)]
                 {
+                    info!("Attempting to unlock volume after successful write");
+                    let unlock_start = std::time::Instant::now();
                     // We don't propagate unlock errors as they're not critical for the write operation itself
                     if let Err(e) = PlatformDiskAccess::unlock_volume(&disk_file) {
-                        warn!("Failed to unlock disk volume: {}", e);
+                        warn!("Failed to unlock disk volume after {:?}: {}", unlock_start.elapsed(), e);
+                    } else {
+                        info!("Volume unlocked successfully in {:?}", unlock_start.elapsed());
                     }
                 }
 

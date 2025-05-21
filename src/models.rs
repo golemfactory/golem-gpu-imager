@@ -37,6 +37,33 @@ pub struct StorageDevice {
     pub size: String,
 }
 
+// A simple cancel token for aborting operations
+#[derive(Debug, Clone)]
+pub struct CancelToken {
+    // Whether the operation should be cancelled
+    cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl CancelToken {
+    pub fn new() -> Self {
+        Self {
+            cancelled: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        }
+    }
+    
+    pub fn cancel(&self) {
+        self.cancelled.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+    
+    pub fn is_cancelled(&self) -> bool {
+        self.cancelled.load(std::sync::atomic::Ordering::SeqCst)
+    }
+    
+    pub fn reset(&self) {
+        self.cancelled.store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
 pub enum AppMode {
     StartScreen,
     FlashNewImage(FlashState),
@@ -59,8 +86,10 @@ pub enum FlashState {
         wallet_address: String,
         is_wallet_valid: bool,
     },
-    WritingProcess(f32), // Progress 0.0 - 1.0
-    Completion(bool),    // Success or failure
+    WritingImage(f32),     // Progress 0.0 - 1.0 for image writing
+    WritingConfig(f32),    // Progress 0.0 - 1.0 for config writing
+    WritingProcess(f32),   // Legacy - for backward compatibility
+    Completion(bool),      // Success or failure
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -149,8 +178,11 @@ pub enum Message {
     ConfigurationSaveFailed,       // Failed to save configuration to device
     ShowError(String),             // Show an error message to the user
     DeviceLockedForWriting(crate::disk::Disk, String), // Device locked for writing with image path
-    WriteProgress(f32),            // Update the writing progress
-    WriteImageCompleted,           // Image write completed successfully
-    WriteImageFailed(String),      // Image write failed with error message
-    PollWriteProgress,             // Poll for progress updates from the subscription
+    WriteImageProgress(f32),        // Update the image writing progress
+    WriteImageCompleted,            // Image write completed successfully
+    WriteImageFailed(String),       // Image write failed with error message
+    WriteConfigProgress(f32),       // Update the config writing progress
+    WriteConfigCompleted,           // Config write completed successfully
+    WriteConfigFailed(String),      // Config write failed with error message
+    PollWriteProgress,              // Poll for progress updates from the subscription
 }

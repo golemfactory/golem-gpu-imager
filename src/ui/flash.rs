@@ -727,24 +727,44 @@ pub fn view_select_target_device<'a>(
         .into()
 }
 
-pub fn view_writing_process(progress: f32) -> Element<'static, Message> {
-    // Page header with a more welcoming title
+pub fn view_writing_process(progress: f32, title: &'static str) -> Element<'static, Message> {
+    // Page header with a more welcoming title with improved contrast
     let header = container(
-        text("Writing Image to Device")
-            .size(30)
-            .style(text::primary),
+        text(title)
+            .size(28)
+            .style(|theme: &iced::Theme| iced::widget::text::Style {
+                color: Some(iced::Color::WHITE), // Full white for maximum contrast
+                ..iced::widget::text::Style::default()
+            }),
     )
     .width(Length::Fill)
-    .padding(20)
-    .style(container::secondary);
+    .padding(15)
+    .style(|theme: &iced::Theme| {
+        let palette = theme.extended_palette();
+        container::Style {
+            background: Some(crate::style::PRIMARY.into()),
+            border: iced::Border {
+                width: 1.0,
+                radius: 5.0.into(),
+                color: palette.primary.strong.color,
+            },
+            ..container::Style::default()
+        }
+    });
 
     // Create an icon to represent the writing process
     let writing_icon = svg::Svg::new(svg::Handle::from_memory(LOGO_SVG))
-        .width(120)
-        .height(120);
+        .width(80)
+        .height(80);
 
     // Calculate more precise progress information
     let progress_percentage = (progress * 100.0) as i32;
+    
+    // Calculate approximate megabytes written (assuming 16GB image size)
+    // Adjust this value based on your actual image size
+    const TOTAL_MB: u32 = 16 * 1024; // 16GB in MB
+    let mb_written = (progress * TOTAL_MB as f32) as u32;
+    let mb_total = TOTAL_MB;
 
     // Create a nice styled progress bar with a pulse animation for low progress
     // This gives better feedback when progress seems stalled
@@ -754,8 +774,11 @@ pub fn view_writing_process(progress: f32) -> Element<'static, Message> {
         progress_bar(0.0..=1.0, progress).style(progress_bar::secondary)
     };
 
-    // Display progress percentage with larger text
-    let progress_text = text(format!("{}%", progress_percentage)).size(36);
+    // Display progress percentage with larger text and MB written
+    let progress_text = row![
+        text(format!("{}%", progress_percentage)).size(28),
+        text(format!("({} MB / {} MB)", mb_written, mb_total)).size(16)
+    ].spacing(10).align_y(Alignment::Center);
 
     // Enhanced description text - show different steps based on progress with more detail
     let (step_text, step_description) = match progress_percentage {
@@ -790,8 +813,8 @@ pub fn view_writing_process(progress: f32) -> Element<'static, Message> {
     };
 
     // Create a progress step indicator with more visual impact
-    let step_header = text(step_text).size(20).style(text::primary);
-    let step_detail = text(step_description).size(16);
+    let step_header = text(step_text).size(18).style(text::primary);
+    let step_detail = text(step_description).size(14);
 
     // Estimated time remaining calculation (simple approximation)
     // Assume a complete write takes about 10 minutes (600 seconds)
@@ -810,47 +833,50 @@ pub fn view_writing_process(progress: f32) -> Element<'static, Message> {
                 "Estimated time remaining: {} min {} sec",
                 minutes, seconds
             ))
-            .size(14)
+            .size(12)
         } else {
             text(format!(
                 "Estimated time remaining: {} seconds",
                 estimated_seconds_left
             ))
-            .size(14)
+            .size(12)
         }
     } else if progress >= 0.98 {
-        text("Finishing up, almost done...").size(14)
+        text("Finishing up, almost done...").size(12)
     } else {
-        text("Calculating estimated time remaining...").size(14)
+        text("Calculating estimated time remaining...").size(12)
     };
 
     // Information container with improved visual hierarchy and spacing
     let info_container = container(
-        column![
+        row![
             writing_icon,
-            text("Installing Golem GPU OS").size(24),
-            column![].height(10), // Small spacer
-            row![progress_text].padding(10),
-            step_header,
-            step_detail,
-            column![].height(15), // Spacer
-            progress_value,
-            column![].height(10), // Small spacer
-            time_remaining,
+            column![
+                text("Installing Golem GPU OS").size(20),
+                row![progress_text],
+                progress_value,
+                row![
+                    step_header.width(Length::Fill),
+                    time_remaining
+                ],
+                step_detail,
+            ]
+            .spacing(5)
+            .width(Length::Fill)
         ]
-        .spacing(8)
-        .align_x(Alignment::Center),
+        .spacing(15)
+        .align_y(Alignment::Center),
     )
     .width(Length::Fill)
-    .padding(30)
+    .padding(15)
     .style(|theme: &Theme| {
         let palette = theme.extended_palette();
 
         container::Style::default()
             .background(palette.background.weak.color)
             .border(Border {
-                radius: 12.0.into(),
-                width: 2.0,
+                radius: 8.0.into(),
+                width: 1.0,
                 color: palette.primary.base.color,
             })
     });
@@ -862,7 +888,7 @@ pub fn view_writing_process(progress: f32) -> Element<'static, Message> {
 
     // Warning text about not disconnecting the device
     let warning_text = text("Please do not disconnect your device during the installation")
-        .size(14)
+        .size(12)
         .style(|_theme: &Theme| text::Style {
             color: Some(crate::style::WARNING),
             ..text::Style::default()
@@ -870,35 +896,35 @@ pub fn view_writing_process(progress: f32) -> Element<'static, Message> {
 
     // Cancel button with improved styling
     let cancel_button = button(
-        row![icons::cancel(), text("Cancel Installation").size(16)]
+        row![icons::cancel(), text("Cancel Installation").size(14)]
             .spacing(8)
             .align_y(Alignment::Center),
     )
     .on_press(Message::CancelWrite)
-    .padding(12)
-    .width(200)
+    .padding(8)
+    .width(180)
     .style(button::danger);
 
     // Button container with warning
     let button_container = container(
         column![warning_text, cancel_button]
-            .spacing(15)
+            .spacing(10)
             .align_x(Alignment::Center),
     )
     .width(Length::Fill)
     .align_x(Horizontal::Center)
-    .padding(15);
+    .padding(10);
 
     // Main content with improved spacing
     let content = column![
         header,
         container(column![
-            Container::new(Column::new()).height(30), // Top spacing
+            Container::new(Column::new()).height(15), // Top spacing
             info_container,
             spacer,
             button_container,
         ])
-        .padding(25)
+        .padding(15)
         .width(Length::Fill)
         .height(Length::Fill),
     ]

@@ -222,6 +222,10 @@ struct ProgressTracker<R: Read> {
 
 const MB: f64 = 1f64 / 1024f64 / 1024f64;
 
+pub fn bytes_to_mb(bytes: u64) -> f64 {
+    bytes as f64 * MB
+}
+
 impl<R: Read> Read for ProgressTracker<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let bytes = self.inner.read(buf)?;

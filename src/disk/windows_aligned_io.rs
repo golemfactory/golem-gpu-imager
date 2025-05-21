@@ -178,12 +178,13 @@ impl AlignedDiskIO {
     /// Create a new AlignedDiskIO wrapping a file
     pub fn new(mut file: File, sector_size: u32) -> io::Result<Self> {
         // Always use at least 4KB sector size for safe direct I/O on most systems
+        // This matches the buffer alignment approach from disk-image-writer
         let safe_sector_size = std::cmp::max(sector_size, 4096);
         info!("AlignedDiskIO: Using sector size {} bytes for alignment (original: {} bytes)", 
               safe_sector_size, sector_size);
         
-        // Use 1MB buffer size aligned to sector size
-        let buffer_size = 1024 * 1024;
+        // Use 4MB buffer size aligned to sector size, matching disk-image-writer's buffer size
+        let buffer_size = 4 * 1024 * 1024; // 4 MB buffer like in disk-image-writer
         let buffer = AlignedBuffer::new(buffer_size, safe_sector_size as usize)?;
         
         let position = match file.seek(SeekFrom::Current(0)) {
@@ -278,7 +279,9 @@ impl AlignedDiskIO {
             
             // Create a properly aligned buffer as a fallback
             info!("Creating a new properly aligned buffer as fallback");
-            let mut aligned_buf = match AlignedBuffer::new(to_write, self.sector_size as usize) {
+            // Use a larger buffer size for better performance
+            let fallback_size = std::cmp::max(to_write, 4 * 1024 * 1024); // At least 4MB
+            let mut aligned_buf = match AlignedBuffer::new(fallback_size, self.sector_size as usize) {
                 Ok(buffer) => buffer,
                 Err(e) => return Err(io::Error::new(
                     e.kind(),
@@ -307,16 +310,31 @@ impl AlignedDiskIO {
             
             info!("AlignedDiskIO: Using fallback buffer at 0x{:X} with size {}", new_ptr, aligned_buf.as_slice().len());
             
-            // Attempt the write with detailed error context
-            let written = match self.file.write(aligned_buf.as_slice()) {
-                Ok(bytes) => bytes,
-                Err(e) => {
-                    error!("AlignedDiskIO: Write failed at position {}: {}", aligned_pos, e);
-                    error!("AlignedDiskIO: Buffer details: Address: 0x{:X}, Size: {}, Alignment: {}", 
-                          new_ptr, aligned_buf.as_slice().len(), sector_size);
-                    return Err(e);
+            // Attempt the write with multiple retries on failure (similar to disk-image-writer)
+            let mut written = 0;
+            for attempt in 0..5 {
+                match self.file.write(aligned_buf.as_slice()) {
+                    Ok(bytes) => {
+                        written = bytes;
+                        break;
+                    },
+                    Err(e) => {
+                        if attempt < 4 {
+                            error!("AlignedDiskIO: Write failed at position {} on attempt {}/5: {}", 
+                                  aligned_pos, attempt + 1, e);
+                            error!("Retrying write operation in 100ms...");
+                            // Wait 100ms before retrying
+                            std::thread::sleep(std::time::Duration::from_millis(100));
+                        } else {
+                            // Last attempt failed
+                            error!("AlignedDiskIO: Write failed at position {} after 5 attempts: {}", aligned_pos, e);
+                            error!("AlignedDiskIO: Buffer details: Address: 0x{:X}, Size: {}, Alignment: {}", 
+                                  new_ptr, aligned_buf.as_slice().len(), sector_size);
+                            return Err(e);
+                        }
+                    }
                 }
-            };
+            }
             
             if written < aligned_buf.as_slice().len() {
                 return Err(io::Error::new(
@@ -329,6 +347,12 @@ impl AlignedDiskIO {
             self.position += data_size;
             self.buffer_pos = 0;
             
+            // Ensure data is flushed to disk
+            match self.file.flush() {
+                Ok(_) => info!("Successfully flushed file to disk"),
+                Err(e) => warn!("Failed to flush file to disk: {}", e),
+            }
+            
             return Ok(());
         }
         
@@ -337,16 +361,32 @@ impl AlignedDiskIO {
         
         let write_slice = &self.buffer.as_slice()[0..to_write];
         
-        // Attempt the write with detailed error context
-        let written = match self.file.write(write_slice) {
-            Ok(bytes) => bytes,
-            Err(e) => {
-                error!("AlignedDiskIO: Write failed at position {}: {}", aligned_pos, e);
-                error!("AlignedDiskIO: Buffer details: Address: 0x{:X}, Size: {}, Alignment: {}", 
-                      ptr_addr, to_write, sector_size);
-                return Err(e);
+        // Attempt the write with multiple retries on failure (similar to disk-image-writer)
+        let mut written = 0;
+        for attempt in 0..5 {
+            match self.file.write(write_slice) {
+                Ok(bytes) => {
+                    written = bytes;
+                    break;
+                },
+                Err(e) => {
+                    if attempt < 4 {
+                        error!("AlignedDiskIO: Write failed at position {} on attempt {}/5: {}", 
+                              aligned_pos, attempt + 1, e);
+                        error!("Retrying write operation in 100ms...");
+                        // Wait 100ms before retrying
+                        std::thread::sleep(std::time::Duration::from_millis(100));
+                    } else {
+                        // Last attempt failed
+                        error!("AlignedDiskIO: Write failed at position {} after 5 attempts: {}", aligned_pos, e);
+                        error!("AlignedDiskIO: Buffer details: Address: 0x{:X}, Size: {}, Alignment: {}", 
+                              ptr_addr, to_write, sector_size);
+                        return Err(e);
+                    }
+                }
             }
-        };
+        }
+        
         if written < to_write {
             return Err(io::Error::new(
                 io::ErrorKind::WriteZero,
@@ -359,7 +399,27 @@ impl AlignedDiskIO {
         self.buffer_pos = 0;
         
         // Flush the underlying file to ensure data is written to disk
-        self.file.flush()?;
+        // Retry flushing a few times if it fails
+        for attempt in 0..3 {
+            match self.file.flush() {
+                Ok(_) => {
+                    info!("Successfully flushed file to disk on attempt {}", attempt + 1);
+                    return Ok(());
+                },
+                Err(e) => {
+                    if attempt < 2 {
+                        warn!("Failed to flush file to disk on attempt {}/3: {}", attempt + 1, e);
+                        warn!("Retrying flush operation in 100ms...");
+                        // Wait 100ms before retrying
+                        std::thread::sleep(std::time::Duration::from_millis(100));
+                    } else {
+                        // Last attempt failed
+                        error!("Failed to flush file to disk after 3 attempts: {}", e);
+                        return Err(e);
+                    }
+                }
+            }
+        }
         
         Ok(())
     }

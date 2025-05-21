@@ -1,13 +1,13 @@
 use crate::disk::{Disk, WriteProgress};
 use crate::models::{
-    AppMode, ConfigurationPreset, EditState, FlashState, Message, NetworkType, OsImage,
+    AppMode, CancelToken, ConfigurationPreset, EditState, FlashState, Message, NetworkType, OsImage,
     PaymentNetwork, StorageDevice,
 };
 use crate::ui;
 use crate::utils::PresetManager;
 use crate::utils::repo::{DownloadStatus, ImageRepo, Version};
 // Removed unused import: use anyhow::anyhow;
-use futures_util::TryStreamExt;
+// Removed unused import: futures_util::TryStreamExt
 use iced::{Alignment, Element, Length, Task};
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
@@ -28,6 +28,7 @@ pub struct GolemGpuImager {
     pub preset_manager: Option<PresetManager>,
     pub locked_disk: Option<Disk>,
     pub error_message: Option<String>,
+    pub cancel_token: CancelToken, // For canceling operations
 }
 
 impl GolemGpuImager {
@@ -89,6 +90,7 @@ impl GolemGpuImager {
             preset_manager,
             locked_disk: None,
             error_message: None,
+            cancel_token: CancelToken::new(),
         }
     }
 
@@ -704,12 +706,14 @@ impl GolemGpuImager {
                         ) {
                             // Make sure the image is downloaded
                             if let Some(image_path) = &image.path {
-                                // Start the write process with initial 0% progress
-                                self.mode = AppMode::FlashNewImage(FlashState::WritingProcess(0.0));
+                                // Start the write process with initial 0% progress for image writing
+                                self.mode = AppMode::FlashNewImage(FlashState::WritingImage(0.0));
 
                                 // Get device path and image path
                                 let device_path = device.path.clone();
                                 let image_path_val = image_path.clone();
+                                // Create a clone of the cancel token that we can pass to the task
+                                let cancel_token_clone = self.cancel_token.clone();
 
                                 info!(
                                     "Starting flash with config: {:?} {:?} {} {} to device {}",
@@ -720,23 +724,37 @@ impl GolemGpuImager {
                                     device_path
                                 );
 
+                                // Pass the cancel token clone into the future task
                                 return Task::future(async move {
                                     info!("Starting disk image write to {}", device_path);
-                                    Disk::lock_path(&device_path).await
+                                    // Store the device_path for use throughout the process
+                                    // When writing an image, set edit_mode to false to allow disk cleaning
+                                    let locked_disk = Disk::lock_path(&device_path, false).await;
+                                    // Log whether we successfully locked the disk
+                                    match &locked_disk {
+                                        Ok(_) => info!("Successfully locked disk: {}", device_path),
+                                        Err(e) => error!("Failed to lock disk {}: {}", device_path, e),
+                                    }
+                                    locked_disk
                                 })
                                 .and_then(move |mut disk| {
                                     // Now write the image and handle progress
+                                    // Note: write_image now takes ownership of disk
+                                    // Clone the cancel token again for this specific closure
+                                    let task_cancel_token = cancel_token_clone.clone();
                                     let write_task = Task::sip(
-                                        disk.write_image(&image_path_val),
+                                        disk.write_image(&image_path_val, task_cancel_token),
                                         |message| match message {
-                                            WriteProgress::Start => Message::WriteProgress(0.0),
+                                            WriteProgress::Start => Message::WriteImageProgress(0.0),
                                             WriteProgress::Write(bytes) => {
-                                                Message::WriteProgress(bytes as f32 / 1000.0)
+                                                Message::WriteImageProgress(bytes as f32 / 1000.0)
                                             }
-                                            WriteProgress::Finish => Message::WriteProgress(100.0),
+                                            WriteProgress::Finish => Message::WriteImageProgress(100.0),
                                         },
                                         |result| match result {
                                             Ok(WriteProgress::Finish) => {
+                                                // When image writing is complete, we'll need to reacquire the disk
+                                                // because write_image now consumes the disk
                                                 Message::WriteImageCompleted
                                             }
                                             Ok(_) => todo!(),
@@ -765,32 +783,79 @@ impl GolemGpuImager {
             }
             Message::CancelWrite => {
                 if let AppMode::FlashNewImage(_) = &self.mode {
-                    // Cancel the writing operation and go back to device selection
-                    info!("User cancelled write operation");
-                    self.mode = AppMode::FlashNewImage(FlashState::SelectTargetDevice);
-
+                    // Cancel the writing operation by setting the cancel token
+                    info!("User requested to cancel write operation");
+                    self.cancel_token.cancel();
+                    
+                    // Update the UI to show cancellation is in progress
+                    match &self.mode {
+                        AppMode::FlashNewImage(FlashState::WritingImage(_)) => {
+                            info!("Cancelling disk image writing in progress");
+                            self.mode = AppMode::FlashNewImage(FlashState::WritingImage(1.0));
+                        }
+                        AppMode::FlashNewImage(FlashState::WritingConfig(_)) => {
+                            info!("Cancelling configuration writing in progress");
+                            self.mode = AppMode::FlashNewImage(FlashState::WritingConfig(1.0));
+                        }
+                        AppMode::FlashNewImage(FlashState::WritingProcess(_)) => {
+                            info!("Cancelling legacy writing process");
+                            self.mode = AppMode::FlashNewImage(FlashState::WritingProcess(1.0));
+                        }
+                        AppMode::FlashNewImage(FlashState::DownloadingImage { .. }) => {
+                            // Handle download cancellation
+                            info!("Cancelling image download");
+                            // Cancellation will be handled in the download task
+                            self.mode = AppMode::FlashNewImage(FlashState::SelectOsImage);
+                        }
+                        _ => {
+                            // For other states, go back to device selection
+                            info!("Cancellation requested, returning to device selection");
+                            self.mode = AppMode::FlashNewImage(FlashState::SelectTargetDevice);
+                        }
+                    }
+                    
                     // Release any disk resources
                     self.locked_disk = None;
                 }
             }
-            Message::WriteProgress(progress) => {
-                // Update the writing progress in the UI
-                if let AppMode::FlashNewImage(FlashState::WritingProcess(_)) = &self.mode {
+            Message::WriteImageProgress(progress) => {
+                // Update the image writing progress in the UI
+                if let AppMode::FlashNewImage(FlashState::WritingImage(_)) = &self.mode {
                     // Update the UI with the new progress value
-                    debug!("Write progress: {:.1}%", progress * 100.0);
-                    self.mode = AppMode::FlashNewImage(FlashState::WritingProcess(progress));
+                    debug!("Image write progress: {:.1}%", progress * 100.0);
+                    self.mode = AppMode::FlashNewImage(FlashState::WritingImage(progress));
+                }
+            }
+            Message::WriteConfigProgress(progress) => {
+                // Update the configuration writing progress in the UI
+                if let AppMode::FlashNewImage(FlashState::WritingConfig(_)) = &self.mode {
+                    // Update the UI with the new progress value
+                    debug!("Config write progress: {:.1}%", progress * 100.0);
+                    self.mode = AppMode::FlashNewImage(FlashState::WritingConfig(progress));
                 }
             }
             Message::WriteImageCompleted => {
-                // First check if we need to apply configuration
-                if let AppMode::FlashNewImage(FlashState::WritingProcess(_)) = &self.mode {
+                // Log timing of the image write completion handler
+                info!("WriteImageCompleted handler starting");
+                let handler_start = std::time::Instant::now();
+                
+                // Reset the cancel token for future operations
+                self.cancel_token.reset();
+                info!("Cancel token reset");
+                
+                // Transition from image writing to configuration writing
+                if let AppMode::FlashNewImage(FlashState::WritingImage(_)) = &self.mode {
+                    info!("Previous state was WritingImage - transitioning to configuration");
+                    
                     // Extract the device path from the selected device
                     if let Some(device_idx) = self.selected_device {
                         if let Some(device) = self.storage_devices.get(device_idx) {
-                            // Get the device path and config values, similar to WriteImage message handler
+                            // Get the device path and config values from the settings
                             let device_path = device.path.clone();
+                            info!("Using device path: {}", device_path);
 
-                            // Extract needed data from the previous mode
+                            // Extract needed data from the settings
+                            let config_data_start = std::time::Instant::now();
                             let config_data =
                                 if let AppMode::FlashNewImage(FlashState::ConfigureSettings {
                                     payment_network,
@@ -800,6 +865,7 @@ impl GolemGpuImager {
                                     ..
                                 }) = &self.mode
                                 {
+                                    info!("Configuration extraction took {:?}", config_data_start.elapsed());
                                     Some((
                                         *payment_network,
                                         *network_type,
@@ -807,49 +873,86 @@ impl GolemGpuImager {
                                         wallet_address.clone(),
                                     ))
                                 } else {
+                                    info!("Configuration extraction took {:?} (no config found)", config_data_start.elapsed());
                                     None
                                 };
 
                             if let Some((payment_network, network_type, subnet, wallet_address)) =
                                 config_data
                             {
-                                // Create a task to apply configuration
-                                info!("Image write completed, applying configuration");
-
-                                // Set the mode to completion now, the task will run in the background
-                                self.mode = AppMode::FlashNewImage(FlashState::Completion(true));
-
-                                // Release the current disk handle
-                                self.locked_disk = None;
-
+                                // Image write completed, now we'll proceed to writing configuration
+                                info!("Image write completed, proceeding to configuration writing");
+                                info!("Network: {:?}, Type: {:?}, Subnet: {}", payment_network, network_type, subnet);
+                                
+                                // Update UI to show we're starting configuration writing
+                                self.mode = AppMode::FlashNewImage(FlashState::WritingConfig(0.0));
+                                info!("UI state updated to WritingConfig");
+                                
+                                // Create a standalone task to handle the configuration writing
+                                // Pass the cancel token to allow cancellation during configuration writing
+                                let cancel_token_clone = self.cancel_token.clone();
+                                info!("Created cancel token clone for config task");
+                                info!("Creating configuration writing task");
                                 return Task::perform(
                                     async move {
-                                        // Try to lock the device again to apply configuration
-                                        match Disk::lock_path(&device_path).await {
+                                        let config_start = std::time::Instant::now();
+                                        info!("Configuration write task started");
+                                        
+                                        // Check if already cancelled
+                                        if cancel_token_clone.is_cancelled() {
+                                            info!("Task cancelled before starting");
+                                            return (false, "Operation cancelled by user".to_string());
+                                        }
+                                        
+                                        info!("Attempting to lock disk for configuration at path: {}", device_path);
+                                        // First try to prepare the partition
+                                        let lock_start = std::time::Instant::now();
+                                        // When writing configuration after image, set edit_mode to true to skip disk cleaning
+                                        let lock_result = Disk::lock_path(&device_path, true).await;
+                                        info!("Disk lock took {:?}", lock_start.elapsed());
+                                        
+                                        match lock_result {
                                             Ok(mut disk) => {
+                                                info!("Successfully locked disk for configuration");
                                                 // Config partition UUID
                                                 let config_partition_uuid =
                                                     "33b921b8-edc5-46a0-8baa-d0b7ad84fc71";
+                                                info!("Using configuration partition UUID: {}", config_partition_uuid);
 
+                                                // Check for cancellation before formatting
+                                                if cancel_token_clone.is_cancelled() {
+                                                    info!("Task cancelled before formatting partition");
+                                                    return (false, "Operation cancelled by user".to_string());
+                                                }
+                                                
                                                 // Format configuration partition if needed before writing
-                                                // This ensures the partition is accessible and properly formatted
-                                                {
-                                                    let format_result = disk.find_or_create_partition(
+                                                info!("Preparing to find or create partition");
+                                                let partition_start = std::time::Instant::now();
+                                                let format_result = {
+                                                    let result = disk.find_or_create_partition(
                                                         config_partition_uuid,
                                                         true,
                                                     );
-                                                    if let Err(e) = format_result {
-                                                        warn!(
-                                                            "Failed to prepare configuration partition: {}",
-                                                            e
-                                                        );
-                                                        return;
+                                                    info!("Partition find/create took {:?}", partition_start.elapsed());
+                                                    
+                                                    if let Err(e) = &result {
+                                                        warn!("Failed to prepare configuration partition: {}", e);
+                                                        return (false, format!("Failed to prepare configuration partition: {}", e));
                                                     }
-                                                    // Using a separate scope to ensure format_result is dropped
-                                                    // before we try to write configuration
+                                                    // Let the FileSystem drop here to release the borrow
+                                                    info!("Partition successfully prepared");
+                                                    true
+                                                };
+                                                
+                                                // Check for cancellation before writing configuration
+                                                if cancel_token_clone.is_cancelled() {
+                                                    info!("Task cancelled before writing configuration");
+                                                    return (false, "Operation cancelled by user".to_string());
                                                 }
-
-                                                // Try to apply configuration
+                                                
+                                                // Now try to write the configuration
+                                                info!("Starting to write configuration data");
+                                                let write_start = std::time::Instant::now();
                                                 let result = disk.write_configuration(
                                                     config_partition_uuid,
                                                     payment_network,
@@ -857,42 +960,89 @@ impl GolemGpuImager {
                                                     &subnet,
                                                     &wallet_address,
                                                 );
+                                                info!("Configuration write took {:?}", write_start.elapsed());
 
-                                                if let Err(e) = result {
-                                                    warn!("Applied configuration failed: {}", e);
+                                                if let Err(e) = &result {
+                                                    warn!("Writing configuration failed after {:?}: {}", config_start.elapsed(), e);
+                                                    (false, e.to_string())
                                                 } else {
-                                                    info!("Applied configuration successfully");
+                                                    info!("Applied configuration successfully in {:?}", config_start.elapsed());
+                                                    (true, "Configuration applied successfully".to_string())
                                                 }
                                             }
                                             Err(e) => {
-                                                warn!(
-                                                    "Failed to lock device for configuration: {}",
-                                                    e
-                                                );
+                                                warn!("Failed to lock device for configuration after {:?}: {}", 
+                                                    lock_start.elapsed(), e);
+                                                (false, format!("Failed to lock device: {}", e))
                                             }
                                         }
-
-                                        // No need to return anything, the UI is already updated
                                     },
-                                    |_| Message::Exit, // This message is ignored since UI is already updated
+                                    move |(success, message)| {
+                                        if success {
+                                            Message::WriteConfigCompleted
+                                        } else {
+                                            Message::WriteConfigFailed(message)
+                                        }
+                                    },
                                 );
                             }
                         }
                     }
                 }
 
-                // Default behavior if we can't apply configuration
-                info!("Image write completed successfully");
+                // Default behavior if we can't apply configuration or aren't in the right state
+                info!("Image write completed successfully, but unable to apply configuration");
                 self.mode = AppMode::FlashNewImage(FlashState::Completion(true));
 
                 // Release any disk resources
                 self.locked_disk = None;
             }
             Message::WriteImageFailed(error_msg) => {
-                // Set the completion state to failure and log the error
-                error!("Image write failed: {}", error_msg);
-                self.mode = AppMode::FlashNewImage(FlashState::Completion(false));
+                // Reset the cancel token for future operations
+                self.cancel_token.reset();
+                
+                // Check if this was a cancellation or a real error
+                if error_msg.contains("cancelled by user") {
+                    info!("Image write was cancelled by user");
+                    self.mode = AppMode::FlashNewImage(FlashState::SelectTargetDevice);
+                } else {
+                    // Set the completion state to failure and log the error
+                    error!("Image write failed: {}", error_msg);
+                    self.mode = AppMode::FlashNewImage(FlashState::Completion(false));
+                }
 
+                // Release any disk resources
+                self.locked_disk = None;
+            }
+            Message::WriteConfigCompleted => {
+                // Configuration writing completed successfully
+                info!("Configuration write completed successfully");
+                
+                // Reset the cancel token for future operations
+                self.cancel_token.reset();
+                
+                self.mode = AppMode::FlashNewImage(FlashState::Completion(true));
+                
+                // Release any disk resources
+                self.locked_disk = None;
+            }
+            Message::WriteConfigFailed(error_msg) => {
+                // Reset the cancel token for future operations
+                self.cancel_token.reset();
+                
+                // Check if this was a cancellation or a real error
+                if error_msg.contains("cancelled by user") {
+                    info!("Configuration write was cancelled by user");
+                    self.mode = AppMode::FlashNewImage(FlashState::SelectTargetDevice);
+                } else {
+                    // Configuration write failed with real error
+                    error!("Configuration write failed: {}", error_msg);
+                    // Still show success for overall process since the image was written correctly
+                    // Just log a warning about configuration failure
+                    warn!("The image was written correctly, but configuration failed. The device may need manual configuration.");
+                    self.mode = AppMode::FlashNewImage(FlashState::Completion(true));
+                }
+                
                 // Release any disk resources
                 self.locked_disk = None;
             }
@@ -901,7 +1051,7 @@ impl GolemGpuImager {
                 info!("Device locked for writing image: {}", image_path);
 
                 // Start writing with 0% progress
-                self.mode = AppMode::FlashNewImage(FlashState::WritingProcess(0.0));
+                self.mode = AppMode::FlashNewImage(FlashState::WritingImage(0.0));
 
                 // Setup a global variable to store progress for subscriptions to access
                 // in a real app this would be better handled with a proper state management system
@@ -922,35 +1072,60 @@ impl GolemGpuImager {
             }
 
             Message::PollWriteProgress => {
-                // Check if we're in writing mode
-                if let AppMode::FlashNewImage(FlashState::WritingProcess(_)) = &self.mode {
-                    // Get the current progress from our static atomic
-                    use std::sync::atomic::Ordering;
+                // Check which writing mode we're in and handle accordingly
+                match &self.mode {
+                    AppMode::FlashNewImage(FlashState::WritingImage(current_progress)) => {
+                        // Get the current progress from our static atomic
+                        use std::sync::atomic::Ordering;
 
-                    // Access the static progress atomic
-                    static WRITE_PROGRESS: once_cell::sync::Lazy<
-                        std::sync::Arc<std::sync::atomic::AtomicU32>,
-                    > = once_cell::sync::Lazy::new(|| {
-                        std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0))
-                    });
+                        // Access the static progress atomic for image writing
+                        static IMAGE_WRITE_PROGRESS: once_cell::sync::Lazy<
+                            std::sync::Arc<std::sync::atomic::AtomicU32>,
+                        > = once_cell::sync::Lazy::new(|| {
+                            std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0))
+                        });
 
-                    // Read the current progress
-                    let progress_int = WRITE_PROGRESS.load(Ordering::SeqCst);
+                        // Read the current progress
+                        let progress_int = IMAGE_WRITE_PROGRESS.load(Ordering::SeqCst);
 
-                    // Convert from integer percentage (0-10000) back to float (0.0-1.0)
-                    let progress = progress_int as f32 / 10000.0;
+                        // Convert from integer percentage (0-10000) back to float (0.0-1.0)
+                        let progress = progress_int as f32 / 10000.0;
 
-                    // Only update UI if progress has actually changed
-                    if let AppMode::FlashNewImage(FlashState::WritingProcess(current_progress)) =
-                        &self.mode
-                    {
+                        // Only update UI if progress has actually changed
                         if progress > *current_progress && progress <= 1.0 {
-                            debug!("Updating UI progress: {:.2}%", progress * 100.0);
+                            debug!("Updating image write UI progress: {:.2}%", progress * 100.0);
 
                             // Update mode with new progress
-                            self.mode =
-                                AppMode::FlashNewImage(FlashState::WritingProcess(progress));
+                            self.mode = AppMode::FlashNewImage(FlashState::WritingImage(progress));
                         }
+                    }
+                    AppMode::FlashNewImage(FlashState::WritingConfig(current_progress)) => {
+                        // Get the current progress from our static atomic
+                        use std::sync::atomic::Ordering;
+
+                        // Access the static progress atomic for config writing
+                        static CONFIG_WRITE_PROGRESS: once_cell::sync::Lazy<
+                            std::sync::Arc<std::sync::atomic::AtomicU32>,
+                        > = once_cell::sync::Lazy::new(|| {
+                            std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0))
+                        });
+
+                        // Read the current progress
+                        let progress_int = CONFIG_WRITE_PROGRESS.load(Ordering::SeqCst);
+
+                        // Convert from integer percentage (0-10000) back to float (0.0-1.0)
+                        let progress = progress_int as f32 / 10000.0;
+
+                        // Only update UI if progress has actually changed
+                        if progress > *current_progress && progress <= 1.0 {
+                            debug!("Updating config write UI progress: {:.2}%", progress * 100.0);
+
+                            // Update mode with new progress
+                            self.mode = AppMode::FlashNewImage(FlashState::WritingConfig(progress));
+                        }
+                    }
+                    _ => {
+                        // Not in a writing mode, do nothing
                     }
                 }
             }
@@ -990,7 +1165,8 @@ impl GolemGpuImager {
                             return Task::perform(
                                 async move {
                                     // Try to acquire exclusive lock on the device
-                                    match Disk::lock_path(&device_path).await {
+                                    // For standalone configuration editing, use edit_mode=true to skip disk cleaning
+                                    match Disk::lock_path(&device_path, true).await {
                                         Ok(disk) => (Some(disk), None),
                                         Err(err) => {
                                             // Format a more user-friendly error message
@@ -1381,7 +1557,17 @@ impl GolemGpuImager {
                     &self.new_preset_name,
                     self.show_preset_manager,
                 ),
-                FlashState::WritingProcess(progress) => ui::flash::view_writing_process(*progress),
+                FlashState::WritingImage(progress) => {
+                    ui::flash::view_writing_process(*progress, "Writing OS image to device...")
+                },
+                FlashState::WritingConfig(progress) => {
+                    ui::flash::view_writing_process(*progress, "Writing configuration to device...")
+                },
+                // Keep this case for backward compatibility with older code
+                FlashState::WritingProcess(_) => {
+                    // Redirect to image writing view since it's most likely an image write
+                    ui::flash::view_writing_process(0.0, "Writing to device...")
+                },
                 FlashState::Completion(success) => ui::flash::view_flash_completion(*success),
             },
             AppMode::EditExistingDisk(state) => match state {
@@ -1459,13 +1645,19 @@ impl GolemGpuImager {
 
     // Required to implement Application trait in main.rs
     pub fn subscription(&self) -> iced::Subscription<Message> {
-        // If we're in writing process mode, periodically send progress updates
-        if let AppMode::FlashNewImage(FlashState::WritingProcess(_)) = &self.mode {
-            // Create a timer subscription that periodically updates the progress bar
-            iced::time::every(std::time::Duration::from_millis(200))
-                .map(|_| Message::PollWriteProgress)
-        } else {
-            iced::Subscription::none()
+        // If we're in any writing mode, periodically send progress updates
+        match &self.mode {
+            AppMode::FlashNewImage(FlashState::WritingImage(_)) => {
+                // Create a timer subscription that periodically updates the progress bar for image writing
+                iced::time::every(std::time::Duration::from_millis(200))
+                    .map(|_| Message::PollWriteProgress)
+            }
+            AppMode::FlashNewImage(FlashState::WritingConfig(_)) => {
+                // Create a timer subscription that periodically updates the progress bar for config writing
+                iced::time::every(std::time::Duration::from_millis(200))
+                    .map(|_| Message::PollWriteProgress)
+            }
+            _ => iced::Subscription::none()
         }
     }
 }

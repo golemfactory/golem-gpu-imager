@@ -1,5 +1,8 @@
 use iced::window::{Settings, icon};
-use tracing_subscriber::EnvFilter;
+use std::path::PathBuf;
+use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, registry, util::SubscriberInitExt};
+use tracing_appender::rolling::{RollingFileAppender, Rotation};
+use directories::ProjectDirs;
 
 mod disk;
 mod models;
@@ -18,24 +21,61 @@ pub fn main() -> iced::Result {
         "info,golem_gpu_imager=info,iced_winit=error"
     };
 
-    // On Windows, enable ANSI support for colored terminal output
+    // Allow overriding via environment variable
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_level));
+
+    // Check if running from console
+    let is_console = is_running_from_console();
+    
+    // Windows-specific console setup
     #[cfg(windows)]
     {
-        enable_ansi_support();
+        if is_console {
+            // Only enable ANSI support if running from a console
+            enable_ansi_support();
+        } else {
+            // If not running from console, avoid allocating a console window
+            // No action needed here, as we'll use the file logger instead
+        }
     }
 
-    // Allow overriding via environment variable
-    let filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_level));
+    // Set up logging based on whether we're in a console or not
+    if is_console {
+        // When running from a console, log to stdout
+        tracing_subscriber::fmt()
+            .with_env_filter(filter)
+            .with_file(true)
+            .with_line_number(true)
+            .init();
+    } else {
+        // When not running from a console, log to file
+        // Set up a rolling log file - daily rotation with a max of 5 files
+        let log_dir = get_log_directory();
+        let file_appender = RollingFileAppender::new(
+            Rotation::DAILY,
+            log_dir,
+            "golem-gpu-imager.log",
+        );
+        let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
+        
+        // We need to keep the guard alive for the duration of the program
+        // So we'll store it in a static and intentionally leak it
+        let _guard = Box::leak(Box::new(_guard));
+        
+        // Set up subscriber with file logging
+        let file_layer = fmt::layer()
+            .with_writer(non_blocking)
+            .with_ansi(false)  // Disable ANSI colors in file
+            .with_file(true)
+            .with_line_number(true);
+            
+        registry()
+            .with(filter)
+            .with(file_layer)
+            .init();
+    }
 
-    // Initialize the tracing subscriber
-    tracing_subscriber::fmt()
-        .with_env_filter(filter)
-        .with_file(true)
-        .with_line_number(true)
-        .init();
-
-    tracing::info!("Starting Golem GPU Imager {}", version::VERSION);
+    tracing::info!("Starting Golem GPU Imager {} (console mode: {})", version::VERSION, is_console);
 
     let mut settings = Settings::default();
 
@@ -54,6 +94,54 @@ pub fn main() -> iced::Result {
     .theme(|_| style::custom_theme())
     .centered()
     .run()
+}
+
+/// Check if the program is running in a console
+fn is_running_from_console() -> bool {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::System::Console::{GetStdHandle, STD_OUTPUT_HANDLE};
+        
+        unsafe {
+            let handle = GetStdHandle(STD_OUTPUT_HANDLE);
+            if handle == 0 {
+                return false;
+            }
+            
+            let mut mode: u32 = 0;
+            // If GetConsoleMode succeeds, we're running from a console
+            windows_sys::Win32::System::Console::GetConsoleMode(handle, &mut mode) != 0
+        }
+    }
+    
+    #[cfg(not(windows))]
+    {
+        // On Unix systems, check if stdout is a TTY
+        use std::os::unix::io::AsRawFd;
+        unsafe {
+            let stdout_fd = std::io::stdout().as_raw_fd();
+            libc::isatty(stdout_fd) != 0
+        }
+    }
+}
+
+/// Get the directory for log files
+fn get_log_directory() -> PathBuf {
+    // Use ProjectDirs to get platform-specific data directory
+    // Match the convention used elsewhere in the codebase
+    let project_dirs = ProjectDirs::from("network", "Golem Factory", "GPU Imager")
+        .expect("Failed to determine project directory");
+
+    // Use the data_local_dir (platform-specific)
+    let mut log_dir = project_dirs.data_local_dir().to_path_buf();
+    log_dir.push("logs");
+    
+    // Ensure the directory exists
+    if !log_dir.exists() {
+        let _ = std::fs::create_dir_all(&log_dir);
+    }
+    
+    log_dir
 }
 
 #[cfg(windows)]

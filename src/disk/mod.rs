@@ -543,92 +543,33 @@ impl Disk {
             // On Windows, we need more aggressive locking for partition writes
             // The standard pre_write_checks might not be sufficient for partition writes
             // Let's use a more direct approach
-            use std::os::windows::io::AsRawHandle;
-            use windows_sys::Win32::Foundation::HANDLE;
-            use windows_sys::Win32::System::Ioctl::DeviceIoControl;
-            use windows_sys::Win32::Storage::FileSystem::FSCTL_ALLOW_EXTENDED_DASD_IO;
-            use windows_sys::Win32::Storage::FileSystem::FSCTL_LOCK_VOLUME;
-            use windows_sys::Win32::Storage::FileSystem::FSCTL_DISMOUNT_VOLUME;
             use windows::WindowsDiskAccess;
             
-            let handle = self.file.as_raw_handle() as HANDLE;
-            let mut bytes_returned: u32 = 0;
+            // Use WindowsDiskAccess for all Windows-specific operations
+            info!("Using WindowsDiskAccess for volume locking and dismounting");
             
             // First enable extended DASD I/O
             info!("Enabling extended DASD I/O access for partition write");
-            unsafe {
-                DeviceIoControl(
-                    handle,
-                    FSCTL_ALLOW_EXTENDED_DASD_IO,
-                    std::ptr::null_mut(),
-                    0,
-                    std::ptr::null_mut(),
-                    0,
-                    &mut bytes_returned,
-                    std::ptr::null_mut(),
-                )
-            };
+            WindowsDiskAccess::enable_extended_dasd_io(&self.file);
             
             // Try to lock the volume with multiple attempts
-            let mut locked = false;
-            for attempt in 0..20 {
-                // DeviceIoControl with FSCTL_LOCK_VOLUME
-                info!("Locking volume for partition write, attempt {}/20", attempt + 1);
-                
-                let lock_result = unsafe {
-                    DeviceIoControl(
-                        handle,
-                        FSCTL_LOCK_VOLUME,  // Control code for locking a volume
-                        std::ptr::null_mut(),
-                        0,
-                        std::ptr::null_mut(),
-                        0,
-                        &mut bytes_returned,
-                        std::ptr::null_mut(),
-                    )
-                };
-                
-                if lock_result != 0 {
-                    locked = true;
-                    info!("Successfully locked disk volume for partition write on attempt {}", attempt + 1);
-                    break;
-                }
-                
-                let error_code = unsafe { windows_sys::Win32::Foundation::GetLastError() };
-                info!("Lock attempt {} failed, error code: {}, waiting 100ms before retrying...", 
-                    attempt + 1, error_code);
-                
-                // Wait 100ms between attempts
-                std::thread::sleep(std::time::Duration::from_millis(100));
-            }
+            info!("Attempting to lock volume for partition write");
+            let locked = WindowsDiskAccess::lock_volume_with_retry(&self.file, 20);
             
             // If we couldn't lock after all attempts, warn but continue
             if !locked {
-                let error_code = unsafe { windows_sys::Win32::Foundation::GetLastError() };
-                let error_msg = WindowsDiskAccess::get_windows_error_message(error_code);
-                
-                warn!("WARNING: Failed to lock disk after 20 attempts, error code: {} ({})", error_code, error_msg);
+                warn!("WARNING: Failed to lock disk after multiple attempts");
                 warn!("Continuing with partition write, but it may fail due to permission issues");
+            } else {
+                info!("Successfully locked disk volume for partition write");
             }
             
-            // Dismount all volumes directly using the physical drive handle
-            let dismount_result = unsafe {
-                DeviceIoControl(
-                    handle,
-                    FSCTL_DISMOUNT_VOLUME,
-                    std::ptr::null_mut(),
-                    0,
-                    std::ptr::null_mut(),
-                    0,
-                    &mut bytes_returned,
-                    std::ptr::null_mut(),
-                )
-            };
+            // Dismount all volumes 
+            info!("Attempting to dismount volumes");
+            let dismount_result = WindowsDiskAccess::dismount_volume_from_handle(&self.file);
             
-            if dismount_result == 0 {
-                let error_code = unsafe { windows_sys::Win32::Foundation::GetLastError() };
-                let error_msg = WindowsDiskAccess::get_windows_error_message(error_code);
-                warn!("Could not dismount volumes: {} ({})", error_code, error_msg);
+            if let Err(e) = dismount_result {
+                warn!("Could not dismount volumes: {}", e);
             } else {
                 info!("Successfully dismounted volumes for partition write");
             }

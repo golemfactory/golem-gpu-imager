@@ -63,7 +63,7 @@ impl WindowsDiskAccess {
         if path.ends_with(":") {
             // If it's a drive letter (like "C:"), attempt to dismount it
             info!("Attempting to dismount volume: {}", path);
-            match Self::dismount_volume(path).await {
+            match Self::dismount_volume_path(path) {
                 Ok(_) => info!("Successfully dismounted volume: {}", path),
                 Err(e) => {
                     // On Windows, dismounting may fail but we can still continue
@@ -172,7 +172,7 @@ impl WindowsDiskAccess {
                 // Try to dismount each volume
                 for volume in volumes {
                     info!("Attempting to dismount volume {} on physical drive {}", volume, disk_num);
-                    match Self::dismount_volume(&volume).await {
+                    match Self::dismount_volume_path(&volume) {
                         Ok(_) => info!("Successfully dismounted volume {} on drive {}", volume, disk_num),
                         Err(e) => warn!("Failed to dismount volume {} on drive {}: {}", volume, disk_num, e)
                     }
@@ -435,6 +435,11 @@ impl WindowsDiskAccess {
     }
 
     /// Create a partition file proxy with Windows-specific considerations
+    /// 
+    /// This function is no longer used as we now use in-memory partition operations
+    /// to avoid alignment issues with small reads/writes on Windows.
+    /// It is kept for compatibility with existing code.
+    #[allow(dead_code)]
     pub fn create_partition_proxy(
         file: File,
         partition_offset: u64,
@@ -484,8 +489,6 @@ impl WindowsDiskAccess {
         
         // Use our aligned I/O implementation for Windows
         use crate::disk::windows_aligned_io::aligned_disk_io;
-        
-        // Create an aligned I/O wrapper for the file
         let aligned_file = match aligned_disk_io(file, sector_size) {
             Ok(aligned) => aligned,
             Err(e) => {
@@ -916,21 +919,173 @@ impl WindowsDiskAccess {
         Ok(())
     }
 
+    /// Enable extended DASD I/O access on a file handle
+    pub fn enable_extended_dasd_io(file: &File) -> bool {
+        use std::os::windows::io::AsRawHandle;
+        
+        // Get the raw handle
+        let handle = file.as_raw_handle() as HANDLE;
+        let mut bytes_returned: u32 = 0;
+        
+        // Define the FSCTL_ALLOW_EXTENDED_DASD_IO constant if needed
+        // FSCTL_ALLOW_EXTENDED_DASD_IO = 0x00090083
+        const FSCTL_ALLOW_EXTENDED_DASD_IO: u32 = 0x00090083;
+        
+        // Call DeviceIoControl
+        let result = unsafe {
+            DeviceIoControl(
+                handle,
+                FSCTL_ALLOW_EXTENDED_DASD_IO,
+                std::ptr::null_mut(),
+                0,
+                std::ptr::null_mut(),
+                0,
+                &mut bytes_returned,
+                std::ptr::null_mut(),
+            )
+        };
+        
+        // Return true if successful
+        result != 0
+    }
+    
+    /// Lock a volume with multiple retry attempts
+    pub fn lock_volume_with_retry(file: &File, max_attempts: u32) -> bool {
+        use std::os::windows::io::AsRawHandle;
+        
+        // Get the raw handle
+        let handle = file.as_raw_handle() as HANDLE;
+        let mut bytes_returned: u32 = 0;
+        
+        // Define the FSCTL_LOCK_VOLUME constant if needed
+        // FSCTL_LOCK_VOLUME = 0x00090018
+        const FSCTL_LOCK_VOLUME: u32 = 0x00090018;
+        
+        // Try to lock the volume with multiple attempts
+        let mut locked = false;
+        for attempt in 0..max_attempts {
+            // DeviceIoControl with FSCTL_LOCK_VOLUME
+            info!("Locking volume, attempt {}/{}", attempt + 1, max_attempts);
+            
+            let lock_result = unsafe {
+                DeviceIoControl(
+                    handle,
+                    FSCTL_LOCK_VOLUME,  // Control code for locking a volume
+                    std::ptr::null_mut(),
+                    0,
+                    std::ptr::null_mut(),
+                    0,
+                    &mut bytes_returned,
+                    std::ptr::null_mut(),
+                )
+            };
+            
+            if lock_result != 0 {
+                locked = true;
+                info!("Successfully locked disk volume on attempt {}", attempt + 1);
+                break;
+            }
+            
+            let error_code = unsafe { GetLastError() };
+            info!("Lock attempt {} failed, error code: {}, waiting 100ms before retrying...", 
+                attempt + 1, error_code);
+            
+            // Wait 100ms between attempts
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        
+        locked
+    }
+    
+    /// Dismount a volume from a file handle
+    pub fn dismount_volume_from_handle(file: &File) -> Result<()> {
+        use std::os::windows::io::AsRawHandle;
+        
+        // Get the raw handle
+        let handle = file.as_raw_handle() as HANDLE;
+        let mut bytes_returned: u32 = 0;
+        
+        // Define the FSCTL_DISMOUNT_VOLUME constant if needed
+        // FSCTL_DISMOUNT_VOLUME = 0x00090020
+        const FSCTL_DISMOUNT_VOLUME: u32 = 0x00090020;
+        
+        // Call DeviceIoControl
+        let result = unsafe {
+            DeviceIoControl(
+                handle,
+                FSCTL_DISMOUNT_VOLUME,
+                std::ptr::null_mut(),
+                0,
+                std::ptr::null_mut(),
+                0,
+                &mut bytes_returned,
+                std::ptr::null_mut(),
+            )
+        };
+        
+        if result == 0 {
+            let error_code = unsafe { GetLastError() };
+            let error_msg = Self::get_windows_error_message(error_code);
+            Err(anyhow!("Failed to dismount volume: {} ({})", error_code, error_msg))
+        } else {
+            Ok(())
+        }
+    }
+    
     /// Handle GPT reading errors with Windows-specific solutions
     pub fn handle_gpt_error(
-        _disk: &crate::disk::Disk,
+        disk: &crate::disk::Disk,
         error: anyhow::Error,
     ) -> Result<Option<gpt::GptDisk<'_>>> {
         // On Windows, attempt to reopen the device with different flags
         warn!(
-            "Failed to parse GPT partition table: {}. This may be due to insufficient permissions.",
+            "Failed to parse GPT partition table: {}. This may be due to insufficient permissions or alignment issues.",
             error
         );
 
-        // Try a different approach specific to Windows
-        // This would require more context in real implementation
-
-        Ok(None) // Let the original error propagate
+        // Try a different approach with aligned I/O for Windows
+        info!("Attempting Windows-specific GPT reading with aligned I/O");
+        
+        // Get a new file handle
+        let file = match disk.file.try_clone() {
+            Ok(f) => f,
+            Err(e) => {
+                error!("Failed to clone disk file handle: {}", e);
+                return Ok(None); // Let the original error propagate
+            }
+        };
+        
+        // Use our AlignedDiskIO implementation for better Windows compatibility
+        use crate::disk::windows_aligned_io::aligned_disk_io;
+        
+        // Always use 4KB sector size for maximum compatibility with modern disks
+        let sector_size = 512;
+        // Try to create an aligned disk I/O wrapper
+        let aligned_file = match aligned_disk_io(file, sector_size) {
+            Ok(aligned) => aligned,
+            Err(e) => {
+                error!("Failed to create aligned I/O wrapper: {}", e);
+                return Ok(None); // Let the original error propagate
+            }
+        };
+        
+        // Create a new GptConfig with relaxed validation
+        let cfg = gpt::GptConfig::new()
+            .writable(false)
+            .initialized(true) // Skip checking LBA0 for MBR
+            .logical_block_size(gpt::disk::LogicalBlockSize::Lb512);
+            
+        // Try to open the GPT disk with our aligned wrapper
+        match cfg.open_from_device(Box::new(aligned_file)) {
+            Ok(disk) => {
+                info!("Successfully read GPT partition table with aligned I/O");
+                Ok(Some(disk))
+            },
+            Err(e) => {
+                error!("Even with aligned I/O, failed to parse GPT: {}", e);
+                Ok(None) // Let the original error propagate
+            }
+        }
     }
 
     /// Get the sector size for a Windows disk
@@ -1036,8 +1191,8 @@ impl WindowsDiskAccess {
         }
     }
 
-    /// Dismount a Windows volume - following RPI Imager's approach
-    pub async fn dismount_volume(drive_path: &str) -> Result<()> {
+    /// Dismount a Windows volume by path (not a file handle)
+    pub fn dismount_volume_path(drive_path: &str) -> Result<()> {
         info!("Dismounting Windows volume: {}", drive_path);
 
         // Prepare the path for Windows API

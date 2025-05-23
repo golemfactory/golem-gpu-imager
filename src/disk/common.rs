@@ -1,7 +1,6 @@
 // Common disk operation functionality shared across platforms
 
 use std::io::{self, Read, Seek, SeekFrom, Write};
-use tokio::sync::mpsc;
 use tracing::{debug, error, info};
 
 /// Disk device information structure
@@ -52,7 +51,7 @@ pub enum WriteStatus {
 #[derive(Debug)]
 pub enum WriteProgress {
     Start,
-    Write(u64),
+    Write(u64), // total bytes processed
     Finish,
 }
 
@@ -99,6 +98,16 @@ impl<T: Read + Write + Seek> PartitionFileProxy<T> {
         let ptr_addr = buf.as_ptr() as usize;
         let buffer_len = buf.len();
         let sector_size = self.sector_size as usize;
+        
+        // For very small reads, we'll handle them specially
+        // The FAT filesystem often does tiny reads (3-4 bytes) that can't be aligned
+        if buffer_len < 512 {
+            debug!(
+                "Small buffer detected (length: {}), will use intermediate aligned buffer",
+                buffer_len
+            );
+            return false;
+        }
 
         // Check if the buffer starts at an address that's aligned to the sector size
         let addr_aligned = ptr_addr % sector_size == 0;
@@ -111,7 +120,7 @@ impl<T: Read + Write + Seek> PartitionFileProxy<T> {
         if !is_aligned {
             // Log detailed alignment issues for debugging
             if !addr_aligned {
-                info!(
+                debug!(
                     "Buffer address misalignment: address 0x{:X} is not aligned to sector size {} (remainder: {})",
                     ptr_addr,
                     sector_size,
@@ -120,7 +129,7 @@ impl<T: Read + Write + Seek> PartitionFileProxy<T> {
             }
 
             if !len_aligned {
-                info!(
+                debug!(
                     "Buffer length misalignment: length {} is not a multiple of sector size {} (remainder: {})",
                     buffer_len,
                     sector_size,
@@ -128,7 +137,7 @@ impl<T: Read + Write + Seek> PartitionFileProxy<T> {
                 );
             }
 
-            info!(
+            debug!(
                 "Using aligned buffer for Windows direct I/O (original address: 0x{:X}, length: {}, sector size: {})",
                 ptr_addr, buffer_len, sector_size
             );
@@ -168,43 +177,50 @@ impl<T: Read + Write + Seek> PartitionFileProxy<T> {
                 aligned_size
             );
         }
-
-        // Create a vector that owns this memory
-        let mut vec = Vec::with_capacity(aligned_size);
+        
+        // Create a properly aligned vector that uses our allocated memory
+        // IMPORTANT: We must use the memory we allocated with alloc(), not create a new Vec
+        let mut vec = unsafe {
+            // Create an empty Vec without allocating memory
+            let mut v: Vec<u8> = Vec::new();
+            
+            // Set the Vec's internal fields to use our aligned memory
+            v.reserve_exact(0); // Ensure Vec has a buffer pointer (could be null if just created)
+            
+            // Create a custom Vec using our aligned memory
+            // The Vec will take ownership of the memory we allocated
+            Vec::from_raw_parts(ptr, aligned_size, aligned_size)
+        };
+        
+        // Zero the memory for safety
         unsafe {
-            vec.set_len(aligned_size);
-            // Zero the memory for safety
             std::ptr::write_bytes(vec.as_mut_ptr(), 0, aligned_size);
         }
         
         // Double-check memory alignment
         let addr = vec.as_ptr() as usize;
-        if addr % sector_size as usize != 0 {
+        if addr % sector_size != 0 {
             error!(
                 "Buffer address 0x{:X} is not aligned to {} bytes (remainder: {})",
                 addr,
                 sector_size,
-                addr % sector_size as usize
-            );
-        }
-
-        // Verify the new buffer's alignment
-        let new_ptr_addr = vec.as_ptr() as usize;
-        let addr_aligned = new_ptr_addr % sector_size == 0;
-        let len_aligned = vec.len() % sector_size == 0;
-
-        if !addr_aligned || !len_aligned {
-            error!(
-                "Failed to create properly aligned buffer! Address: 0x{:X}, Length: {}, Sector size: {}",
-                new_ptr_addr,
-                vec.len(),
-                sector_size
+                addr % sector_size
             );
         } else {
             info!(
                 "Successfully created aligned buffer at address 0x{:X}, length: {}",
-                new_ptr_addr,
+                addr,
                 vec.len()
+            );
+        }
+
+        // Verify the buffer's alignment
+        let len_aligned = vec.len() % sector_size == 0;
+        if !len_aligned {
+            error!(
+                "Buffer length {} is not aligned to sector size {}",
+                vec.len(),
+                sector_size
             );
         }
 
@@ -212,50 +228,12 @@ impl<T: Read + Write + Seek> PartitionFileProxy<T> {
     }
 }
 
-/// Struct for tracking read progress
-struct ProgressTracker<R: Read> {
-    inner: R,
-    sipper: mpsc::UnboundedSender<u64>,
-    bytes_read: u64,
-    total_size: u64,
-}
+// Note: Using tracker from utils/tracker.rs instead of duplicating implementation here
 
 const MB: f64 = 1f64 / 1024f64 / 1024f64;
 
 pub fn bytes_to_mb(bytes: u64) -> f64 {
     bytes as f64 * MB
-}
-
-impl<R: Read> Read for ProgressTracker<R> {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let bytes = self.inner.read(buf)?;
-        if bytes > 0 {
-            self.bytes_read += bytes as u64;
-            info!(
-                "Read {} MB / {}",
-                self.bytes_read as f64 * MB,
-                self.total_size as f64 * MB
-            );
-            self.sipper
-                .send(self.bytes_read * 1000 / self.total_size)
-                .ok();
-        }
-        Ok(bytes)
-    }
-}
-
-pub fn track_progress<R: Read>(inner: R, size: u64) -> (impl Read, mpsc::UnboundedReceiver<u64>) {
-    let (tx, rx) = mpsc::unbounded_channel();
-
-    (
-        ProgressTracker {
-            inner,
-            sipper: tx,
-            bytes_read: 0,
-            total_size: size,
-        },
-        rx,
-    )
 }
 
 // Implement Read for PartitionFileProxy

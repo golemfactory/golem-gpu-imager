@@ -746,8 +746,17 @@ impl GolemGpuImager {
                                         disk.write_image(&image_path_val, task_cancel_token),
                                         |message| match message {
                                             WriteProgress::Start => Message::WriteImageProgress(0.0),
-                                            WriteProgress::Write(bytes) => {
-                                                Message::WriteImageProgress(bytes as f32 / 1000.0)
+                                            WriteProgress::Write(total_bytes) => {
+                                                // Calculate progress based on total bytes processed compared to 16GB
+                                                const TOTAL_SIZE: f32 = 16.0 * 1024.0 * 1024.0 * 1024.0;
+                                                
+                                                // Calculate progress percentage (0.0-1.0)
+                                                let progress = total_bytes as f32 / TOTAL_SIZE;
+                                                
+                                                // Clamp to make sure we don't go over 100%
+                                                let clamped_progress = progress.min(1.0);
+                                                
+                                                Message::WriteImageProgress(clamped_progress)
                                             }
                                             WriteProgress::Finish => Message::WriteImageProgress(100.0),
                                         },
@@ -1362,8 +1371,19 @@ impl GolemGpuImager {
                             // Run this in a completely separate step before the write
                             let mut disk_clone = disk.clone();
                             if let Err(e) = disk_clone.find_or_create_partition(config_partition_uuid, true) {
-                                let error_msg =
+                                let mut error_msg =
                                     format!("Failed to prepare configuration partition: {}", e);
+                                
+                                // Enhance error message for common Windows errors
+                                if cfg!(windows) {
+                                    let error_str = e.to_string();
+                                    if error_str.contains("Access denied") || error_str.contains("Odmowa dostępu") {
+                                        error_msg = format!("{} - Please ensure you are running the application with administrator privileges", error_msg);
+                                    } else if error_str.contains("is in use") {
+                                        error_msg = format!("{} - Please close any applications that might be using this disk", error_msg);
+                                    }
+                                }
+                                
                                 error!("{}", error_msg);
                                 return (false, Some(error_msg), Some(disk));
                             }
@@ -1383,7 +1403,21 @@ impl GolemGpuImager {
                                 }
                                 Err(e) => {
                                     // There was an error writing the configuration
-                                    let error_msg = format!("Failed to write configuration: {}", e);
+                                    let mut error_msg = format!("Failed to write configuration: {}", e);
+                                    
+                                    // Enhance error message for common Windows errors
+                                    if cfg!(windows) {
+                                        let error_str = e.to_string();
+                                        if error_str.contains("Access denied") || error_str.contains("Odmowa dostępu") {
+                                            error_msg = format!("{} - Please run the application as administrator", error_msg);
+                                        } else if error_str.contains("is in use") || error_str.contains("jest używany") {
+                                            error_msg = format!("{} - Please close any applications using this disk", error_msg);
+                                        } else if error_str.contains("Invalid parameter") || error_str.contains("niepoprawny") {
+                                            error_msg = format!("{} - This may be due to disk alignment issues", error_msg);
+                                        }
+                                    }
+                                    
+                                    error!("Configuration write error: {}", error_msg);
                                     (false, Some(error_msg), Some(disk))
                                 }
                             }

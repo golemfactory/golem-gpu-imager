@@ -160,8 +160,8 @@ impl PresetManager {
                 name: "Testnet Development".to_string(),
                 payment_network: PaymentNetwork::Testnet,
                 subnet: "public".to_string(),
-                network_type: NetworkType::Hybrid,
-                wallet_address: "0x742d35Cc6634C0532925a3b844Bc454e4438f44e".to_string(),
+                network_type: NetworkType::Central,
+                wallet_address: "".to_string(),
                 is_default: true,
             },
             ConfigurationPreset {
@@ -169,7 +169,7 @@ impl PresetManager {
                 payment_network: PaymentNetwork::Mainnet,
                 subnet: "production".to_string(),
                 network_type: NetworkType::Central,
-                wallet_address: "0x742d35Cc6634C0532925a3b844Bc454e4438f44e".to_string(),
+                wallet_address: "".to_string(),
                 is_default: false,
             },
         ];

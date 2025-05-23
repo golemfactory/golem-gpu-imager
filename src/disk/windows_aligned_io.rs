@@ -11,7 +11,7 @@ use std::fs::File;
 use std::os::windows::io::{AsRawHandle, FromRawHandle};
 use std::ptr::NonNull;
 use std::alloc::{self, Layout};
-#[allow(unused_imports)]
+use std::fmt::Debug;
 use tracing::{debug, error, info, warn};
 
 /// An I/O wrapper that ensures all operations are properly aligned to disk sector boundaries.
@@ -28,9 +28,21 @@ pub struct AlignedDiskIO {
     buffer_pos: usize,
 }
 
+impl std::fmt::Debug for AlignedDiskIO {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AlignedDiskIO")
+            .field("position", &self.position)
+            .field("sector_size", &self.sector_size)
+            .field("buffer_pos", &self.buffer_pos)
+            .finish()
+    }
+}
+
 /// A buffer with memory alignment guarantees for direct I/O
+#[derive(Debug)]
 struct AlignedBuffer {
     /// Aligned memory pointer 
+    #[allow(dead_code)]
     ptr: NonNull<u8>,
     /// Capacity of the buffer in bytes
     capacity: usize,
@@ -272,6 +284,38 @@ impl AlignedDiskIO {
         let alignment_ok = ptr_addr % sector_size as usize == 0;
         let size_ok = to_write % sector_size as usize == 0;
         
+        // First check: Do we have enough data in the buffer to write?
+        if self.buffer_pos < to_write {
+            debug!("Buffer doesn't have enough data for aligned write: buffer_pos={}, to_write={}", 
+                  self.buffer_pos, to_write);
+            
+            // Pad the buffer with zeros to reach the aligned size
+            let current_buffer_size = self.buffer_pos;
+            let padding_needed = to_write - current_buffer_size;
+            
+            debug!("Padding buffer with {} bytes of zeros to reach aligned size {}", 
+                  padding_needed, to_write);
+            
+            // Safety check to avoid buffer overflows
+            if current_buffer_size + padding_needed <= self.buffer.capacity {
+                // Zero out the remaining bytes
+                let buffer_slice = self.buffer.as_mut_slice();
+                for i in current_buffer_size..current_buffer_size + padding_needed {
+                    buffer_slice[i] = 0;
+                }
+                // Update buffer length to include padding
+                self.buffer.len = current_buffer_size + padding_needed;
+            } else {
+                error!("Cannot pad buffer: current_size={}, padding_needed={}, capacity={}", 
+                      current_buffer_size, padding_needed, self.buffer.capacity);
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!("Buffer too small for aligned write: need {} bytes, have {} capacity", 
+                           current_buffer_size + padding_needed, self.buffer.capacity)
+                ));
+            }
+        }
+        
         // If the buffer is not aligned, we need to create a new aligned buffer
         if !alignment_ok || !size_ok {
             error!("AlignedDiskIO: Buffer not properly aligned for direct I/O! Address: 0x{:X}, Size: {}, Alignment: {} (Address aligned: {}, Size aligned: {})",
@@ -289,9 +333,24 @@ impl AlignedDiskIO {
                 )),
             };
             
-            // Copy the data to the aligned buffer
-            let copy_size = std::cmp::min(to_write, self.buffer.as_slice().len());
+            // Copy the data to the aligned buffer - make sure we don't exceed source buffer length
+            let available_data = self.buffer.len;
+            let copy_size = std::cmp::min(to_write, available_data);
+            
+            debug!("Copying {} bytes from buffer to aligned fallback buffer (buffer.len={}, to_write={})", 
+                  copy_size, available_data, to_write);
+            
             aligned_buf.copy_from_slice(&self.buffer.as_slice()[0..copy_size], 0);
+            
+            // If we couldn't copy enough data, pad with zeros
+            if copy_size < to_write {
+                debug!("Padding fallback buffer with {} zeros", to_write - copy_size);
+                let padding_slice = aligned_buf.as_mut_slice();
+                for i in copy_size..to_write {
+                    padding_slice[i] = 0;
+                }
+                aligned_buf.len = to_write;
+            }
             
             // Verify the new buffer's alignment
             let new_ptr = aligned_buf.as_slice().as_ptr() as usize;
@@ -310,10 +369,14 @@ impl AlignedDiskIO {
             
             info!("AlignedDiskIO: Using fallback buffer at 0x{:X} with size {}", new_ptr, aligned_buf.as_slice().len());
             
+            // Make sure we're only writing up to valid data length
+            let write_length = std::cmp::min(to_write, aligned_buf.len);
+            let write_slice = &aligned_buf.as_slice()[0..write_length];
+            
             // Attempt the write with multiple retries on failure (similar to disk-image-writer)
             let mut written = 0;
             for attempt in 0..5 {
-                match self.file.write(aligned_buf.as_slice()) {
+                match self.file.write(write_slice) {
                     Ok(bytes) => {
                         written = bytes;
                         break;
@@ -329,17 +392,17 @@ impl AlignedDiskIO {
                             // Last attempt failed
                             error!("AlignedDiskIO: Write failed at position {} after 5 attempts: {}", aligned_pos, e);
                             error!("AlignedDiskIO: Buffer details: Address: 0x{:X}, Size: {}, Alignment: {}", 
-                                  new_ptr, aligned_buf.as_slice().len(), sector_size);
+                                  new_ptr, write_slice.len(), sector_size);
                             return Err(e);
                         }
                     }
                 }
             }
             
-            if written < aligned_buf.as_slice().len() {
+            if written < write_slice.len() {
                 return Err(io::Error::new(
                     io::ErrorKind::WriteZero,
-                    format!("Short write with fallback buffer: {} of {} bytes", written, aligned_buf.as_slice().len())
+                    format!("Short write with fallback buffer: {} of {} bytes", written, write_slice.len())
                 ));
             }
             
@@ -356,10 +419,14 @@ impl AlignedDiskIO {
             return Ok(());
         }
         
-        info!("AlignedDiskIO: Writing {} bytes at position {}, aligned properly (address: 0x{:X})", 
-             to_write, aligned_pos, ptr_addr);
+        // Ensure we only try to write up to the amount of data we actually have
+        let actual_write_size = std::cmp::min(to_write, self.buffer.len);
         
-        let write_slice = &self.buffer.as_slice()[0..to_write];
+        info!("AlignedDiskIO: Writing {} bytes at position {}, aligned properly (address: 0x{:X})", 
+             actual_write_size, aligned_pos, ptr_addr);
+        
+        // Create a slice of the correct size for writing
+        let write_slice = &self.buffer.as_slice()[0..actual_write_size];
         
         // Attempt the write with multiple retries on failure (similar to disk-image-writer)
         let mut written = 0;
@@ -380,17 +447,17 @@ impl AlignedDiskIO {
                         // Last attempt failed
                         error!("AlignedDiskIO: Write failed at position {} after 5 attempts: {}", aligned_pos, e);
                         error!("AlignedDiskIO: Buffer details: Address: 0x{:X}, Size: {}, Alignment: {}", 
-                              ptr_addr, to_write, sector_size);
+                              ptr_addr, write_slice.len(), sector_size);
                         return Err(e);
                     }
                 }
             }
         }
         
-        if written < to_write {
+        if written < write_slice.len() {
             return Err(io::Error::new(
                 io::ErrorKind::WriteZero,
-                format!("Short write: {} of {} bytes", written, to_write)
+                format!("Short write: {} of {} bytes", written, write_slice.len())
             ));
         }
         
@@ -489,14 +556,43 @@ impl Read for AlignedDiskIO {
             return Ok(0); // EOF
         }
         
+        // Set buffer length to actual bytes read
+        self.buffer.len = bytes_read;
+        
         // Copy from our aligned buffer to the caller's buffer
-        let available = bytes_read.saturating_sub(start_offset as usize);
+        // Only if we read enough data to satisfy the offset
+        if bytes_read <= start_offset as usize {
+            // Not enough data was read to satisfy the offset
+            debug!("Not enough data read to satisfy offset: read {} bytes, offset is {}", 
+                  bytes_read, start_offset);
+            return Ok(0);
+        }
+        
+        let available = bytes_read - start_offset as usize;
         let copy_size = cmp::min(available, buf.len());
         
         if copy_size > 0 {
-            buf[0..copy_size].copy_from_slice(
-                &self.buffer.as_slice()[(start_offset as usize)..(start_offset as usize + copy_size)]
-            );
+            // Ensure we don't go out of bounds
+            if start_offset as usize + copy_size <= self.buffer.len {
+                buf[0..copy_size].copy_from_slice(
+                    &self.buffer.as_slice()[(start_offset as usize)..(start_offset as usize + copy_size)]
+                );
+            } else {
+                // Safer approach - copy only what's available
+                let safe_copy_size = self.buffer.len.saturating_sub(start_offset as usize);
+                if safe_copy_size > 0 {
+                    buf[0..safe_copy_size].copy_from_slice(
+                        &self.buffer.as_slice()[(start_offset as usize)..(start_offset as usize + safe_copy_size)]
+                    );
+                    debug!("Adjusted copy size from {} to {} bytes due to buffer bounds", 
+                          copy_size, safe_copy_size);
+                    // Update copy_size to what we actually copied
+                    return Ok(safe_copy_size);
+                } else {
+                    // No data available after offset
+                    return Ok(0);
+                }
+            }
         }
         
         // Update position
@@ -645,7 +741,76 @@ impl Seek for AlignedDiskIO {
                 ))?
             },
             SeekFrom::End(delta) => {
-                // Need to get the file's size
+                // On Windows with direct I/O, seeking to End(0) often fails with physical devices
+                // Handle this case specially by getting the size using DeviceIoControl
+                if delta == 0 {
+                    debug!("Windows: Special handling for seek to end (SeekFrom::End(0))");
+                    
+                    #[cfg(windows)]
+                    {
+                        use std::os::windows::io::AsRawHandle;
+                        use windows_sys::Win32::System::IO::DeviceIoControl;
+                        use windows_sys::Win32::Foundation::HANDLE;
+                        
+                        // Constants for disk geometry IOCTL
+                        const IOCTL_DISK_GET_LENGTH_INFO: u32 = 0x0007405C;
+                        
+                        #[repr(C)]
+                        struct GET_LENGTH_INFORMATION {
+                            length: u64,
+                        }
+                        
+                        let handle = self.file.as_raw_handle() as HANDLE;
+                        let mut length_info = GET_LENGTH_INFORMATION { length: 0 };
+                        let mut bytes_returned: u32 = 0;
+                        
+                        let result = unsafe {
+                            DeviceIoControl(
+                                handle,
+                                IOCTL_DISK_GET_LENGTH_INFO,
+                                std::ptr::null_mut(),
+                                0,
+                                &mut length_info as *mut _ as *mut _,
+                                std::mem::size_of::<GET_LENGTH_INFORMATION>() as u32,
+                                &mut bytes_returned,
+                                std::ptr::null_mut(),
+                            )
+                        };
+                        
+                        if result != 0 {
+                            // Success - use the disk size
+                            debug!("Windows: Got disk size: {} bytes using IOCTL", length_info.length);
+                            return self.handle_successful_seek(length_info.length);
+                        }
+                        
+                        // If IOCTL fails, try standard seek first
+                        debug!("Windows: IOCTL failed, trying standard seek");
+                        match self.file.seek(SeekFrom::End(0)) {
+                            Ok(file_size) => {
+                                debug!("Windows: Standard seek to end succeeded: {} bytes", file_size);
+                                return self.handle_successful_seek(file_size);
+                            },
+                            Err(e) => {
+                                debug!("Windows: Standard seek to end failed: {}, using fallback size", e);
+                                // Fallback - use a large offset which should be near the end
+                                // A reasonable size for most physical drives (16GB)
+                                let fallback_size = 16 * 1024 * 1024 * 1024;
+                                debug!("Windows: Using fallback size: {} bytes", fallback_size);
+                                return self.handle_successful_seek(fallback_size);
+                            }
+                        }
+                    }
+                    
+                    #[cfg(not(windows))]
+                    {
+                        // For non-Windows platforms, just do a regular seek
+                        let file_size = self.file.seek(SeekFrom::End(0))?;
+                        self.file.seek(SeekFrom::Start(self.position))?;
+                        return self.handle_successful_seek(file_size);
+                    }
+                }
+                
+                // For non-zero delta or non-Windows platforms, use standard approach
                 let file_size = self.file.seek(SeekFrom::End(0))?;
                 
                 // Reset to current position
@@ -672,7 +837,27 @@ impl Seek for AlignedDiskIO {
     }
 }
 
+impl AlignedDiskIO {
+    // Helper method to handle successful seek operations 
+    fn handle_successful_seek(&mut self, file_size: u64) -> io::Result<u64> {
+        // Update our position to the file size
+        self.position = file_size;
+        
+        // Seek the underlying file to our new position
+        match self.file.seek(SeekFrom::Start(file_size)) {
+            Ok(_) => Ok(file_size),
+            Err(e) => {
+                debug!("Failed to seek underlying file to position {}: {}", file_size, e);
+                // Return the file size anyway since we know it
+                // This is a common pattern for Windows physical disks where seek may fail
+                // but we still want to report the correct size
+                Ok(file_size)
+            }
+        }
+    }
+}
+
 /// Simple wrapper to convert a standard File to an aligned I/O version
-pub fn aligned_disk_io(file: File, sector_size: u32) -> io::Result<impl Read + Write + Seek> {
+pub fn aligned_disk_io(file: File, sector_size: u32) -> io::Result<impl Read + Write + Seek + Debug> {
     AlignedDiskIO::new(file, sector_size)
 }

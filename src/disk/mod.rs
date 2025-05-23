@@ -536,50 +536,9 @@ impl Disk {
         use std::io::{Seek, SeekFrom, Write};
         use tracing::{debug, info, error, warn};
         
-        #[cfg(windows)]
-        {
-            info!("Windows-specific preparation before writing partition data");
-            
-            // On Windows, we need more aggressive locking for partition writes
-            // The standard pre_write_checks might not be sufficient for partition writes
-            // Let's use a more direct approach
-            use windows::WindowsDiskAccess;
-            
-            // Use WindowsDiskAccess for all Windows-specific operations
-            info!("Using WindowsDiskAccess for volume locking and dismounting");
-            
-            // First enable extended DASD I/O
-            info!("Enabling extended DASD I/O access for partition write");
-            WindowsDiskAccess::enable_extended_dasd_io(&self.file);
-            
-            // Try to lock the volume with multiple attempts
-            info!("Attempting to lock volume for partition write");
-            let locked = WindowsDiskAccess::lock_volume_with_retry(&self.file, 20);
-            
-            // If we couldn't lock after all attempts, warn but continue
-            if !locked {
-                warn!("WARNING: Failed to lock disk after multiple attempts");
-                warn!("Continuing with partition write, but it may fail due to permission issues");
-            } else {
-                info!("Successfully locked disk volume for partition write");
-            }
-            
-            // Dismount all volumes 
-            info!("Attempting to dismount volumes");
-            let dismount_result = WindowsDiskAccess::dismount_volume_from_handle(&self.file);
-            
-            if let Err(e) = dismount_result {
-                warn!("Could not dismount volumes: {}", e);
-            } else {
-                info!("Successfully dismounted volumes for partition write");
-            }
-        }
-        
-        // Create a new file handle
-        let mut partition_file = self.get_cloned_file_handle()?;
         
         // Seek to the start of the partition
-        match partition_file.seek(SeekFrom::Start(start_offset)) {
+        match self.file.seek(SeekFrom::Start(start_offset)) {
             Ok(_) => info!("Successfully sought to partition offset {}", start_offset),
             Err(e) => {
                 error!("Failed to seek to partition offset: {}", e);
@@ -597,7 +556,7 @@ impl Disk {
         info!("Writing partition data ({} bytes) back to disk at offset {}", 
              partition_data.len(), start_offset);
         
-        let write_result = partition_file.write(partition_data);
+        let write_result = self.file.write(partition_data);
         
         match write_result {
             Ok(bytes_written) => {
@@ -611,80 +570,13 @@ impl Disk {
             },
             Err(e) => {
                 error!("Failed to write partition data: {}", e);
-                
-                #[cfg(windows)]
-                {
-                    // Check for multi-language error messages
-                    let error_message = e.to_string();
-                    
-                    // Polish "Access denied" - "Odmowa dostępu"
-                    if error_message.contains("Odmowa dostępu") {
-                        error!("Access denied error in Polish locale when writing to disk");
-                        return Err(anyhow!(
-                            "Odmowa dostępu. Run as administrator (uruchom jako administrator)"
-                        ).context("To jest operacja wymagająca uprawnień administratora"));
-                    }
-                    
-                    // German "Access denied" - "Zugriff verweigert"
-                    if error_message.contains("Zugriff verweigert") {
-                        error!("Access denied error in German locale when writing to disk");
-                        return Err(anyhow!(
-                            "Zugriff verweigert. Als Administrator ausführen"
-                        ).context("Dieser Vorgang erfordert Administratorrechte"));
-                    }
-                    
-                    // Provide Windows-specific error guidance
-                    if let Some(code) = e.raw_os_error() {
-                        match code {
-                            5 => { // Access denied
-                                error!("Access denied (code 5) when writing to disk");
-                                return Err(anyhow!(
-                                    "Access denied when writing to disk. Ensure you are running with administrator privileges"
-                                ).context("This operation requires elevated permissions on Windows"));
-                            },
-                            87 => { // Invalid parameter
-                                error!("Invalid parameter (code 87) when writing to disk");
-                                return Err(anyhow!(
-                                    "Invalid parameter when writing to disk. The operation may require proper alignment"
-                                ).context("Ensure the disk is properly prepared for writing"));
-                            },
-                            32 => { // Sharing violation
-                                error!("Sharing violation (code 32) when writing to disk");
-                                return Err(anyhow!(
-                                    "The disk is in use by another process. Close any applications that might be using this disk"
-                                ).context("Try dismounting all volumes on this disk before writing"));
-                            },
-                            _ => {
-                                // Handle other error codes with platform-specific messages
-                                #[cfg(windows)]
-                                {
-                                    // On Windows, use the platform-specific error message
-                                    use windows::WindowsDiskAccess;
-                                    let windows_error_msg = format!("Windows error: {} ({})", 
-                                                                  code, 
-                                                                  WindowsDiskAccess::get_windows_error_message(code as u32));
-                                    return Err(anyhow!("Failed to write partition data: {}", windows_error_msg));
-                                }
-                                
-                                #[cfg(not(windows))]
-                                {
-                                    // Default error handling for non-Windows platforms
-                                    let generic_error_msg = format!("Error code: {}", code);
-                                    return Err(anyhow!("Failed to write partition data: {}", generic_error_msg));
-                                }
-                            }
-                        }
-                    }
-                }
-                
-                // General error handling for non-Windows platforms
                 return Err(anyhow!("Failed to write partition data: {}", e));
             }
         }
         
         // Make sure data is flushed to disk with proper error handling
         info!("Flushing data to disk");
-        if let Err(e) = partition_file.flush() {
+        if let Err(e) = self.file.flush() {
             error!("Failed to flush data to disk: {}", e);
             
             #[cfg(windows)]

@@ -760,10 +760,13 @@ pub fn view_writing_process(progress: f32, title: &'static str) -> Element<'stat
     // Calculate more precise progress information
     let progress_percentage = (progress * 100.0) as i32;
     
-    // Calculate approximate megabytes written (assuming 16GB image size)
+    // Calculate approximate megabytes processed (assuming 16GB image size)
     // Adjust this value based on your actual image size
     const TOTAL_MB: u32 = 16 * 1024; // 16GB in MB
-    let mb_written = (progress * TOTAL_MB as f32) as u32;
+    
+    // Progress now represents both read and written operations combined
+    // so we calculate IO processed as a percentage of total work (read+write)
+    let mb_processed = (progress * TOTAL_MB as f32) as u32;
     let mb_total = TOTAL_MB;
 
     // Create a nice styled progress bar with a pulse animation for low progress
@@ -774,10 +777,10 @@ pub fn view_writing_process(progress: f32, title: &'static str) -> Element<'stat
         progress_bar(0.0..=1.0, progress).style(progress_bar::secondary)
     };
 
-    // Display progress percentage with larger text and MB written
+    // Display progress percentage with larger text and MB processed
     let progress_text = row![
         text(format!("{}%", progress_percentage)).size(28),
-        text(format!("({} MB / {} MB)", mb_written, mb_total)).size(16)
+        text(format!("({} MB / {} MB)", mb_processed, mb_total)).size(16)
     ].spacing(10).align_y(Alignment::Center);
 
     // Enhanced description text - show different steps based on progress with more detail

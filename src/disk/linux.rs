@@ -101,6 +101,10 @@ impl LinuxDiskAccess {
     }
 
     /// Create a partition file proxy for Linux
+    /// 
+    /// This function is no longer used as we now use in-memory partition operations.
+    /// It is kept for compatibility with existing code.
+    #[allow(dead_code)]
     pub fn create_partition_proxy(
         file: File,
         partition_offset: u64,

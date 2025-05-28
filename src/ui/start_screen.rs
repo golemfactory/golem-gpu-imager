@@ -54,8 +54,9 @@ pub fn view_start_screen() -> Element<'static, Message> {
     .style(button::secondary)
     .on_press(Message::EditExistingDisk);
 
-    // Add version info
-    let version_text = text(crate::version::VERSION).size(12);
+    // Add version and build time info
+    let version_info = format!("v{} • Built {}", crate::version::VERSION, crate::version::BUILD_TIME);
+    let version_text = text(version_info).size(12);
 
     // Main content column
     let content = column![

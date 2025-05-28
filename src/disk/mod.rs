@@ -7,10 +7,11 @@ use anyhow::{Context, Result, anyhow};
 use gpt::GptConfig;
 use iced::task::{self, Sipper};
 use std::fs::File;
-use std::io::{Read, Seek, Write};
+use std::io::{Read, Seek, Write, SeekFrom};
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 use xz4rust::XzReader;
+use crc32fast::Hasher;
 
 // Platform-specific modules
 #[cfg(target_os = "linux")]
@@ -49,6 +50,34 @@ pub struct GolemConfig {
     pub subnet: String,
     pub wallet_address: String,
     pub glm_per_hour: String,
+}
+
+/// Configuration for image writing and partition setup
+#[derive(Debug, Clone)]
+pub struct ImageConfiguration {
+    pub payment_network: crate::models::PaymentNetwork,
+    pub network_type: crate::models::NetworkType,
+    pub subnet: String,
+    pub wallet_address: String,
+    pub glm_per_hour: String,
+}
+
+impl ImageConfiguration {
+    /// Create a new ImageConfiguration with default values
+    pub fn new(
+        payment_network: crate::models::PaymentNetwork,
+        network_type: crate::models::NetworkType,
+        subnet: String,
+        wallet_address: String,
+    ) -> Self {
+        Self {
+            payment_network,
+            network_type,
+            subnet,
+            wallet_address,
+            glm_per_hour: "0.25".to_string(),
+        }
+    }
 }
 
 /// Main disk access struct that provides platform-independent access to disks
@@ -156,6 +185,8 @@ impl Disk {
     ///
     /// # Arguments
     /// * `image_path` - Path to the image file to write
+    /// * `cancel_token` - Token to cancel the operation
+    /// * `config` - Optional configuration to write after image writing
     ///
     /// # Returns
     /// * A sipper that reports progress updates as the write proceeds
@@ -163,6 +194,7 @@ impl Disk {
         mut self,
         image_path: &str,
         cancel_token: crate::models::CancelToken,
+        config: Option<ImageConfiguration>,
     ) -> impl Sipper<Result<WriteProgress>, WriteProgress> + Send + 'static {
         debug!("Opening image file: {}", image_path);
         let image_file_r = File::open(image_path)
@@ -171,8 +203,9 @@ impl Disk {
         // Use a larger buffer for better performance (matching disk-image-writer)
         const BUFFER_SIZE: usize = 4 * 1024 * 1024; // 4MB buffer
 
-        // Save original path before moving self into the task
+        // Save original path and platform data before moving self into the task
         let original_path = self.original_path.clone();
+        let platform_data = self.platform.clone();
         
         let disk_file_r = self.get_cloned_file_handle();
         task::sipper(async move |mut sipper| -> Result<WriteProgress> {
@@ -419,12 +452,81 @@ impl Disk {
                 }
 
                 info!("Successfully wrote image to disk");
+                
+                // Fix GPT backup header location if device is larger than image
+                info!("Checking and fixing GPT backup header location if needed");
+                if let Err(e) = fix_gpt_backup_header(&mut disk_file) {
+                    warn!("Failed to fix GPT backup header (non-fatal): {}", e);
+                }
+                
+                // Write configuration if provided, using the same locked disk handle
+                if let Some(conf) = config {
+                    info!("Writing configuration to partition after image write");
+                    
+                    // Reuse the same disk_file handle to maintain Windows lock permissions
+                    let mut config_disk = Self {
+                        file: disk_file,
+                        platform: platform_data,
+                        original_path: original_path.clone(),
+                    };
+                    
+                    // Configuration partition UUID (commonly used for boot config)
+                    const CONFIG_PARTITION_UUID: &str = "33b921b8-edc5-46a0-8baa-d0b7ad84fc71";
+                    
+                    // Write the configuration to the partition
+                    if let Err(e) = config_disk.write_configuration(
+                        CONFIG_PARTITION_UUID,
+                        conf.payment_network,
+                        conf.network_type,
+                        &conf.subnet,
+                        &conf.wallet_address,
+                    ) {
+                        error!("Failed to write configuration: {}", e);
+                        return Err(anyhow::anyhow!("Failed to write configuration: {}", e));
+                    }
+                    
+                    info!("Successfully wrote configuration to partition");
+                }
+                
                 anyhow::Ok(WriteProgress::Finish)
             })
             .await?;
 
             r
         })
+    }
+
+    /// Write configuration to a disk after image has been written
+    ///
+    /// # Arguments
+    /// * `disk_path` - Path to the disk device
+    /// * `config` - Configuration to write
+    ///
+    /// # Returns
+    /// * Result indicating success or failure
+    pub async fn write_configuration_to_disk(
+        disk_path: &str,
+        config: ImageConfiguration,
+    ) -> Result<()> {
+        info!("Opening disk for configuration writing: {}", disk_path);
+        
+        // Open disk in edit mode to write configuration
+        let mut disk = Self::lock_path(disk_path, true).await?;
+        
+        // Configuration partition UUID (commonly used for boot config)
+        const CONFIG_PARTITION_UUID: &str = "33b921b8-edc5-46a0-8baa-d0b7ad84fc71";
+        
+        // Write the configuration to the partition
+        disk.write_configuration(
+            CONFIG_PARTITION_UUID,
+            config.payment_network,
+            config.network_type,
+            &config.subnet,
+            &config.wallet_address,
+        )?;
+        
+        info!("Successfully wrote configuration to disk");
+        Ok(())
     }
 
     /// Read an entire partition into memory
@@ -961,6 +1063,140 @@ impl Disk {
         info!("Successfully wrote configuration to partition and saved to disk");
         Ok(())
     }
+}
+
+/// Fix GPT backup header location when device is larger than image
+///
+/// When a smaller image is written to a larger device, the backup GPT header
+/// remains at the image's end position instead of the device's end position.
+/// This causes CRC validation failures. This function relocates the backup
+/// header to the correct position at the end of the device.
+///
+/// All reads and writes are sector-aligned for Windows compatibility.
+///
+/// # Arguments
+/// * `disk_file` - The disk file handle
+///
+/// # Returns
+/// * `Result<()>` - Ok on success, Error on failure
+fn fix_gpt_backup_header(disk_file: &mut File) -> Result<()> {
+    const SECTOR_SIZE: u64 = 512;
+    const GPT_HEADER_SECTOR: u64 = 1;
+    const GPT_SIGNATURE: [u8; 8] = [0x45, 0x46, 0x49, 0x20, 0x50, 0x41, 0x52, 0x54]; // "EFI PART"
+
+    // Get disk size (must be aligned to sector boundary)
+    let disk_size = disk_file.seek(SeekFrom::End(0))?;
+    let disk_sectors = disk_size / SECTOR_SIZE;
+    
+    info!("Disk size: {} bytes ({} sectors)", disk_size, disk_sectors);
+
+    // Read primary GPT header (sector-aligned)
+    disk_file.seek(SeekFrom::Start(GPT_HEADER_SECTOR * SECTOR_SIZE))?;
+    let mut header_sector = [0u8; SECTOR_SIZE as usize];
+    disk_file.read_exact(&mut header_sector)?;
+
+    // Verify GPT signature
+    if header_sector[0..8] != GPT_SIGNATURE {
+        info!("No GPT signature found - skipping GPT backup header fix");
+        return Ok(());
+    }
+
+    // Extract backup_lba field (bytes 32-39)
+    let current_backup_lba = u64::from_le_bytes([
+        header_sector[32], header_sector[33], header_sector[34], header_sector[35],
+        header_sector[36], header_sector[37], header_sector[38], header_sector[39]
+    ]);
+
+    // Calculate expected backup LBA (last sector of disk)
+    let expected_backup_lba = disk_sectors - 1;
+
+    info!("Current backup LBA: {}, Expected backup LBA: {}", current_backup_lba, expected_backup_lba);
+
+    // If backup header is already at the correct location, no fix needed
+    if current_backup_lba == expected_backup_lba {
+        info!("GPT backup header is already at correct location");
+        return Ok(());
+    }
+
+    info!("Fixing GPT backup header location from LBA {} to LBA {}", current_backup_lba, expected_backup_lba);
+
+    // Read the current backup header from its current location (sector-aligned)
+    let backup_header_offset = current_backup_lba * SECTOR_SIZE;
+    disk_file.seek(SeekFrom::Start(backup_header_offset))?;
+    let mut backup_sector = [0u8; SECTOR_SIZE as usize];
+    disk_file.read_exact(&mut backup_sector)?;
+
+    // Update the current_lba field in the backup header to point to new location
+    let new_backup_lba_bytes = expected_backup_lba.to_le_bytes();
+    backup_sector[24..32].copy_from_slice(&new_backup_lba_bytes);
+
+    // Calculate partition entries LBA for backup header (typically backup_lba - 32)
+    let partition_entries_sectors = 32u64; // Standard GPT partition entries use 32 sectors
+    let backup_partition_entries_lba = expected_backup_lba.saturating_sub(partition_entries_sectors);
+    let backup_partition_entries_bytes = backup_partition_entries_lba.to_le_bytes();
+    backup_sector[72..80].copy_from_slice(&backup_partition_entries_bytes);
+
+    // Zero out CRC32 field before recalculating
+    backup_sector[16] = 0;
+    backup_sector[17] = 0;
+    backup_sector[18] = 0;
+    backup_sector[19] = 0;
+
+    // Calculate new CRC32 for backup header (standard GPT header size is 92 bytes)
+    let mut hasher = Hasher::new();
+    hasher.update(&backup_sector[0..92]);
+    let backup_crc32 = hasher.finalize();
+    let backup_crc32_bytes = backup_crc32.to_le_bytes();
+    backup_sector[16..20].copy_from_slice(&backup_crc32_bytes);
+
+    // Write backup header to new location (sector-aligned write)
+    let new_backup_offset = expected_backup_lba * SECTOR_SIZE;
+    disk_file.seek(SeekFrom::Start(new_backup_offset))?;
+    disk_file.write_all(&backup_sector)?;
+
+    // Update primary header's backup_lba field
+    header_sector[32..40].copy_from_slice(&new_backup_lba_bytes);
+
+    // Zero out primary header CRC32 before recalculating
+    header_sector[16] = 0;
+    header_sector[17] = 0;
+    header_sector[18] = 0;
+    header_sector[19] = 0;
+
+    // Calculate new CRC32 for primary header
+    let mut hasher = Hasher::new();
+    hasher.update(&header_sector[0..92]);
+    let primary_crc32 = hasher.finalize();
+    let primary_crc32_bytes = primary_crc32.to_le_bytes();
+    header_sector[16..20].copy_from_slice(&primary_crc32_bytes);
+
+    // Write updated primary header (sector-aligned write)
+    disk_file.seek(SeekFrom::Start(GPT_HEADER_SECTOR * SECTOR_SIZE))?;
+    disk_file.write_all(&header_sector)?;
+
+    // Move partition entries table for backup if needed
+    if current_backup_lba != expected_backup_lba {
+        // Read partition entries from after primary header (sector-aligned)
+        let primary_partition_entries_lba = 2u64; // Standard location
+        let primary_partition_entries_offset = primary_partition_entries_lba * SECTOR_SIZE;
+        disk_file.seek(SeekFrom::Start(primary_partition_entries_offset))?;
+        
+        // Read all partition entry sectors at once for alignment
+        let partition_entries_size = (partition_entries_sectors * SECTOR_SIZE) as usize;
+        let mut partition_entries = vec![0u8; partition_entries_size];
+        disk_file.read_exact(&mut partition_entries)?;
+
+        // Write partition entries to backup location (sector-aligned write)
+        let backup_partition_entries_offset = backup_partition_entries_lba * SECTOR_SIZE;
+        disk_file.seek(SeekFrom::Start(backup_partition_entries_offset))?;
+        disk_file.write_all(&partition_entries)?;
+    }
+
+    // Ensure all data is flushed to disk
+    disk_file.flush()?;
+
+    info!("Successfully fixed GPT backup header location");
+    Ok(())
 }
 
 /// Lists available disk devices in the system

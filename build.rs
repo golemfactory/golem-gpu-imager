@@ -7,6 +7,20 @@ fn main() {
     let path: &Path = base.as_ref();
     let target = std::env::var("TARGET").unwrap();
 
+    // Set build timestamp
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    
+    // Format as ISO-like datetime
+    let datetime = chrono::DateTime::from_timestamp(now as i64, 0)
+        .unwrap()
+        .format("%Y-%m-%d %H:%M:%S UTC")
+        .to_string();
+    
+    println!("cargo:rustc-env=BUILD_TIME={}", datetime);
+
     // Set Windows-specific build options
     if target.contains("windows") {
         // Set subsystem to GUI to avoid console allocation when run as a GUI application

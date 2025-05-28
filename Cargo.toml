@@ -73,6 +73,7 @@ windows_exe_info = {  version = "0.5", features = [
     "versioninfo",
     "icon_ico",
 ] }
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 
 [profile.release]
 lto = true

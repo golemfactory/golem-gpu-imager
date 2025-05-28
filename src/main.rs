@@ -75,7 +75,7 @@ pub fn main() -> iced::Result {
             .init();
     }
 
-    tracing::info!("Starting Golem GPU Imager {} (console mode: {})", version::VERSION, is_console);
+    tracing::info!("Starting Golem GPU Imager v{} built {} (console mode: {})", version::VERSION, version::BUILD_TIME, is_console);
 
     let mut settings = Settings::default();
 

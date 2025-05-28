@@ -714,6 +714,14 @@ impl GolemGpuImager {
                                 let image_path_val = image_path.clone();
                                 // Create a clone of the cancel token that we can pass to the task
                                 let cancel_token_clone = self.cancel_token.clone();
+                                
+                                // Extract configuration before creating async closure
+                                let config = Some(crate::disk::ImageConfiguration::new(
+                                    payment_network_val,
+                                    network_type_val,
+                                    subnet_val.clone(),
+                                    wallet_address_val.clone(),
+                                ));
 
                                 info!(
                                     "Starting flash with config: {:?} {:?} {} {} to device {}",
@@ -737,13 +745,14 @@ impl GolemGpuImager {
                                     }
                                     locked_disk
                                 })
-                                .and_then(move |mut disk| {
+                                .and_then(move |disk| {
                                     // Now write the image and handle progress
                                     // Note: write_image now takes ownership of disk
                                     // Clone the cancel token again for this specific closure
                                     let task_cancel_token = cancel_token_clone.clone();
+                                    
                                     let write_task = Task::sip(
-                                        disk.write_image(&image_path_val, task_cancel_token),
+                                        disk.write_image(&image_path_val, task_cancel_token, config.clone()),
                                         |message| match message {
                                             WriteProgress::Start => Message::WriteImageProgress(0.0),
                                             WriteProgress::Write(total_bytes) => {

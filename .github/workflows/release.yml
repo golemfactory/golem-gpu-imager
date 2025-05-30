@@ -76,6 +76,18 @@ jobs:
         if: matrix.target == 'x86_64-pc-windows-gnu'
         run: cp target/${{ matrix.target }}/release/golem-gpu-imager.exe artifacts/golem-gpu-imager-windows.exe
 
+      - name: Create archives
+        run: |
+          cd artifacts
+          if [ -f golem-gpu-imager-linux ]; then
+            tar -czf golem-gpu-imager-linux.tar.gz golem-gpu-imager-linux
+            zip golem-gpu-imager-linux.zip golem-gpu-imager-linux
+          fi
+          if [ -f golem-gpu-imager-windows.exe ]; then
+            tar -czf golem-gpu-imager-windows.tar.gz golem-gpu-imager-windows.exe
+            zip golem-gpu-imager-windows.zip golem-gpu-imager-windows.exe
+          fi
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -97,6 +109,10 @@ jobs:
         with:
           files: |
             golem-gpu-imager-x86_64-unknown-linux-gnu/golem-gpu-imager-linux
+            golem-gpu-imager-x86_64-unknown-linux-gnu/golem-gpu-imager-linux.tar.gz
+            golem-gpu-imager-x86_64-unknown-linux-gnu/golem-gpu-imager-linux.zip
             golem-gpu-imager-x86_64-pc-windows-gnu/golem-gpu-imager-windows.exe
+            golem-gpu-imager-x86_64-pc-windows-gnu/golem-gpu-imager-windows.tar.gz
+            golem-gpu-imager-x86_64-pc-windows-gnu/golem-gpu-imager-windows.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

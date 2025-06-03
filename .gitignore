@@ -18,8 +18,12 @@
 # Downloaded OS images
 /downloads/
 
-# Generated binaries
+# Generated binaries and installers
 /dist/
+*.deb
+*.msi
+*.dmg
+*.pkg
 
 # Dependency directory
 /.cargo/

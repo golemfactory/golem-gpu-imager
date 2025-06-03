@@ -1,0 +1,20 @@
+Package: golem-gpu-imager
+Version: 0.1.4
+Architecture: amd64
+Maintainer: Golem Factory <contact@golemfactory.com>
+Depends: libc6 (>= 2.31), libgcc-s1 (>= 3.0), libgtk-3-0, udisks2
+Installed-Size: 15000
+Section: utils
+Priority: optional
+Homepage: https://github.com/golemfactory/golem-gpu-imager
+Description: GPU Image Management Tool for Golem Network
+ Golem GPU Imager is a specialized tool for managing disk images
+ used in GPU computing on the Golem Network. It provides an intuitive
+ interface for flashing OS images to storage devices and configuring
+ them for GPU workloads.
+ .
+ Key features:
+ - Flash OS images to USB drives and SD cards
+ - Configure Ethereum wallet addresses
+ - Manage GPU computing presets
+ - Secure image verification and validation

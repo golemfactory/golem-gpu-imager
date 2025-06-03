@@ -432,6 +432,37 @@ impl GolemGpuImager {
                     return self.load_repo_data();
                 }
             }
+            Message::RefreshDevices => {
+                // Refresh the list of available storage devices
+                info!("Refreshing available storage devices");
+                match rs_drivelist::drive_list() {
+                    Ok(devices) => {
+                        // Filter to only include removable, non-virtual devices
+                        self.storage_devices = devices
+                            .into_iter()
+                            .filter(|d| d.isRemovable && !d.isVirtual)
+                            .map(|d| StorageDevice {
+                                name: d.description,
+                                path: d.device,
+                                size: format!("{:.2} GB", d.size as f64 / 1000.0 / 1000.0 / 1000.0),
+                            })
+                            .collect();
+
+                        debug!("Found {} available devices", self.storage_devices.len());
+                        
+                        // Clear any previous device selection and error messages
+                        self.selected_device = None;
+                        self.error_message = None;
+                    }
+                    Err(e) => {
+                        error!("Failed to get drive list: {}", e);
+                        // In case of error, provide an empty list
+                        self.storage_devices = vec![];
+                        self.error_message =
+                            Some(format!("Failed to detect storage devices: {}", e));
+                    }
+                }
+            }
             Message::GotoConfigureSettings => {
                 if let AppMode::FlashNewImage(_) = &self.mode {
                     // Verify we have a device selected

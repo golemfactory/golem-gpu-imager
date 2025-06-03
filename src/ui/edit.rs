@@ -64,7 +64,7 @@ pub fn view_select_existing_device<'a>(
         .padding(10);
 
     let refresh_button = button(row![icons::refresh(), "Refresh Devices"])
-        .on_press(Message::BackToMainMenu)
+        .on_press(Message::RefreshDevices)
         .style(button::secondary)
         .padding(10);
 

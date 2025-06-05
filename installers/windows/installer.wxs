@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="Golem GPU Imager" 
+           Language="1033" 
+           Version="0.1.4.0" 
+           Manufacturer="Golem Factory" 
+           UpgradeCode="12345678-1234-1234-1234-123456789012"
+           InstallerVersion="500" 
+           Compressed="true"
+           Scope="perMachine">
+    
+    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+    
+    <Media Id="1" Cabinet="GolemGpuImager.cab" EmbedCab="true" />
+    
+    
+    <Feature Id="ProductFeature" Title="Golem GPU Imager" Level="1">
+      <ComponentRef Id="MainExecutable" />
+      <ComponentRef Id="ApplicationShortcut" />
+      <ComponentRef Id="DesktopShortcut" />
+    </Feature>
+    
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Golem GPU Imager">
+        <Component Id="MainExecutable">
+          <File Id="GolemGpuImagerExe" 
+                Source="target/x86_64-pc-windows-gnu/release/golem-gpu-imager.exe" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ApplicationProgramsFolder" Name="Golem GPU Imager">
+        <Component Id="ApplicationShortcut">
+          <Shortcut Id="ApplicationStartMenuShortcut"
+                    Name="Golem GPU Imager"
+                    Description="Golem GPU Imager Application"
+                    Target="[#GolemGpuImagerExe]"
+                    WorkingDirectory="INSTALLFOLDER" />
+          <RemoveFolder Id="ApplicationProgramsFolder" On="uninstall"/>
+          <RegistryValue Root="HKCU" 
+                         Key="Software\Golem Factory\Golem GPU Imager" 
+                         Name="installed" 
+                         Type="integer" 
+                         Value="1" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="DesktopFolder">
+      <Component Id="DesktopShortcut">
+        <Shortcut Id="DesktopApplicationShortcut"
+                  Name="Golem GPU Imager"
+                  Description="Golem GPU Imager Application (Run as Administrator)"
+                  Target="[#GolemGpuImagerExe]"
+                  WorkingDirectory="INSTALLFOLDER">
+          <ShortcutProperty Key="System.AppUserModel.RunAs" Value="true" />
+        </Shortcut>
+        <RegistryValue Root="HKCU" 
+                       Key="Software\Golem Factory\Golem GPU Imager" 
+                       Name="desktop_shortcut" 
+                       Type="integer" 
+                       Value="1" />
+      </Component>
+    </StandardDirectory>
+  </Package>
+</Wix>

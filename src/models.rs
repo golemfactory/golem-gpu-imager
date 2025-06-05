@@ -162,6 +162,7 @@ pub enum Message {
     RepoDataLoaded(Vec<OsImage>),
     RepoLoadFailed,
     RefreshRepoData,
+    RefreshDevices,                    // Refresh the list of available storage devices
     // Configuration preset management
     SaveAsPreset,                  // Save current configuration as a new preset
     SelectPreset(usize),           // Select a preset by index

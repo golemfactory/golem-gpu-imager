@@ -1,52 +1,27 @@
-<?xml version="1.0" encoding="UTF-8"?>
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
   <assemblyIdentity
-    name="GPU Imager.exe"
-    version="0.1.0.0"
-    processorArchitecture="x86"
+    name="GolemFactory.GolemGPUImager" version="0.1.4.0"
+    processorArchitecture="amd64"
     type="win32" />
+
   <compatibility xmlns="urn:schemas-microsoft-com:compatibility.v1">
     <application>
-      <!-- Windows 10, version 1903 -->
-      <maxversiontested Id="10.0.18362.1"/>
-      <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}" />
+      <supportedOS Id="{8e0f7a12-bfb3-4fe8-b9a5-48fd50a15a9a}"/>
+      <supportedOS Id="{1f676c76-80fa-4089-9586-5383f602ee61}"/>
+      <supportedOS Id="{4a2f28e3-53b9-4441-ba9c-d69d4a4a6e38}"/>
+      <supportedOS Id="{35138b9a-5d96-4fbd-8e2d-a2440225f93a}"/>
     </application>
   </compatibility>
+
   <asmv3:application xmlns:asmv3="http://schemas.microsoft.com/asm.v3">
     <asmv3:windowsSettings xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">
       <dpiAware>true</dpiAware>
     </asmv3:windowsSettings>
   </asmv3:application>
-  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v2">
-    <security>
-      <applicationRequestMinimum>
-        <PermissionSet ID="Internet">
-            <IPermission
-                        class="System.Security.Permissions.FileDialogPermission, mscorlib, Version=1.2.3300.0, Culture=neutral, PublicKeyToken=b77a5c561934e089"
-                        version="1"
-                        Access="Open" />
-                      <IPermission
-                       class="System.Security.Permissions.IsolatedStorageFilePermission, mscorlib, Version=1.2.3300.0, Culture=neutral, PublicKeyToken=b77a5c561934e089"
-                        version="1"
-                        Allowed="DomainIsolationByUser"
-                        UserQuota="10240" />
-                      <IPermission
-                        class="System.Security.Permissions.SecurityPermission, mscorlib, Version=1.2.3300.0, Culture=neutral, PublicKeyToken=b77a5c561934e089"
-                        version="1"
-                        Flags="Execution" />
-                      <IPermission
-                        class="System.Security.Permissions.UIPermission, mscorlib, Version=1.2.3300.0, Culture=neutral, PublicKeyToken=b77a5c561934e089"
-                        version="1"
-                        Window="SafeTopLevelWindows"
-                        Clipboard="OwnClipboard" />
-                      <IPermission
-                        class="System.Drawing.Printing.PrintingPermission, System.Drawing, Version=1.2.3300.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a"
-                        version="1"
-                        Level="SafePrinting" />
-        </PermissionSet>
-        <defaultAssemblyRequest permissionSetReference="Internet"/>
-      </applicationRequestMinimum>
-      <requestedPrivileges xmlns="urn:schemas-microsoft-com:asm.v3">
+
+  <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3"> <security>
+      <requestedPrivileges>
         <requestedExecutionLevel level="requireAdministrator" uiAccess="false" />
       </requestedPrivileges>
     </security>

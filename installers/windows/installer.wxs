@@ -2,7 +2,7 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package Name="Golem GPU Imager" 
            Language="1033" 
-           Version="0.1.4.0" 
+           Version="0.1.5.0" 
            Manufacturer="Golem Factory" 
            UpgradeCode="12345678-1234-1234-1234-123456789012"
            InstallerVersion="500" 

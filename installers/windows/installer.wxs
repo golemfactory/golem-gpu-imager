@@ -7,7 +7,8 @@
            UpgradeCode="12345678-1234-1234-1234-123456789012"
            InstallerVersion="500" 
            Compressed="true"
-           Scope="perMachine">
+           Scope="perMachine"
+           InstallPrivileges="elevated">
     
     <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
     
@@ -34,9 +35,11 @@
         <Component Id="ApplicationShortcut">
           <Shortcut Id="ApplicationStartMenuShortcut"
                     Name="Golem GPU Imager"
-                    Description="Golem GPU Imager Application"
+                    Description="Golem GPU Imager Application (Run as Administrator)"
                     Target="[#GolemGpuImagerExe]"
-                    WorkingDirectory="INSTALLFOLDER" />
+                    WorkingDirectory="INSTALLFOLDER">
+            <ShortcutProperty Key="System.AppUserModel.RunAs" Value="true" />
+          </Shortcut>
           <RemoveFolder Id="ApplicationProgramsFolder" On="uninstall"/>
           <RegistryValue Root="HKCU" 
                          Key="Software\Golem Factory\Golem GPU Imager" 

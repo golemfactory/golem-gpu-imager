@@ -40,6 +40,7 @@ fn main() {
   <asmv3:application xmlns:asmv3="http://schemas.microsoft.com/asm.v3">
     <asmv3:windowsSettings xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">
       <dpiAware>true</dpiAware>
+      <longPathAware>true</longPathAware>
     </asmv3:windowsSettings>
   </asmv3:application>
 

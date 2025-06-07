@@ -1,5 +1,5 @@
 Package: golem-gpu-imager
-Version: 0.1.4
+Version: 0.1.5
 Architecture: amd64
 Maintainer: Golem Factory <contact@golemfactory.com>
 Depends: libc6 (>= 2.31), libgcc-s1 (>= 3.0), libgtk-3-0, udisks2

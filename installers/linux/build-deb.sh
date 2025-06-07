@@ -4,11 +4,19 @@ set -e
 # Build Debian package for Golem GPU Imager
 
 PACKAGE_NAME="golem-gpu-imager"
-VERSION="0.1.4"
 ARCH="amd64"
 
 # Get the project root directory
 PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+
+# Extract version from Cargo.toml
+cd "$PROJECT_ROOT"
+VERSION=$(grep '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+if [ -z "$VERSION" ]; then
+    echo "Error: Could not extract version from Cargo.toml"
+    exit 1
+fi
+
 BUILD_DIR="$PROJECT_ROOT/target/debian"
 PACKAGE_DIR="$BUILD_DIR/${PACKAGE_NAME}_${VERSION}_${ARCH}"
 

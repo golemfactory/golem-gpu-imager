@@ -181,6 +181,225 @@ impl Disk {
         self.platform.clone_file_handle(&self.file)
     }
 
+    /// Write configuration to a specific partition using an existing file handle
+    ///
+    /// # Arguments
+    /// * `disk_file` - The locked disk file handle
+    /// * `config` - Configuration to write to the partition
+    ///
+    /// # Returns
+    /// * Result indicating success or failure
+    fn write_configuration_to_partition(disk_file: &mut File, config: &ImageConfiguration) -> Result<()> {
+        use std::io::{Read, Seek, SeekFrom, Write, Cursor};
+        
+        // Configuration partition UUID (commonly used for boot config)
+        const CONFIG_PARTITION_UUID: &str = "33b921b8-edc5-46a0-8baa-d0b7ad84fc71";
+        
+        info!("Writing configuration to partition {}", CONFIG_PARTITION_UUID);
+        
+        // Parse UUID
+        let target_uuid = Uuid::parse_str(CONFIG_PARTITION_UUID)
+            .with_context(|| format!("Failed to parse UUID: {}", CONFIG_PARTITION_UUID))?;
+        
+        // Read GPT manually to find the configuration partition (no GPT library, no file cloning)
+        info!("Reading GPT header manually to find configuration partition");
+        
+        const LOGICAL_SECTOR_SIZE: u64 = 512;
+        const PHYSICAL_SECTOR_SIZE: u64 = 4096; // Windows direct I/O alignment requirement
+        const GPT_HEADER_LBA: u64 = 1;
+        const GPT_SIGNATURE: [u8; 8] = [0x45, 0x46, 0x49, 0x20, 0x50, 0x41, 0x52, 0x54]; // "EFI PART"
+        
+        // For Windows direct I/O, we need to read aligned blocks
+        // Read from LBA 0 (which includes LBA 1 where GPT header is) using 4KB alignment
+        let read_start = 0u64; // Start from beginning of disk
+        let read_size = PHYSICAL_SECTOR_SIZE * 2; // Read 8KB to ensure we get GPT header at LBA 1
+        
+        disk_file.seek(SeekFrom::Start(read_start))?;
+        let mut aligned_buffer = vec![0u8; read_size as usize];
+        disk_file.read_exact(&mut aligned_buffer)?;
+        
+        // Extract GPT header from LBA 1 (starts at offset 512 in our buffer)
+        let gpt_header_offset = LOGICAL_SECTOR_SIZE as usize;
+        if aligned_buffer.len() < gpt_header_offset + LOGICAL_SECTOR_SIZE as usize {
+            return Err(anyhow!("Buffer too small for GPT header"));
+        }
+        let header_buffer = &aligned_buffer[gpt_header_offset..gpt_header_offset + LOGICAL_SECTOR_SIZE as usize];
+        
+        // Verify GPT signature
+        if header_buffer[0..8] != GPT_SIGNATURE {
+            return Err(anyhow!("No valid GPT found on disk"));
+        }
+        
+        // Extract partition table info from GPT header
+        let partition_entries_lba = u64::from_le_bytes([
+            header_buffer[72], header_buffer[73], header_buffer[74], header_buffer[75],
+            header_buffer[76], header_buffer[77], header_buffer[78], header_buffer[79]
+        ]);
+        let num_partition_entries = u32::from_le_bytes([
+            header_buffer[80], header_buffer[81], header_buffer[82], header_buffer[83]
+        ]);
+        let partition_entry_size = u32::from_le_bytes([
+            header_buffer[84], header_buffer[85], header_buffer[86], header_buffer[87]
+        ]);
+        
+        info!("GPT: {} partition entries at LBA {}, {} bytes each", 
+              num_partition_entries, partition_entries_lba, partition_entry_size);
+        
+        // Read partition entries with proper alignment for Windows direct I/O
+        let partition_entries_offset = partition_entries_lba * LOGICAL_SECTOR_SIZE;
+        let partition_table_logical_size = num_partition_entries as u64 * partition_entry_size as u64;
+        
+        // Round up to physical sector alignment for Windows
+        let aligned_offset = (partition_entries_offset / PHYSICAL_SECTOR_SIZE) * PHYSICAL_SECTOR_SIZE;
+        let offset_within_read = (partition_entries_offset - aligned_offset) as usize;
+        // Need to account for the offset when calculating aligned size
+        let total_needed = offset_within_read as u64 + partition_table_logical_size;
+        let aligned_size = ((total_needed + PHYSICAL_SECTOR_SIZE - 1) / PHYSICAL_SECTOR_SIZE) * PHYSICAL_SECTOR_SIZE;
+        
+        info!("Reading partition table: logical offset={}, logical size={}, aligned offset={}, aligned size={}, offset within read={}, total needed={}", 
+              partition_entries_offset, partition_table_logical_size, aligned_offset, aligned_size, offset_within_read, total_needed);
+        
+        disk_file.seek(SeekFrom::Start(aligned_offset))?;
+        let mut aligned_partition_buffer = vec![0u8; aligned_size as usize];
+        disk_file.read_exact(&mut aligned_partition_buffer)?;
+        
+        // Extract the actual partition table from the aligned buffer
+        let partition_table_end = offset_within_read + partition_table_logical_size as usize;
+        if aligned_partition_buffer.len() < partition_table_end {
+            return Err(anyhow!("Aligned buffer too small for partition table"));
+        }
+        let partition_table = &aligned_partition_buffer[offset_within_read..partition_table_end];
+        
+        // Find our target partition by scanning entries
+        let mut start_offset = 0u64;
+        let mut partition_size = 0u64;
+        let mut found = false;
+        
+        for i in 0..num_partition_entries {
+            let entry_offset = (i as usize) * (partition_entry_size as usize);
+            if entry_offset + 128 > partition_table.len() {
+                break; // Safety check
+            }
+            
+            // Extract partition GUID (bytes 16-31 of partition entry)
+            let partition_guid = &partition_table[entry_offset + 16..entry_offset + 32];
+            
+            // Convert target UUID to byte array for comparison
+            let target_bytes = target_uuid.as_bytes();
+            
+            if partition_guid == target_bytes {
+                // Found our partition! Extract LBA range (bytes 32-47)
+                let first_lba = u64::from_le_bytes([
+                    partition_table[entry_offset + 32], partition_table[entry_offset + 33],
+                    partition_table[entry_offset + 34], partition_table[entry_offset + 35],
+                    partition_table[entry_offset + 36], partition_table[entry_offset + 37],
+                    partition_table[entry_offset + 38], partition_table[entry_offset + 39]
+                ]);
+                let last_lba = u64::from_le_bytes([
+                    partition_table[entry_offset + 40], partition_table[entry_offset + 41],
+                    partition_table[entry_offset + 42], partition_table[entry_offset + 43],
+                    partition_table[entry_offset + 44], partition_table[entry_offset + 45],
+                    partition_table[entry_offset + 46], partition_table[entry_offset + 47]
+                ]);
+                
+                start_offset = first_lba * LOGICAL_SECTOR_SIZE;
+                partition_size = (last_lba - first_lba + 1) * LOGICAL_SECTOR_SIZE;
+                found = true;
+                
+                info!("Found configuration partition: LBA {}-{}, offset {}, size {} bytes", 
+                      first_lba, last_lba, start_offset, partition_size);
+                break;
+            }
+        }
+        
+        if !found {
+            return Err(anyhow!("Configuration partition {} not found", CONFIG_PARTITION_UUID));
+        }
+        
+        info!("Found partition at offset {}, size {} bytes", start_offset, partition_size);
+        
+        // Read partition into memory with proper alignment for Windows direct I/O
+        // Round partition boundaries to physical sector alignment
+        let aligned_start = (start_offset / PHYSICAL_SECTOR_SIZE) * PHYSICAL_SECTOR_SIZE;
+        let offset_within_aligned = (start_offset - aligned_start) as usize;
+        // Need to account for the offset when calculating aligned size
+        let total_needed = offset_within_aligned as u64 + partition_size;
+        let aligned_size = ((total_needed + PHYSICAL_SECTOR_SIZE - 1) / PHYSICAL_SECTOR_SIZE) * PHYSICAL_SECTOR_SIZE;
+        
+        info!("Reading partition data: logical offset={}, logical size={}, aligned offset={}, aligned size={}, offset within aligned={}, total needed={}", 
+              start_offset, partition_size, aligned_start, aligned_size, offset_within_aligned, total_needed);
+        
+        disk_file.seek(SeekFrom::Start(aligned_start))?;
+        let mut aligned_partition_data = vec![0u8; aligned_size as usize];
+        disk_file.read_exact(&mut aligned_partition_data)?;
+        
+        // Extract the actual partition data from the aligned buffer
+        let partition_end = offset_within_aligned + partition_size as usize;
+        if aligned_partition_data.len() < partition_end {
+            return Err(anyhow!("Aligned buffer too small for partition data"));
+        }
+        let mut partition_data = aligned_partition_data[offset_within_aligned..partition_end].to_vec();
+        
+        // Format partition with FAT filesystem  
+        {
+            let cursor = Cursor::new(&mut partition_data[..]);
+            fatfs::format_volume(
+                cursor,
+                fatfs::FormatVolumeOptions::new().volume_label(*b"GOLEMCONF  ")
+            )?;
+        }
+        
+        // Create filesystem on formatted data and write files
+        {
+            let cursor = Cursor::new(&mut partition_data[..]);
+            let fs = fatfs::FileSystem::new(cursor, fatfs::FsOptions::new())?;
+            let root_dir = fs.root_dir();
+            
+            // Write golemwz.toml
+            let toml_content = format!(
+                "accepted_terms = true\nglm_account = \"{}\"\nglm_per_hour = \"{}\"\n",
+                config.wallet_address, config.glm_per_hour
+            );
+            let mut toml_file = root_dir.create_file("golemwz.toml")?;
+            toml_file.write_all(toml_content.as_bytes())?;
+            toml_file.flush()?;
+            drop(toml_file);
+            
+            // Write golem.env
+            let payment_network_str = match config.payment_network {
+                crate::models::PaymentNetwork::Testnet => "testnet",
+                crate::models::PaymentNetwork::Mainnet => "mainnet",
+            };
+            let network_type_str = match config.network_type {
+                crate::models::NetworkType::Hybrid => "hybrid", 
+                crate::models::NetworkType::Central => "central",
+            };
+            let env_content = format!(
+                "YA_NET_TYPE={}\nSUBNET={}\nYA_PAYMENT_NETWORK_GROUP={}\n",
+                network_type_str, config.subnet, payment_network_str
+            );
+            let mut env_file = root_dir.create_file("golem.env")?;
+            env_file.write_all(env_content.as_bytes())?;
+            env_file.flush()?;
+            drop(env_file);
+            
+            // Filesystem will be dropped at end of this block, releasing the mutable borrow
+        }
+        
+        // Write partition back to disk with proper alignment for Windows direct I/O
+        // We need to write back the entire aligned block to preserve data outside our partition
+        // Copy our modified partition data back into the aligned buffer
+        aligned_partition_data[offset_within_aligned..partition_end].copy_from_slice(&partition_data);
+        
+        info!("Writing aligned partition data back to disk: offset={}, size={}", aligned_start, aligned_size);
+        disk_file.seek(SeekFrom::Start(aligned_start))?;
+        disk_file.write_all(&aligned_partition_data)?;
+        disk_file.flush()?;
+        
+        info!("Successfully wrote configuration to partition");
+        Ok(())
+    }
+
     /// Write an image file to the disk with progress reporting
     ///
     /// # Arguments
@@ -367,6 +586,34 @@ impl Disk {
                 
                 info!("Post-copy checks starting");
                 
+                // On Windows, unlock the volume first to allow GPT operations
+                #[cfg(windows)]
+                {
+                    info!("Unlocking volume before GPT operations (Windows only)");
+                    let unlock_start = std::time::Instant::now();
+                    if let Err(e) = PlatformDiskAccess::unlock_volume(&disk_file) {
+                        warn!("Failed to unlock disk volume before GPT operations after {:?}: {}", unlock_start.elapsed(), e);
+                    } else {
+                        info!("Volume unlocked successfully in {:?} - GPT operations can now proceed", unlock_start.elapsed());
+                    }
+                }
+                
+                // Fix GPT backup header location after unlocking volume
+                info!("Checking and fixing GPT backup header location if needed");
+                if let Err(e) = fix_gpt_backup_header(&mut disk_file) {
+                    warn!("Failed to fix GPT backup header (non-fatal): {}", e);
+                }
+                
+                // Write configuration to partition after unlocking volume 
+                if let Some(config) = config {
+                    info!("Writing configuration to partition after volume unlock");
+                    if let Err(e) = Self::write_configuration_to_partition(&mut disk_file, &config) {
+                        warn!("Failed to write configuration to partition (non-fatal): {}", e);
+                    } else {
+                        info!("Successfully wrote configuration to partition");
+                    }
+                }
+                
                 // We already handled the copy with our manual implementation
                 let copy_result = Ok(0); // Placeholder since we already did the copy
                 if let Err(e) = &copy_result {
@@ -437,56 +684,18 @@ impl Disk {
                     info!("Disk flush completed successfully in {:?}", flush_duration);
                 }
 
-                // Fix GPT backup header location if device is larger than image (while volume is still locked)
-                info!("Checking and fixing GPT backup header location if needed");
-                if let Err(e) = fix_gpt_backup_header(&mut disk_file) {
-                    warn!("Failed to fix GPT backup header (non-fatal): {}", e);
-                }
 
-                info!("Starting volume unlock (Windows only)");
-                // On Windows, unlock the volume
+                // Volume unlock already happened before GPT operations for Windows
+                #[cfg(not(windows))]
+                {
+                    info!("Non-Windows platform - no volume unlock needed");
+                }
                 #[cfg(windows)]
                 {
-                    info!("Attempting to unlock volume after successful write");
-                    let unlock_start = std::time::Instant::now();
-                    // We don't propagate unlock errors as they're not critical for the write operation itself
-                    if let Err(e) = PlatformDiskAccess::unlock_volume(&disk_file) {
-                        warn!("Failed to unlock disk volume after {:?}: {}", unlock_start.elapsed(), e);
-                    } else {
-                        info!("Volume unlocked successfully in {:?}", unlock_start.elapsed());
-                    }
+                    info!("Windows: Volume was already unlocked before GPT operations");
                 }
 
                 info!("Successfully wrote image to disk");
-                
-                // Write configuration if provided, using the same locked disk handle
-                if let Some(conf) = config {
-                    info!("Writing configuration to partition after image write");
-                    
-                    // Reuse the same disk_file handle to maintain Windows lock permissions
-                    let mut config_disk = Self {
-                        file: disk_file,
-                        platform: platform_data,
-                        original_path: original_path.clone(),
-                    };
-                    
-                    // Configuration partition UUID (commonly used for boot config)
-                    const CONFIG_PARTITION_UUID: &str = "33b921b8-edc5-46a0-8baa-d0b7ad84fc71";
-                    
-                    // Write the configuration to the partition
-                    if let Err(e) = config_disk.write_configuration(
-                        CONFIG_PARTITION_UUID,
-                        conf.payment_network,
-                        conf.network_type,
-                        &conf.subnet,
-                        &conf.wallet_address,
-                    ) {
-                        error!("Failed to write configuration: {}", e);
-                        return Err(anyhow::anyhow!("Failed to write configuration: {}", e));
-                    }
-                    
-                    info!("Successfully wrote configuration to partition");
-                }
                 
                 anyhow::Ok(WriteProgress::Finish)
             })
@@ -1065,6 +1274,84 @@ impl Disk {
     }
 }
 
+/// Get disk size using Windows-specific IOCTL (for when seek to end fails)
+#[cfg(windows)]
+fn get_disk_size_windows(disk_file: &mut File) -> Result<u64> {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::System::IO::DeviceIoControl;
+    use windows_sys::Win32::Foundation::HANDLE;
+    
+    // Use IOCTL_DISK_GET_LENGTH_INFO to get disk size
+    const IOCTL_DISK_GET_LENGTH_INFO: u32 = 0x0007405C;
+    
+    #[repr(C)]
+    struct GET_LENGTH_INFORMATION {
+        length: u64,
+    }
+    
+    let handle = disk_file.as_raw_handle() as HANDLE;
+    let mut length_info = GET_LENGTH_INFORMATION { length: 0 };
+    let mut bytes_returned: u32 = 0;
+    
+    info!("Windows: Attempting to get disk size using IOCTL_DISK_GET_LENGTH_INFO");
+    
+    let result = unsafe {
+        DeviceIoControl(
+            handle,
+            IOCTL_DISK_GET_LENGTH_INFO,
+            std::ptr::null_mut(),
+            0,
+            &mut length_info as *mut _ as *mut _,
+            std::mem::size_of::<GET_LENGTH_INFORMATION>() as u32,
+            &mut bytes_returned,
+            std::ptr::null_mut(),
+        )
+    };
+    
+    if result != 0 {
+        info!("Windows: Got disk size: {} bytes using IOCTL", length_info.length);
+        Ok(length_info.length)
+    } else {
+        let error_code = unsafe { windows_sys::Win32::Foundation::GetLastError() };
+        warn!("Windows: IOCTL_DISK_GET_LENGTH_INFO failed with error {}", error_code);
+        
+        // For direct I/O context, seeking to end often fails, so don't even try it
+        // Instead, use a reasonable estimate based on common disk sizes
+        warn!("Windows: Direct I/O context - cannot seek to end, using size estimation");
+        
+        // Try to estimate disk size by seeking to different positions to find the end
+        // This is more compatible with direct I/O restrictions
+        let test_positions = [
+            8 * 1024 * 1024 * 1024u64,      // 8GB
+            16 * 1024 * 1024 * 1024u64,     // 16GB  
+            32 * 1024 * 1024 * 1024u64,     // 32GB
+            64 * 1024 * 1024 * 1024u64,     // 64GB
+            128 * 1024 * 1024 * 1024u64,    // 128GB
+        ];
+        
+        let mut estimated_size = 32 * 1024 * 1024 * 1024u64; // Default 32GB
+        
+        for &test_size in &test_positions {
+            // Try to seek near the end of the disk at this size
+            if let Ok(_) = disk_file.seek(SeekFrom::Start(test_size - 4096)) {
+                estimated_size = test_size;
+                info!("Windows: Disk appears to be at least {} bytes", test_size);
+            } else {
+                break; // This size is too large
+            }
+        }
+        
+        warn!("Windows: Using estimated disk size: {} bytes", estimated_size);
+        Ok(estimated_size)
+    }
+}
+
+#[cfg(not(windows))]
+fn get_disk_size_windows(disk_file: &mut File) -> Result<u64> {
+    // On non-Windows platforms, just use seek
+    Ok(disk_file.seek(SeekFrom::End(0))?)
+}
+
 /// Fix GPT backup header location when device is larger than image
 ///
 /// When a smaller image is written to a larger device, the backup GPT header
@@ -1080,31 +1367,59 @@ impl Disk {
 /// # Returns
 /// * `Result<()>` - Ok on success, Error on failure
 fn fix_gpt_backup_header(disk_file: &mut File) -> Result<()> {
-    const SECTOR_SIZE: u64 = 512;
+    // GPT uses 512-byte logical sectors, but Windows I/O requires 4KB physical alignment
+    const LOGICAL_SECTOR_SIZE: u64 = 512;
     const GPT_HEADER_SECTOR: u64 = 1;
     const GPT_SIGNATURE: [u8; 8] = [0x45, 0x46, 0x49, 0x20, 0x50, 0x41, 0x52, 0x54]; // "EFI PART"
-
-    // Get disk size (must be aligned to sector boundary)
-    let disk_size = disk_file.seek(SeekFrom::End(0))?;
-    let disk_sectors = disk_size / SECTOR_SIZE;
     
-    info!("Disk size: {} bytes ({} sectors)", disk_size, disk_sectors);
+    // Physical sector size for I/O alignment (Windows needs 4KB, Linux can use 512B)
+    #[cfg(windows)]
+    const PHYSICAL_SECTOR_SIZE: u64 = 4096;
+    #[cfg(not(windows))]
+    const PHYSICAL_SECTOR_SIZE: u64 = 512;
 
-    // Read primary GPT header (sector-aligned)
-    disk_file.seek(SeekFrom::Start(GPT_HEADER_SECTOR * SECTOR_SIZE))?;
-    let mut header_sector = [0u8; SECTOR_SIZE as usize];
-    disk_file.read_exact(&mut header_sector)?;
+    // Get disk size (must be aligned to logical sector boundary for GPT calculations)
+    info!("Step 1: Getting disk size");
+    let disk_size = get_disk_size_windows(disk_file)?;
+    let disk_sectors = disk_size / LOGICAL_SECTOR_SIZE;
+    
+    info!("Disk size: {} bytes ({} logical sectors), physical sector size: {} bytes", 
+          disk_size, disk_sectors, PHYSICAL_SECTOR_SIZE);
 
-    // Verify GPT signature
-    if header_sector[0..8] != GPT_SIGNATURE {
+    // Read primary GPT header (physically-aligned buffer for Windows compatibility)
+    info!("Step 2: Reading primary GPT header");
+    
+    // For Windows direct I/O, read from sector 0 to get both MBR and GPT header
+    let read_start = 0u64;
+    let read_size = PHYSICAL_SECTOR_SIZE * 2; // Read 8KB to ensure we get GPT header at LBA 1
+    
+    info!("Reading aligned data from offset {} with size {} bytes", read_start, read_size);
+    disk_file.seek(SeekFrom::Start(read_start))
+        .with_context(|| format!("Failed to seek to aligned position {}", read_start))?;
+    
+    let mut aligned_buffer = vec![0u8; read_size as usize];
+    disk_file.read_exact(&mut aligned_buffer)
+        .with_context(|| format!("Failed to read {} bytes for aligned GPT data", aligned_buffer.len()))?;
+    
+    // Extract GPT header from LBA 1 (starts at offset 512 in our buffer)
+    let gpt_header_offset_in_buffer = LOGICAL_SECTOR_SIZE as usize;
+    if aligned_buffer.len() < gpt_header_offset_in_buffer + LOGICAL_SECTOR_SIZE as usize {
+        return Err(anyhow!("Buffer too small for GPT header"));
+    }
+    let mut header_buffer = aligned_buffer[gpt_header_offset_in_buffer..gpt_header_offset_in_buffer + LOGICAL_SECTOR_SIZE as usize].to_vec();
+    // Pad to physical sector size for later writing
+    header_buffer.resize(PHYSICAL_SECTOR_SIZE as usize, 0);
+
+    // Verify GPT signature (first 512 bytes contain the GPT header)
+    if header_buffer[0..8] != GPT_SIGNATURE {
         info!("No GPT signature found - skipping GPT backup header fix");
         return Ok(());
     }
 
     // Extract backup_lba field (bytes 32-39)
     let current_backup_lba = u64::from_le_bytes([
-        header_sector[32], header_sector[33], header_sector[34], header_sector[35],
-        header_sector[36], header_sector[37], header_sector[38], header_sector[39]
+        header_buffer[32], header_buffer[33], header_buffer[34], header_buffer[35],
+        header_buffer[36], header_buffer[37], header_buffer[38], header_buffer[39]
     ]);
 
     // Calculate expected backup LBA (last sector of disk)
@@ -1120,80 +1435,188 @@ fn fix_gpt_backup_header(disk_file: &mut File) -> Result<()> {
 
     info!("Fixing GPT backup header location from LBA {} to LBA {}", current_backup_lba, expected_backup_lba);
 
-    // Read the current backup header from its current location (sector-aligned)
-    let backup_header_offset = current_backup_lba * SECTOR_SIZE;
-    disk_file.seek(SeekFrom::Start(backup_header_offset))?;
-    let mut backup_sector = [0u8; SECTOR_SIZE as usize];
-    disk_file.read_exact(&mut backup_sector)?;
+    // Read the current backup header from its current location (physically-aligned)
+    info!("Step 3: Reading current backup header");
+    let backup_header_logical_offset = current_backup_lba * LOGICAL_SECTOR_SIZE;
+    
+    // Align backup header reading to physical sector boundaries
+    let backup_aligned_start = (backup_header_logical_offset / PHYSICAL_SECTOR_SIZE) * PHYSICAL_SECTOR_SIZE;
+    let backup_offset_within_read = (backup_header_logical_offset - backup_aligned_start) as usize;
+    
+    info!("Reading backup header: logical offset={}, aligned offset={}, offset within read={}", 
+          backup_header_logical_offset, backup_aligned_start, backup_offset_within_read);
+    
+    disk_file.seek(SeekFrom::Start(backup_aligned_start))
+        .with_context(|| format!("Failed to seek to aligned backup position {}", backup_aligned_start))?;
+    
+    let mut backup_aligned_buffer = vec![0u8; PHYSICAL_SECTOR_SIZE as usize];
+    disk_file.read_exact(&mut backup_aligned_buffer)
+        .with_context(|| format!("Failed to read {} bytes for aligned backup data", backup_aligned_buffer.len()))?;
+    
+    // Extract backup header from the aligned buffer
+    if backup_aligned_buffer.len() < backup_offset_within_read + LOGICAL_SECTOR_SIZE as usize {
+        return Err(anyhow!("Aligned buffer too small for backup header"));
+    }
+    let mut backup_buffer = backup_aligned_buffer[backup_offset_within_read..backup_offset_within_read + LOGICAL_SECTOR_SIZE as usize].to_vec();
+    // Pad to physical sector size for later writing
+    backup_buffer.resize(PHYSICAL_SECTOR_SIZE as usize, 0);
 
     // Update the current_lba field in the backup header to point to new location
     let new_backup_lba_bytes = expected_backup_lba.to_le_bytes();
-    backup_sector[24..32].copy_from_slice(&new_backup_lba_bytes);
+    backup_buffer[24..32].copy_from_slice(&new_backup_lba_bytes);
 
     // Calculate partition entries LBA for backup header (typically backup_lba - 32)
     let partition_entries_sectors = 32u64; // Standard GPT partition entries use 32 sectors
     let backup_partition_entries_lba = expected_backup_lba.saturating_sub(partition_entries_sectors);
     let backup_partition_entries_bytes = backup_partition_entries_lba.to_le_bytes();
-    backup_sector[72..80].copy_from_slice(&backup_partition_entries_bytes);
+    backup_buffer[72..80].copy_from_slice(&backup_partition_entries_bytes);
 
     // Zero out CRC32 field before recalculating
-    backup_sector[16] = 0;
-    backup_sector[17] = 0;
-    backup_sector[18] = 0;
-    backup_sector[19] = 0;
+    backup_buffer[16] = 0;
+    backup_buffer[17] = 0;
+    backup_buffer[18] = 0;
+    backup_buffer[19] = 0;
 
     // Calculate new CRC32 for backup header (standard GPT header size is 92 bytes)
     let mut hasher = Hasher::new();
-    hasher.update(&backup_sector[0..92]);
+    hasher.update(&backup_buffer[0..92]);
     let backup_crc32 = hasher.finalize();
     let backup_crc32_bytes = backup_crc32.to_le_bytes();
-    backup_sector[16..20].copy_from_slice(&backup_crc32_bytes);
+    backup_buffer[16..20].copy_from_slice(&backup_crc32_bytes);
 
-    // Write backup header to new location (sector-aligned write)
-    let new_backup_offset = expected_backup_lba * SECTOR_SIZE;
-    disk_file.seek(SeekFrom::Start(new_backup_offset))?;
-    disk_file.write_all(&backup_sector)?;
+    // Write backup header to new location (physically-aligned write)
+    info!("Step 4: Writing backup header to new location");
+    let new_backup_logical_offset = expected_backup_lba * LOGICAL_SECTOR_SIZE;
+    
+    // Align new backup header writing to physical sector boundaries
+    let new_backup_aligned_start = (new_backup_logical_offset / PHYSICAL_SECTOR_SIZE) * PHYSICAL_SECTOR_SIZE;
+    let new_backup_offset_within_write = (new_backup_logical_offset - new_backup_aligned_start) as usize;
+    
+    info!("Writing backup header: logical offset={}, aligned offset={}, offset within write={}", 
+          new_backup_logical_offset, new_backup_aligned_start, new_backup_offset_within_write);
+    
+    // Read the existing data at the target location to preserve surrounding data
+    disk_file.seek(SeekFrom::Start(new_backup_aligned_start))
+        .with_context(|| format!("Failed to seek to new backup aligned position {}", new_backup_aligned_start))?;
+    
+    let mut new_backup_aligned_buffer = vec![0u8; PHYSICAL_SECTOR_SIZE as usize];
+    // Try to read existing data, but don't fail if we can't (might be at end of disk)
+    let _ = disk_file.read_exact(&mut new_backup_aligned_buffer);
+    
+    // Copy our backup header into the aligned buffer
+    let backup_end = new_backup_offset_within_write + LOGICAL_SECTOR_SIZE as usize;
+    if new_backup_aligned_buffer.len() >= backup_end {
+        new_backup_aligned_buffer[new_backup_offset_within_write..backup_end]
+            .copy_from_slice(&backup_buffer[0..LOGICAL_SECTOR_SIZE as usize]);
+    }
+    
+    // Write the aligned buffer
+    disk_file.seek(SeekFrom::Start(new_backup_aligned_start))
+        .with_context(|| format!("Failed to seek to new backup location at offset {}", new_backup_aligned_start))?;
+    info!("Writing {} bytes for aligned backup header", new_backup_aligned_buffer.len());
+    disk_file.write_all(&new_backup_aligned_buffer)
+        .with_context(|| format!("Failed to write {} bytes for backup header", new_backup_aligned_buffer.len()))?;
 
     // Update primary header's backup_lba field
-    header_sector[32..40].copy_from_slice(&new_backup_lba_bytes);
+    info!("Step 5: Updating primary header");
+    header_buffer[32..40].copy_from_slice(&new_backup_lba_bytes);
 
     // Zero out primary header CRC32 before recalculating
-    header_sector[16] = 0;
-    header_sector[17] = 0;
-    header_sector[18] = 0;
-    header_sector[19] = 0;
+    header_buffer[16] = 0;
+    header_buffer[17] = 0;
+    header_buffer[18] = 0;
+    header_buffer[19] = 0;
 
     // Calculate new CRC32 for primary header
     let mut hasher = Hasher::new();
-    hasher.update(&header_sector[0..92]);
+    hasher.update(&header_buffer[0..92]);
     let primary_crc32 = hasher.finalize();
     let primary_crc32_bytes = primary_crc32.to_le_bytes();
-    header_sector[16..20].copy_from_slice(&primary_crc32_bytes);
+    header_buffer[16..20].copy_from_slice(&primary_crc32_bytes);
 
-    // Write updated primary header (sector-aligned write)
-    disk_file.seek(SeekFrom::Start(GPT_HEADER_SECTOR * SECTOR_SIZE))?;
-    disk_file.write_all(&header_sector)?;
+    // Write updated primary header (physically-aligned write)
+    info!("Step 5b: Writing updated primary header");
+    
+    // We already read the aligned buffer earlier, now copy the updated header back
+    let primary_header_offset_in_buffer = LOGICAL_SECTOR_SIZE as usize;
+    aligned_buffer[primary_header_offset_in_buffer..primary_header_offset_in_buffer + LOGICAL_SECTOR_SIZE as usize]
+        .copy_from_slice(&header_buffer[0..LOGICAL_SECTOR_SIZE as usize]);
+    
+    // Write the entire aligned buffer back
+    disk_file.seek(SeekFrom::Start(0))
+        .with_context(|| "Failed to seek back to beginning for primary header update")?;
+    info!("Writing {} bytes for updated primary header area", aligned_buffer.len());
+    disk_file.write_all(&aligned_buffer)
+        .with_context(|| format!("Failed to write {} bytes for primary header area", aligned_buffer.len()))?;
 
     // Move partition entries table for backup if needed
     if current_backup_lba != expected_backup_lba {
-        // Read partition entries from after primary header (sector-aligned)
+        info!("Step 6: Moving partition entries table");
+        // Read partition entries from after primary header (physically-aligned)
         let primary_partition_entries_lba = 2u64; // Standard location
-        let primary_partition_entries_offset = primary_partition_entries_lba * SECTOR_SIZE;
-        disk_file.seek(SeekFrom::Start(primary_partition_entries_offset))?;
+        let primary_partition_entries_logical_offset = primary_partition_entries_lba * LOGICAL_SECTOR_SIZE;
+        let partition_entries_logical_size = (partition_entries_sectors * LOGICAL_SECTOR_SIZE) as usize;
         
-        // Read all partition entry sectors at once for alignment
-        let partition_entries_size = (partition_entries_sectors * SECTOR_SIZE) as usize;
-        let mut partition_entries = vec![0u8; partition_entries_size];
-        disk_file.read_exact(&mut partition_entries)?;
+        // Align partition entries reading to physical sector boundaries
+        let entries_aligned_start = (primary_partition_entries_logical_offset / PHYSICAL_SECTOR_SIZE) * PHYSICAL_SECTOR_SIZE;
+        let entries_offset_within_read = (primary_partition_entries_logical_offset - entries_aligned_start) as usize;
+        let entries_aligned_size = ((partition_entries_logical_size + entries_offset_within_read + PHYSICAL_SECTOR_SIZE as usize - 1) 
+                                   / PHYSICAL_SECTOR_SIZE as usize) * PHYSICAL_SECTOR_SIZE as usize;
+        
+        info!("Reading partition entries: logical offset={}, logical size={}, aligned offset={}, aligned size={}", 
+              primary_partition_entries_logical_offset, partition_entries_logical_size, entries_aligned_start, entries_aligned_size);
+        
+        disk_file.seek(SeekFrom::Start(entries_aligned_start))
+            .with_context(|| format!("Failed to seek to aligned partition entries at offset {}", entries_aligned_start))?;
+        
+        let mut entries_aligned_buffer = vec![0u8; entries_aligned_size];
+        disk_file.read_exact(&mut entries_aligned_buffer)
+            .with_context(|| format!("Failed to read {} bytes for aligned partition entries", entries_aligned_size))?;
+        
+        // Extract the actual partition entries from the aligned buffer
+        let entries_end = entries_offset_within_read + partition_entries_logical_size;
+        if entries_aligned_buffer.len() < entries_end {
+            return Err(anyhow!("Aligned buffer too small for partition entries"));
+        }
+        let partition_entries = &entries_aligned_buffer[entries_offset_within_read..entries_end];
 
-        // Write partition entries to backup location (sector-aligned write)
-        let backup_partition_entries_offset = backup_partition_entries_lba * SECTOR_SIZE;
-        disk_file.seek(SeekFrom::Start(backup_partition_entries_offset))?;
-        disk_file.write_all(&partition_entries)?;
+        // Write partition entries to backup location (physically-aligned write)
+        let backup_partition_entries_logical_offset = backup_partition_entries_lba * LOGICAL_SECTOR_SIZE;
+        
+        // Align backup partition entries writing to physical sector boundaries
+        let backup_entries_aligned_start = (backup_partition_entries_logical_offset / PHYSICAL_SECTOR_SIZE) * PHYSICAL_SECTOR_SIZE;
+        let backup_entries_offset_within_write = (backup_partition_entries_logical_offset - backup_entries_aligned_start) as usize;
+        
+        info!("Writing backup partition entries: logical offset={}, aligned offset={}, offset within write={}", 
+              backup_partition_entries_logical_offset, backup_entries_aligned_start, backup_entries_offset_within_write);
+        
+        // Read existing data at backup location to preserve surrounding data
+        disk_file.seek(SeekFrom::Start(backup_entries_aligned_start))
+            .with_context(|| format!("Failed to seek to backup entries aligned position {}", backup_entries_aligned_start))?;
+        
+        let mut backup_entries_aligned_buffer = vec![0u8; entries_aligned_size];
+        // Try to read existing data, but don't fail if we can't (might be at end of disk)
+        let _ = disk_file.read_exact(&mut backup_entries_aligned_buffer);
+        
+        // Copy partition entries into the aligned buffer
+        let backup_entries_end = backup_entries_offset_within_write + partition_entries.len();
+        if backup_entries_aligned_buffer.len() >= backup_entries_end {
+            backup_entries_aligned_buffer[backup_entries_offset_within_write..backup_entries_end]
+                .copy_from_slice(partition_entries);
+        }
+        
+        // Write the aligned buffer
+        disk_file.seek(SeekFrom::Start(backup_entries_aligned_start))
+            .with_context(|| format!("Failed to seek to backup partition entries at offset {}", backup_entries_aligned_start))?;
+        info!("Writing {} bytes for aligned backup partition entries", backup_entries_aligned_buffer.len());
+        disk_file.write_all(&backup_entries_aligned_buffer)
+            .with_context(|| format!("Failed to write {} bytes for partition entries", backup_entries_aligned_buffer.len()))?;
     }
 
     // Ensure all data is flushed to disk
-    disk_file.flush()?;
+    info!("Step 7: Flushing all data to disk");
+    disk_file.flush()
+        .with_context(|| "Failed to flush data to disk")?;
 
     info!("Successfully fixed GPT backup header location");
     Ok(())

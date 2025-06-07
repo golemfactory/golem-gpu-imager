@@ -11,7 +11,32 @@ Golem GPU Imager requires administrator privileges on Windows to perform disk op
 
 ## Implementation
 
-### 1. Application Manifest
+### 1. Programmatic Elevation (Runtime Detection & Request)
+The application includes runtime elevation detection and request functionality:
+
+```rust
+// Check if running with admin privileges
+if utils::is_elevated() {
+    // Proceed with disk operations
+} else {
+    // Show warning or request elevation
+    utils::request_elevation()?; // Restarts app with "Run as administrator"
+}
+```
+
+**Features:**
+- **Detection**: Checks if the current process has administrator privileges
+- **User Check**: Verifies if the current user is a member of the Administrators group  
+- **Runtime Request**: Can request elevation by restarting the application with UAC prompt
+- **Status Display**: Shows current elevation status in logs and UI
+- **Cross-platform**: Graceful handling on non-Windows systems
+
+**When to use:**
+- Applications that sometimes need admin privileges but can run without them
+- Better user experience - doesn't always show UAC prompt
+- Allows graceful degradation of functionality
+
+### 2. Application Manifest
 The application includes a Windows manifest that requests administrator privileges:
 
 ```xml
@@ -23,13 +48,31 @@ This is embedded at build time via `build.rs` and ensures the application will:
 - Run with elevated privileges automatically
 - Have access to system-level disk operations
 
-### 2. WiX Installer Configuration
-The MSI installer is configured to:
-- **Require elevated installation**: `InstallPrivileges="elevated"`
-- **Install for all users**: `Scope="perMachine"`
-- **Create admin-aware shortcuts**: Both Start Menu and Desktop shortcuts include `System.AppUserModel.RunAs=true`
+### 3. Application Startup
+The application automatically checks elevation status at startup:
 
-### 3. Shortcut Behavior
+```rust
+// Check elevation status on Windows
+let elevation_status = utils::get_elevation_status();
+tracing::info!("Privilege status: {}", elevation_status);
+
+if !utils::is_elevated() {
+    tracing::warn!("Application is not running with administrator privileges. Some operations may fail.");
+}
+```
+
+**Status messages:**
+- ✅ "Running with administrator privileges" 
+- ⚠️ "User is admin but process is not elevated. Use 'Run as administrator' to elevate."
+- ❌ "User is not an administrator. Please log in as an administrator."
+
+### 4. WiX Installer Configuration
+The MSI installer is configured to:
+- **Install for all users (requires admin)**: `Scope="perMachine"`
+- **Create admin-aware shortcuts**: Both Start Menu and Desktop shortcuts include `System.AppUserModel.RunAs=true`
+- **WiX v4 compatible**: Uses modern WiX v4 syntax for elevation requirements
+
+### 5. Shortcut Behavior
 All shortcuts created by the installer will:
 - Display "Run as Administrator" in descriptions
 - Automatically request elevation when clicked

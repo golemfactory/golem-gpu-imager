@@ -150,10 +150,10 @@ pub fn get_elevation_status() -> String {
         let admin_user = is_admin_user();
         
         match (elevated, admin_user) {
-            (true, true) => "✅ Running with administrator privileges".to_string(),
-            (false, true) => "⚠️ User is admin but process is not elevated. Use 'Run as administrator' to elevate.".to_string(),
-            (false, false) => "❌ User is not an administrator. Please log in as an administrator.".to_string(),
-            (true, false) => "🔍 Process is elevated but user check failed (unusual)".to_string(),
+            (true, true) => "Running with administrator privileges".to_string(),
+            (false, true) => "User is admin but process is not elevated. Use 'Run as administrator' to elevate.".to_string(),
+            (false, false) => "User is not an administrator. Please log in as an administrator.".to_string(),
+            (true, false) => "Process is elevated but user check failed (unusual)".to_string(),
         }
     }
     
@@ -161,9 +161,9 @@ pub fn get_elevation_status() -> String {
     {
         // On non-Windows systems, check if running as root
         if unsafe { libc::geteuid() } == 0 {
-            "✅ Running as root".to_string()
+            "Running as root".to_string()
         } else {
-            "⚠️ Not running as root. Some operations may require sudo.".to_string()
+            "Not running as root. Some operations may require sudo.".to_string()
         }
     }
 }

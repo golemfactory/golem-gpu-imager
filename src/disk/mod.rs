@@ -437,6 +437,12 @@ impl Disk {
                     info!("Disk flush completed successfully in {:?}", flush_duration);
                 }
 
+                // Fix GPT backup header location if device is larger than image (while volume is still locked)
+                info!("Checking and fixing GPT backup header location if needed");
+                if let Err(e) = fix_gpt_backup_header(&mut disk_file) {
+                    warn!("Failed to fix GPT backup header (non-fatal): {}", e);
+                }
+
                 info!("Starting volume unlock (Windows only)");
                 // On Windows, unlock the volume
                 #[cfg(windows)]
@@ -452,12 +458,6 @@ impl Disk {
                 }
 
                 info!("Successfully wrote image to disk");
-                
-                // Fix GPT backup header location if device is larger than image
-                info!("Checking and fixing GPT backup header location if needed");
-                if let Err(e) = fix_gpt_backup_header(&mut disk_file) {
-                    warn!("Failed to fix GPT backup header (non-fatal): {}", e);
-                }
                 
                 // Write configuration if provided, using the same locked disk handle
                 if let Some(conf) = config {

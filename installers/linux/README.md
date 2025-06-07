@@ -29,7 +29,7 @@ This will:
 
 ### Install the Package
 ```bash
-sudo dpkg -i golem-gpu-imager_0.1.4_amd64.deb
+sudo dpkg -i golem-gpu-imager_<version>_amd64.deb
 ```
 
 ### Install Dependencies (if needed)

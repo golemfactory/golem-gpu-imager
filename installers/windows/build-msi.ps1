@@ -44,7 +44,7 @@ Write-Host "Building installer..." -ForegroundColor Yellow
 try {
     # Compile WiX source
     Write-Host "Compiling WiX source..." -ForegroundColor Yellow
-    & candle.exe installer.wxs -out "$OutputDir\installer.wixobj"
+    & candle.exe installers\windows\installer.wxs -out "$OutputDir\installer.wixobj"
     if ($LASTEXITCODE -ne 0) {
         throw "candle.exe failed with exit code $LASTEXITCODE"
     }

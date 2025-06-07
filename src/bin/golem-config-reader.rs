@@ -1037,19 +1037,19 @@ async fn main() -> Result<()> {
     info!("Reading Golem config from disk: {}", args.disk);
     info!("Looking for partition UUID: {}", args.uuid);
     
-    println!("📀 Reading Golem configuration from disk: {}", args.disk);
-    println!("🔍 Looking for partition UUID: {}", args.uuid);
+    println!("Reading Golem configuration from disk: {}", args.disk);
+    println!("Looking for partition UUID: {}", args.uuid);
 
     // Open disk 
     let disk_result = Disk::open(&args.disk).await;
     
     let mut disk = match disk_result {
         Ok(d) => {
-            println!("✅ Successfully opened disk: {}", args.disk);
+            println!("Successfully opened disk: {}", args.disk);
             d
         },
         Err(e) => {
-            println!("❌ Failed to open disk: {}", e);
+            println!("Failed to open disk: {}", e);
             println!();
             
             #[cfg(windows)]
@@ -1077,21 +1077,21 @@ async fn main() -> Result<()> {
 
     // First, read configuration from config partition
     info!("Reading Golem configuration...");
-    println!("📋 Reading Golem configuration...");
+    println!("Reading Golem configuration...");
     let config_result = disk.read_configuration(&args.uuid);
 
     // Now find the partition again for file listing
     info!("Searching for config partition for file listing...");
-    println!("🔍 Searching for config partition to list files...");
+    println!("Searching for config partition to list files...");
     let fs_result = disk.find_partition(&args.uuid);
     
     let fs = match fs_result {
         Ok(fs) => {
-            println!("✅ Found Golem config partition");
+            println!("Found Golem config partition");
             fs
         },
         Err(e) => {
-            println!("❌ Failed to find Golem config partition: {}", e);
+            println!("Failed to find Golem config partition: {}", e);
             println!();
             
             #[cfg(windows)]
@@ -1117,14 +1117,14 @@ async fn main() -> Result<()> {
     let entries = match entries_result {
         Ok(entries) => entries,
         Err(e) => {
-            println!("❌ Failed to list files in partition: {}", e);
+            println!("Failed to list files in partition: {}", e);
             return Err(anyhow!("Failed to list files in partition"));
         }
     };
     
     if entries.is_empty() {
         info!("No files found in the partition");
-        println!("ℹ️ No files found in the partition");
+        println!("No files found in the partition");
     } else {
         // Calculate column width for nice formatting
         let max_name_len = entries
@@ -1184,7 +1184,7 @@ async fn main() -> Result<()> {
             if let Some(ref output_dir) = args.output_dir {
                 if !is_dir {
                     if let Err(e) = save_file_content(&root_dir, &file_name, output_dir) {
-                        println!("⚠️ Failed to save file {}: {}", file_name, e);
+                        println!("Failed to save file {}: {}", file_name, e);
                     }
                 }
             }
@@ -1192,7 +1192,7 @@ async fn main() -> Result<()> {
         
         // Print summary of saved files if output directory was specified
         if let Some(ref output_dir) = args.output_dir {
-            println!("\n📁 Files saved to: {:?}", output_dir);
+            println!("\nFiles saved to: {:?}", output_dir);
         }
     }
     
@@ -1212,7 +1212,7 @@ async fn main() -> Result<()> {
         }
         Err(e) => {
             error!("Failed to read configuration: {}", e);
-            println!("❌ Failed to read configuration: {}", e);
+            println!("Failed to read configuration: {}", e);
         }
     }
     

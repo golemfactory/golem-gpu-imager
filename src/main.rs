@@ -76,6 +76,18 @@ pub fn main() -> iced::Result {
     }
 
     tracing::info!("Starting Golem GPU Imager v{} built {} (console mode: {})", version::VERSION, version::BUILD_TIME, is_console);
+    
+    // Check elevation status on Windows
+    #[cfg(windows)]
+    {
+        let elevation_status = utils::get_elevation_status();
+        tracing::info!("Privilege status: {}", elevation_status);
+        
+        if !utils::is_elevated() {
+            tracing::warn!("Application is not running with administrator privileges. Some operations may fail.");
+            tracing::info!("To run with administrator privileges, right-click the application and select 'Run as administrator'");
+        }
+    }
 
     let mut settings = Settings::default();
 

@@ -186,4 +186,6 @@ pub enum Message {
     WriteConfigCompleted,           // Config write completed successfully
     WriteConfigFailed(String),      // Config write failed with error message
     PollWriteProgress,              // Poll for progress updates from the subscription
+    RequestElevation,               // Request administrator elevation (Windows only)
+    CheckElevationStatus,           // Check current elevation status
 }

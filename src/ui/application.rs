@@ -29,6 +29,8 @@ pub struct GolemGpuImager {
     pub locked_disk: Option<Disk>,
     pub error_message: Option<String>,
     pub cancel_token: CancelToken, // For canceling operations
+    pub elevation_status: String, // Current elevation status message
+    pub is_elevated: bool,        // Whether the process is currently elevated
 }
 
 impl GolemGpuImager {
@@ -74,6 +76,13 @@ impl GolemGpuImager {
             }
         };
 
+        let elevation_status = crate::utils::get_elevation_status();
+        let is_elevated = crate::utils::is_elevated();
+        
+        // Don't set error messages for elevation issues here
+        // The start screen will handle elevation prompts directly
+        let error_message = None;
+
         Self {
             mode: AppMode::StartScreen,
             os_images: vec![],       // Will be populated from repo
@@ -89,8 +98,10 @@ impl GolemGpuImager {
             show_preset_manager: false,
             preset_manager,
             locked_disk: None,
-            error_message: None,
+            error_message,
             cancel_token: CancelToken::new(),
+            elevation_status,
+            is_elevated,
         }
     }
 
@@ -1582,6 +1593,24 @@ impl GolemGpuImager {
                     self.mode = AppMode::FlashNewImage(FlashState::SelectOsImage);
                 }
             }
+            Message::RequestElevation => {
+                #[cfg(windows)]
+                {
+                    if let Err(e) = crate::utils::request_elevation() {
+                        self.error_message = Some(format!("Failed to request elevation: {}", e));
+                        error!("Failed to request elevation: {}", e);
+                    }
+                }
+                #[cfg(not(windows))]
+                {
+                    self.error_message = Some("Elevation request is only supported on Windows. Please run with sudo on Unix systems.".to_string());
+                }
+            }
+            Message::CheckElevationStatus => {
+                self.elevation_status = crate::utils::get_elevation_status();
+                self.is_elevated = crate::utils::is_elevated();
+                info!("Updated elevation status: {}", self.elevation_status);
+            }
         }
         Task::none()
     }
@@ -1593,7 +1622,11 @@ impl GolemGpuImager {
         }
 
         match &self.mode {
-            AppMode::StartScreen => ui::view_start_screen(),
+            AppMode::StartScreen => ui::view_start_screen(
+                self.error_message.as_deref(),
+                self.is_elevated,
+                &self.elevation_status,
+            ),
             AppMode::FlashNewImage(state) => match state {
                 FlashState::SelectOsImage => {
                     if self.os_images.is_empty() {

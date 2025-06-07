@@ -32,7 +32,7 @@ echo Building installer...
 
 REM Compile WiX source
 echo Compiling WiX source...
-candle.exe installer.wxs -out dist\installer.wixobj
+candle.exe installers\windows\installer.wxs -out dist\installer.wixobj
 if errorlevel 1 (
     echo Error: candle.exe failed
     exit /b 1

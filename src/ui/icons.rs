@@ -99,7 +99,7 @@ pub fn edit() -> iced::widget::Text<'static> {
 
 // Additional icons for improved UI/UX
 pub fn cancel() -> iced::widget::Text<'static> {
-    icon('\u{E5C9}')
+    icon('\u{E872}') // Material Icons delete (more appropriate for cancel)
 }
 
 pub fn timer() -> iced::widget::Text<'static> {

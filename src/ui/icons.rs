@@ -147,3 +147,11 @@ pub fn check() -> iced::widget::Text<'static> {
 pub fn get_app() -> iced::widget::Text<'static> {
     icon('\u{E884}') // Material Icons get_app (download)
 }
+
+pub fn analytics() -> iced::widget::Text<'static> {
+    icon('\u{E880}') // Material Icons analytics
+}
+
+pub fn verified() -> iced::widget::Text<'static> {
+    icon('\u{E8E8}') // Material Icons verified
+}

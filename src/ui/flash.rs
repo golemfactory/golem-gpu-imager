@@ -24,13 +24,42 @@ pub fn view_select_os_image<'a>(
     let os_image_list = column(os_images.iter().enumerate().map(|(i, image)| {
         let is_selected = selected_os_image == Some(i);
 
-        let image_info = column![
-            text(&image.name).size(20),
-            text(format!("Version: {}", image.version)).size(15),
-            text(&image.description).size(14),
-        ]
-        .spacing(8)
-        .width(Length::Fill);
+        let mut image_info_items = vec![
+            text(&image.name).size(20).into(),
+            text(format!("Version: {}", image.version)).size(15).into(),
+            text(&image.description).size(14).into(),
+        ];
+
+        // Add metadata information if available
+        if let Some(metadata) = &image.metadata {
+            let uncompressed_size_gb = metadata.uncompressed_size as f64 / (1024.0 * 1024.0 * 1024.0);
+            image_info_items.push(
+                row![
+                    icons::analytics(),
+                    text(format!("Uncompressed: {:.2} GB", uncompressed_size_gb))
+                        .size(12)
+                        .color(Color::from_rgb(0.0, 0.5, 0.8)),
+                    icons::verified(),
+                    text("Verified")
+                        .size(12)
+                        .color(Color::from_rgb(0.0, 0.6, 0.0))
+                ]
+                .spacing(5)
+                .align_y(Alignment::Center)
+                .into()
+            );
+        }
+
+        image_info_items.push(
+            text(format!("Created: {}", image.created))
+                .size(12)
+                .color(Color::from_rgb(0.5, 0.5, 0.5))
+                .into()
+        );
+
+        let image_info = column(image_info_items)
+            .spacing(8)
+            .width(Length::Fill);
 
         let action_button = if image.downloaded {
             button(
@@ -148,7 +177,7 @@ pub fn view_select_os_image_groups<'a>(
 
                 // Latest version card (always shown)
                 let latest_is_selected = selected_version_idx == Some(0);
-                let latest_image_info = column![
+                let mut image_info_items = vec![
                     row![
                         text(&group.channel_name).size(20),
                         text("(Latest)")
@@ -156,15 +185,42 @@ pub fn view_select_os_image_groups<'a>(
                             .color(Color::from_rgb(0.0, 0.6, 0.0))
                     ]
                     .spacing(8)
-                    .align_y(Alignment::Center),
-                    text(format!("Version: {}", group.latest_version.version)).size(15),
-                    text(&group.description).size(14),
+                    .align_y(Alignment::Center)
+                    .into(),
+                    text(format!("Version: {}", group.latest_version.version)).size(15).into(),
+                    text(&group.description).size(14).into(),
+                ];
+
+                // Add metadata information if available
+                if let Some(metadata) = &group.latest_version.metadata {
+                    let uncompressed_size_gb = metadata.uncompressed_size as f64 / (1024.0 * 1024.0 * 1024.0);
+                    image_info_items.push(
+                        row![
+                            icons::analytics(),
+                            text(format!("Uncompressed: {:.2} GB", uncompressed_size_gb))
+                                .size(12)
+                                .color(Color::from_rgb(0.0, 0.5, 0.8)),
+                            icons::verified(),
+                            text("Verified")
+                                .size(12)
+                                .color(Color::from_rgb(0.0, 0.6, 0.0))
+                        ]
+                        .spacing(5)
+                        .align_y(Alignment::Center)
+                        .into()
+                    );
+                }
+
+                image_info_items.push(
                     text(format!("Created: {}", group.latest_version.created))
                         .size(12)
-                        .color(Color::from_rgb(0.5, 0.5, 0.5)),
-                ]
-                .spacing(8)
-                .width(Length::Fill);
+                        .color(Color::from_rgb(0.5, 0.5, 0.5))
+                        .into()
+                );
+
+                let latest_image_info = column(image_info_items)
+                    .spacing(8)
+                    .width(Length::Fill);
 
                 let latest_action_button = if group.latest_version.downloaded {
                     button(
@@ -245,14 +301,40 @@ pub fn view_select_os_image_groups<'a>(
                                     let is_selected =
                                         selected_version_idx == Some(actual_version_idx);
 
-                                    let older_image_info = column![
-                                        text(format!("Version: {}", older_image.version)).size(15),
+                                    let mut older_info_items = vec![
+                                        text(format!("Version: {}", older_image.version)).size(15).into(),
+                                    ];
+
+                                    // Add metadata information if available for older versions
+                                    if let Some(metadata) = &older_image.metadata {
+                                        let uncompressed_size_gb = metadata.uncompressed_size as f64 / (1024.0 * 1024.0 * 1024.0);
+                                        older_info_items.push(
+                                            row![
+                                                icons::analytics(),
+                                                text(format!("Uncompressed: {:.2} GB", uncompressed_size_gb))
+                                                    .size(11)
+                                                    .color(Color::from_rgb(0.0, 0.5, 0.8)),
+                                                icons::verified(),
+                                                text("Verified")
+                                                    .size(11)
+                                                    .color(Color::from_rgb(0.0, 0.6, 0.0))
+                                            ]
+                                            .spacing(4)
+                                            .align_y(Alignment::Center)
+                                            .into()
+                                        );
+                                    }
+
+                                    older_info_items.push(
                                         text(format!("Created: {}", older_image.created))
                                             .size(12)
-                                            .color(Color::from_rgb(0.5, 0.5, 0.5)),
-                                    ]
-                                    .spacing(5)
-                                    .width(Length::Fill);
+                                            .color(Color::from_rgb(0.5, 0.5, 0.5))
+                                            .into()
+                                    );
+
+                                    let older_image_info = column(older_info_items)
+                                        .spacing(5)
+                                        .width(Length::Fill);
 
                                     let older_action_button = if older_image.downloaded {
                                         button(
@@ -392,6 +474,115 @@ pub fn view_select_os_image_groups<'a>(
         .width(Length::Fill)
         .height(Length::Fill)
         .style(crate::style::main_box)
+        .into()
+}
+
+pub fn view_calculating_metadata(
+    version_id: &str,
+    progress: f32,
+    channel: &str,
+    created_date: &str,
+    uncompressed_size: Option<u64>,
+) -> Element<'static, Message> {
+    let title = text("Analyzing Downloaded Image")
+        .size(30)
+        .width(Length::Fill)
+        .align_x(Horizontal::Center);
+
+    // Image details at the top
+    let image_details = column![
+        text(format!("Channel: {}", channel)).size(18),
+        text(format!("Version: {}", version_id)).size(18),
+        text(format!("Created: {}", created_date)).size(16),
+    ]
+    .spacing(10)
+    .width(Length::Fill)
+    .align_x(Alignment::Center);
+
+    // Two-stage progress indicator
+    let download_stage = row![
+        icons::check_circle().style(|_| iced::widget::text::Style {
+            color: Some(crate::style::SUCCESS),
+            ..iced::widget::text::Style::default()
+        }),
+        text("Download Complete").style(|_| iced::widget::text::Style {
+            color: Some(crate::style::SUCCESS),
+            ..iced::widget::text::Style::default()
+        }),
+    ]
+    .spacing(8)
+    .align_y(Alignment::Center);
+
+    let metadata_stage = row![
+        icons::timer(),
+        text("Calculating SHA256 hash and size..."),
+        text(format!("{}%", (progress * 100.0) as i32)).size(16),
+    ]
+    .spacing(8)
+    .align_y(Alignment::Center);
+
+    let stages = column![download_stage, metadata_stage]
+        .spacing(15)
+        .width(Length::Fill)
+        .align_x(Alignment::Center);
+
+    // Progress indicator
+    let progress_percentage = (progress * 100.0) as i32;
+    let progress_text = text(format!("{}%", progress_percentage)).size(25);
+    let progress_bar = progress_bar(0.0..=1.0, progress).style(progress_bar::primary);
+
+    // Size information if available
+    let size_info = if let Some(size) = uncompressed_size {
+        let size_gb = size as f64 / (1024.0 * 1024.0 * 1024.0);
+        text(format!("Estimated uncompressed size: {:.2} GB", size_gb))
+            .size(16)
+            .style(|_| iced::widget::text::Style {
+                color: Some(Color::from_rgb(0.5, 0.5, 0.5)),
+                ..iced::widget::text::Style::default()
+            })
+    } else {
+        text("Calculating uncompressed size...")
+            .size(16)
+            .style(|_| iced::widget::text::Style {
+                color: Some(Color::from_rgb(0.5, 0.5, 0.5)),
+                ..iced::widget::text::Style::default()
+            })
+    };
+
+    // Optional cancel button
+    let cancel_button = button(
+        row![icons::cancel(), text("Cancel Analysis")]
+            .spacing(5)
+            .align_y(Alignment::Center)
+    )
+    .on_press(Message::CancelWrite)
+    .padding(10);
+
+    let content = column![
+        title,
+        image_details,
+        container(column![])
+            .height(Length::Fill)
+            .width(Length::Fill),
+        stages,
+        progress_text,
+        progress_bar,
+        size_info,
+        text("Analyzing image data, please wait...").size(16),
+        container(column![])
+            .height(Length::Fill)
+            .width(Length::Fill),
+        cancel_button,
+    ]
+    .spacing(20)
+    .padding(20)
+    .width(Length::Fill)
+    .align_x(Alignment::Center);
+
+    Container::new(content)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .center_x(Length::Fill)
         .into()
 }
 

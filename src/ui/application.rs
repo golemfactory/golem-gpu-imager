@@ -1,10 +1,10 @@
 use crate::disk::{Disk, WriteProgress};
 use crate::models::{
-    AppMode, CancelToken, ConfigurationPreset, EditState, FlashState, Message, NetworkType,
+    AppMode, CancelToken, ConfigurationPreset, EditState, FlashState, ImageMetadata, Message, NetworkType,
     OsImage, PaymentNetwork, StorageDevice,
 };
 use crate::ui;
-use crate::utils::PresetManager;
+use crate::utils::{PresetManager, image_metadata::MetadataManager, metadata_calculator};
 use crate::utils::repo::{DownloadStatus, ImageRepo, Version};
 // Removed unused import: use anyhow::anyhow;
 // Removed unused import: futures_util::TryStreamExt
@@ -33,6 +33,7 @@ pub struct GolemGpuImager {
     pub cancel_token: CancelToken, // For canceling operations
     pub elevation_status: String,  // Current elevation status message
     pub is_elevated: bool,         // Whether the process is currently elevated
+    pub metadata_manager: Option<MetadataManager>, // For managing image metadata
 }
 
 impl GolemGpuImager {
@@ -81,6 +82,18 @@ impl GolemGpuImager {
         let elevation_status = crate::utils::get_elevation_status();
         let is_elevated = crate::utils::is_elevated();
 
+        // Initialize the MetadataManager
+        let metadata_manager = match MetadataManager::new() {
+            Ok(manager) => {
+                info!("Successfully initialized metadata manager");
+                Some(manager)
+            }
+            Err(e) => {
+                error!("Failed to initialize metadata manager: {}", e);
+                None
+            }
+        };
+
         // Don't set error messages for elevation issues here
         // The start screen will handle elevation prompts directly
         let error_message = None;
@@ -106,6 +119,7 @@ impl GolemGpuImager {
             cancel_token: CancelToken::new(),
             elevation_status,
             is_elevated,
+            metadata_manager,
         }
     }
 
@@ -165,6 +179,7 @@ impl GolemGpuImager {
                                 created: newest.created.clone(),
                                 sha256: newest.sha256.clone(),
                                 is_latest: true,
+                                metadata: None, // Will be loaded later if available
                             });
 
                             // New grouped format: include all versions
@@ -186,6 +201,7 @@ impl GolemGpuImager {
                                 created: newest.created.clone(),
                                 sha256: newest.sha256.clone(),
                                 is_latest: true,
+                                metadata: None, // Will be loaded later if available
                             };
 
                             // Create older versions list
@@ -214,6 +230,7 @@ impl GolemGpuImager {
                                         created: version.created.clone(),
                                         sha256: version.sha256.clone(),
                                         is_latest: false,
+                                        metadata: None, // Will be loaded later if available
                                     }
                                 })
                                 .collect();
@@ -475,8 +492,8 @@ impl GolemGpuImager {
                 self.downloads_in_progress
                     .retain(|(id, _)| id != &version_id);
 
-                // Mark the OS image as downloaded
-                if let Some(index) = self
+                // Get current download context for metadata calculation
+                let (channel, created_date, image_path, compressed_hash) = if let Some(index) = self
                     .os_images
                     .iter()
                     .position(|img| img.version == version_id)
@@ -494,41 +511,97 @@ impl GolemGpuImager {
 
                         let repo = ImageRepo::new(); // Create temporary instance
                         let path = repo.get_image_path(&repo_version);
-                        image.path = Some(path.to_string_lossy().to_string());
+                        let path_string = path.to_string_lossy().to_string();
+                        image.path = Some(path_string.clone());
+                        
+                        (image.name.clone(), image.created.clone(), path, image.sha256.clone())
+                    } else {
+                        error!("Failed to find downloaded image in os_images list");
+                        return Task::none();
+                    }
+                } else {
+                    error!("Failed to find downloaded image by version_id");
+                    return Task::none();
+                };
+
+                // Check if metadata already exists
+                if let Some(metadata_manager) = &self.metadata_manager {
+                    if metadata_manager.has_metadata(&compressed_hash) {
+                        info!("Metadata already exists for image, skipping calculation");
+                        // Load existing metadata and go to device selection
+                        match metadata_manager.load_metadata(&compressed_hash) {
+                            Ok(Some(metadata)) => {
+                                // Update image with metadata
+                                if let Some(image) = self.os_images.iter_mut().find(|img| img.version == version_id) {
+                                    image.metadata = Some(metadata);
+                                }
+                                
+                                // Refresh devices and go to selection
+                                self.refresh_storage_devices();
+                                self.mode = AppMode::FlashNewImage(FlashState::SelectTargetDevice);
+                                return Task::none();
+                            }
+                            Ok(None) => {
+                                warn!("Metadata file exists but failed to load");
+                            }
+                            Err(e) => {
+                                warn!("Failed to load existing metadata: {}", e);
+                            }
+                        }
                     }
                 }
 
-                // Refresh the list of available storage devices
-                info!("Refreshing available storage devices");
-                match rs_drivelist::drive_list() {
-                    Ok(devices) => {
-                        // Filter to only include removable, non-virtual devices
-                        self.storage_devices = devices
-                            .into_iter()
-                            .filter(|d| d.isRemovable && !d.isVirtual)
-                            .map(|d| StorageDevice {
-                                name: d.description,
-                                path: d.device,
-                                size: format!("{:.2} GB", d.size as f64 / 1000.0 / 1000.0 / 1000.0),
-                            })
-                            .collect();
+                // Start metadata calculation
+                info!("Starting metadata calculation for downloaded image: {}", version_id);
+                self.mode = AppMode::FlashNewImage(FlashState::CalculatingMetadata {
+                    version_id: version_id.clone(),
+                    progress: 0.0,
+                    channel: channel.clone(),
+                    created_date: created_date.clone(),
+                    uncompressed_size: None,
+                });
 
-                        debug!("Found {} available devices", self.storage_devices.len());
-
-                        // Clear any previous device selection
-                        self.selected_device = None;
-                    }
-                    Err(e) => {
-                        error!("Failed to get drive list: {}", e);
-                        // In case of error, provide an empty list
-                        self.storage_devices = vec![];
-                    }
-                }
-
-                // ALWAYS go to the device selection screen after this message
-                // Either after a download completes or when clicking next from image selection
-                debug!("Moving to device selection screen");
-                self.mode = AppMode::FlashNewImage(FlashState::SelectTargetDevice);
+                // Start metadata calculation task
+                let cancel_token = self.cancel_token.clone();
+                let version_id_clone = version_id.clone();
+                
+                return Task::sip(
+                    metadata_calculator::calculate_image_metadata(
+                        &image_path,
+                        compressed_hash,
+                        cancel_token,
+                    ),
+                    move |progress| match progress {
+                        metadata_calculator::MetadataProgress::Start => {
+                            Message::MetadataProgress(version_id_clone.clone(), 0.0, 0, 0)
+                        }
+                        metadata_calculator::MetadataProgress::Processing { 
+                            bytes_processed, 
+                            estimated_total, 
+                            progress 
+                        } => {
+                            Message::MetadataProgress(version_id_clone.clone(), progress, bytes_processed, estimated_total)
+                        }
+                        metadata_calculator::MetadataProgress::Completed { metadata } => {
+                            Message::MetadataCompleted(version_id_clone.clone(), metadata)
+                        }
+                        metadata_calculator::MetadataProgress::Failed { error } => {
+                            Message::MetadataFailed(version_id_clone.clone(), error)
+                        }
+                    },
+                    move |result| match result {
+                        Ok(metadata_calculator::MetadataProgress::Completed { metadata }) => {
+                            Message::MetadataCompleted(version_id, metadata)
+                        }
+                        Ok(_) => {
+                            // This shouldn't happen as the final state should be Completed
+                            Message::MetadataFailed(version_id, "Unexpected final state".to_string())
+                        }
+                        Err(e) => {
+                            Message::MetadataFailed(version_id, e.to_string())
+                        }
+                    },
+                );
             }
             Message::DownloadFailed(version_id, error) => {
                 // Remove from downloads in progress
@@ -1870,6 +1943,68 @@ impl GolemGpuImager {
                 self.is_elevated = crate::utils::is_elevated();
                 info!("Updated elevation status: {}", self.elevation_status);
             }
+            Message::MetadataProgress(version_id, progress, bytes_processed, estimated_total) => {
+                // Update metadata calculation progress
+                if let AppMode::FlashNewImage(FlashState::CalculatingMetadata {
+                    version_id: current_id,
+                    channel,
+                    created_date,
+                    ..
+                }) = &self.mode
+                {
+                    if current_id == &version_id {
+                        self.mode = AppMode::FlashNewImage(FlashState::CalculatingMetadata {
+                            version_id: version_id.clone(),
+                            progress,
+                            channel: channel.clone(),
+                            created_date: created_date.clone(),
+                            uncompressed_size: if estimated_total > 0 { Some(estimated_total) } else { None },
+                        });
+                    }
+                }
+            }
+            Message::MetadataCompleted(version_id, metadata) => {
+                info!("Metadata calculation completed for image: {}", version_id);
+                
+                // Store metadata to disk
+                if let Some(metadata_manager) = &self.metadata_manager {
+                    if let Err(e) = metadata_manager.store_metadata(&metadata.compressed_hash, &metadata) {
+                        error!("Failed to store metadata: {}", e);
+                    } else {
+                        debug!("Successfully stored metadata for image: {}", version_id);
+                    }
+                }
+                
+                // Update image with metadata
+                if let Some(image) = self.os_images.iter_mut().find(|img| img.version == version_id) {
+                    image.metadata = Some(metadata.clone());
+                }
+                
+                // Also update grouped images if available
+                for group in &mut self.os_image_groups {
+                    if group.latest_version.version == version_id {
+                        group.latest_version.metadata = Some(metadata.clone());
+                    }
+                    for older_version in &mut group.older_versions {
+                        if older_version.version == version_id {
+                            older_version.metadata = Some(metadata.clone());
+                        }
+                    }
+                }
+                
+                // Refresh storage devices and go to device selection
+                self.refresh_storage_devices();
+                self.mode = AppMode::FlashNewImage(FlashState::SelectTargetDevice);
+            }
+            Message::MetadataFailed(version_id, error) => {
+                error!("Metadata calculation failed for image {}: {}", version_id, error);
+                
+                // Show error to user but continue to device selection
+                // The user can still proceed with the image even without metadata
+                warn!("Continuing without metadata due to calculation failure");
+                self.refresh_storage_devices();
+                self.mode = AppMode::FlashNewImage(FlashState::SelectTargetDevice);
+            }
         }
         Task::none()
     }
@@ -1908,6 +2043,21 @@ impl GolemGpuImager {
                     created_date,
                 } => {
                     ui::flash::view_downloading_image(version_id, *progress, channel, created_date)
+                }
+                FlashState::CalculatingMetadata {
+                    version_id,
+                    progress,
+                    channel,
+                    created_date,
+                    uncompressed_size,
+                } => {
+                    ui::flash::view_calculating_metadata(
+                        version_id, 
+                        *progress, 
+                        channel, 
+                        created_date, 
+                        *uncompressed_size
+                    )
                 }
                 FlashState::SelectTargetDevice => ui::flash::view_select_target_device(
                     &self.storage_devices,
@@ -2207,6 +2357,35 @@ impl GolemGpuImager {
                 if let Err(e) = manager.set_default_preset(0) {
                     error!("Failed to set new default preset after deletion: {}", e);
                 }
+            }
+        }
+    }
+
+    /// Helper method to refresh storage devices
+    fn refresh_storage_devices(&mut self) {
+        info!("Refreshing available storage devices");
+        match rs_drivelist::drive_list() {
+            Ok(devices) => {
+                // Filter to only include removable, non-virtual devices
+                self.storage_devices = devices
+                    .into_iter()
+                    .filter(|d| d.isRemovable && !d.isVirtual)
+                    .map(|d| StorageDevice {
+                        name: d.description,
+                        path: d.device,
+                        size: format!("{:.2} GB", d.size as f64 / 1000.0 / 1000.0 / 1000.0),
+                    })
+                    .collect();
+
+                debug!("Found {} available devices", self.storage_devices.len());
+
+                // Clear any previous device selection
+                self.selected_device = None;
+            }
+            Err(e) => {
+                error!("Failed to get drive list: {}", e);
+                // In case of error, provide an empty list
+                self.storage_devices = vec![];
             }
         }
     }

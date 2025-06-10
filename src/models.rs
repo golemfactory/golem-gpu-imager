@@ -1,3 +1,11 @@
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ImageMetadata {
+    pub compressed_hash: String,      // Original SHA256 from repo
+    pub uncompressed_hash: String,    // SHA256 of decompressed data
+    pub uncompressed_size: u64,       // Size of decompressed image
+    pub created_at: String,           // When metadata was calculated
+}
+
 #[derive(Debug, Clone)]
 pub struct OsImage {
     pub name: String,         // Channel name
@@ -8,6 +16,7 @@ pub struct OsImage {
     pub created: String,      // Creation date from metadata
     pub sha256: String,       // SHA256 hash for verification
     pub is_latest: bool,      // Whether this is the latest version in the channel
+    pub metadata: Option<ImageMetadata>, // Uncompressed image metadata
 }
 
 #[derive(Debug, Clone)]
@@ -90,6 +99,13 @@ pub enum FlashState {
         channel: String,
         created_date: String,
     },
+    CalculatingMetadata {
+        version_id: String,
+        progress: f32,
+        channel: String,
+        created_date: String,
+        uncompressed_size: Option<u64>, // Available after calculation
+    },
     SelectTargetDevice,
     ConfigureSettings {
         payment_network: PaymentNetwork,
@@ -160,6 +176,9 @@ pub enum Message {
     DownloadProgress(String, f32),        // Version ID and progress (0.0-1.0)
     DownloadCompleted(String),            // Version ID of completed download
     DownloadFailed(String, String),       // Version ID and error message
+    MetadataProgress(String, f32, u64, u64), // version_id, progress, bytes_processed, estimated_total
+    MetadataCompleted(String, ImageMetadata), // version_id, metadata
+    MetadataFailed(String, String),          // version_id, error
     GotoConfigureSettings,                // Go to image configuration screen
     SetPaymentNetwork(PaymentNetwork),
     SetSubnet(String),

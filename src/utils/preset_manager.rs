@@ -1,6 +1,6 @@
 use std::fs::{self, File};
 use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
@@ -42,6 +42,7 @@ impl PresetManager {
     }
 
     /// Initialize with default presets if no presets exist
+    #[cfg(not(feature = "enterprise"))]
     pub fn init_with_defaults(&mut self) -> Result<(), String> {
         // If presets file exists, load it
         if self.presets_file_exists() {
@@ -263,6 +264,7 @@ impl PresetManager {
     }
 
     // Override init_with_defaults to use enterprise presets
+    #[cfg(feature = "enterprise")]
     pub fn init_with_defaults(&mut self) -> Result<(), String> {
         // If presets file exists, load it
         if self.presets_file_exists() {

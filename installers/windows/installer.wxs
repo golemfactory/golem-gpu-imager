@@ -2,9 +2,10 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package Name="Golem GPU Imager" 
            Language="1033" 
-           Version="0.1.5.0" 
+           Version="0.1.6.0" 
            Manufacturer="Golem Factory" 
-           UpgradeCode="12345678-1234-1234-1234-123456789012"
+           ProductCode="710FCE6E-94E1-48E1-B880-A7000C3EA326"
+           UpgradeCode="A8B9C0D1-E2F3-4A5B-6C7D-8E9F0A1B2C3D"
            InstallerVersion="500" 
            Compressed="true"
            Scope="perMachine">
@@ -41,7 +42,7 @@
                     Description="Golem GPU Imager Application (Run as Administrator)"
                     Target="[#GolemGpuImagerExe]"
                     WorkingDirectory="INSTALLFOLDER">
-            <ShortcutProperty Key="System.AppUserModel.RunAs" Value="true" />
+            <ShortcutProperty Key="System.AppUserModel.ID" Value="GolemFactory.GolemGPUImager" />
           </Shortcut>
           <RemoveFolder Id="ApplicationProgramsFolder" On="uninstall"/>
           <RegistryValue Root="HKCU" 
@@ -60,7 +61,7 @@
                   Description="Golem GPU Imager Application (Run as Administrator)"
                   Target="[#GolemGpuImagerExe]"
                   WorkingDirectory="INSTALLFOLDER">
-          <ShortcutProperty Key="System.AppUserModel.RunAs" Value="true" />
+          <ShortcutProperty Key="System.AppUserModel.ID" Value="GolemFactory.GolemGPUImager" />
         </Shortcut>
         <RegistryValue Root="HKCU" 
                        Key="Software\Golem Factory\Golem GPU Imager" 

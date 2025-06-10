@@ -5,7 +5,7 @@ use anyhow::{Context, Result, anyhow};
 // Keep gpt imported for GptDisk
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{self, Read, Write, Seek};
+use std::io::{self, Read, Seek, Write};
 use std::os::unix::io::{AsRawFd, FromRawFd};
 use tracing::{debug, error, info, warn};
 
@@ -33,7 +33,10 @@ impl LinuxDiskAccess {
     /// # Returns
     /// * `Result<(File, Self)>` - A tuple with the disk file handle and platform-specific data
     pub async fn lock_path(path: &str, edit_mode: bool) -> Result<(File, Self)> {
-        info!("Locking Linux disk path: {} (edit_mode: {})", path, edit_mode);
+        info!(
+            "Locking Linux disk path: {} (edit_mode: {})",
+            path, edit_mode
+        );
 
         // Create the Linux UDisks2 client
         let client = Client::new().await?;
@@ -101,7 +104,7 @@ impl LinuxDiskAccess {
     }
 
     /// Create a partition file proxy for Linux
-    /// 
+    ///
     /// This function is no longer used as we now use in-memory partition operations.
     /// It is kept for compatibility with existing code.
     #[allow(dead_code)]
@@ -127,7 +130,7 @@ impl LinuxDiskAccess {
         if let Some(path) = original_path {
             debug!("Linux: path provided for pre_write_checks: {}", path);
         }
-        
+
         // Check basic disk access permissions
         match disk_file.try_clone() {
             Ok(mut test_file) => {
@@ -178,7 +181,7 @@ impl LinuxDiskAccess {
                     return Some(
                         anyhow::anyhow!("I/O error when writing to disk: {}", e)
                             .context("The disk may be damaged or have hardware issues")
-                            .context("Try using a different USB port or disk")
+                            .context("Try using a different USB port or disk"),
                     );
                 }
                 libc::ENOSPC => {
@@ -186,7 +189,7 @@ impl LinuxDiskAccess {
                     return Some(
                         anyhow::anyhow!("No space left on disk: {}", e)
                             .context("Check that the disk has enough free space for the image")
-                            .context("Try using a larger capacity disk")
+                            .context("Try using a larger capacity disk"),
                     );
                 }
                 libc::ENODEV => {
@@ -194,7 +197,7 @@ impl LinuxDiskAccess {
                     return Some(
                         anyhow::anyhow!("Device not available: {}", e)
                             .context("The disk was disconnected during the write operation")
-                            .context("Ensure the disk remains connected throughout the process")
+                            .context("Ensure the disk remains connected throughout the process"),
                     );
                 }
                 _ => {
@@ -202,7 +205,7 @@ impl LinuxDiskAccess {
                     return Some(
                         anyhow::anyhow!("Failed to write image to disk: {}", e)
                             .context("An unexpected Linux error occurred during disk write")
-                            .context("Try checking dmesg or system logs for more information")
+                            .context("Try checking dmesg or system logs for more information"),
                     );
                 }
             }
@@ -220,7 +223,7 @@ impl LinuxDiskAccess {
             return Some(
                 anyhow::anyhow!("Failed to flush disk buffer: {}", e)
                     .context("Unable to ensure all data was written to disk")
-                    .context("The disk may have been disconnected or experienced an error")
+                    .context("The disk may have been disconnected or experienced an error"),
             );
         }
 

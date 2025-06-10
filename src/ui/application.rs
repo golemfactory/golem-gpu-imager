@@ -1067,7 +1067,7 @@ impl GolemGpuImager {
             Message::WriteImageCompleted => {
                 // Log timing of the image write completion handler
                 info!("WriteImageCompleted handler starting");
-                let handler_start = std::time::Instant::now();
+                let _handler_start = std::time::Instant::now();
 
                 // Reset the cancel token for future operations
                 self.cancel_token.reset();

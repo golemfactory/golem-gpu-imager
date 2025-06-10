@@ -11,17 +11,18 @@ fn main() {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs();
-    
+
     // Format as ISO-like datetime
     let datetime = chrono::DateTime::from_timestamp(now as i64, 0)
         .unwrap()
         .format("%Y-%m-%d %H:%M:%S UTC")
         .to_string();
-    
+
     println!("cargo:rustc-env=BUILD_TIME={}", datetime);
 
     // Generate manifest with current version
-    let manifest_content = format!(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+    let manifest_content = format!(
+        r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
   <assemblyIdentity
     name="GolemFactory.GolemGPUImager" version="{}.0"
@@ -50,7 +51,9 @@ fn main() {
       </requestedPrivileges>
     </security>
   </trustInfo>
-</assembly>"#, version);
+</assembly>"#,
+        version
+    );
 
     let out_dir = std::env::var_os("OUT_DIR").unwrap();
     let manifest_path = std::path::Path::new(&out_dir).join("Golem-GPU-Imager.manifest");

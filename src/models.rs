@@ -115,6 +115,7 @@ pub enum FlashState {
         is_wallet_valid: bool,
     },
     WritingImage(f32),   // Progress 0.0 - 1.0 for image writing
+    VerifyingImage(f32), // Progress 0.0 - 1.0 for image verification
     WritingConfig(f32),  // Progress 0.0 - 1.0 for config writing
     WritingProcess(f32), // Legacy - for backward compatibility
     Completion(bool),    // Success or failure
@@ -215,6 +216,7 @@ pub enum Message {
     ShowError(String),             // Show an error message to the user
     DeviceLockedForWriting(crate::disk::Disk, String), // Device locked for writing with image path
     WriteImageProgress(f32),       // Update the image writing progress
+    VerificationProgress(f32),     // Update the verification progress
     WriteImageCompleted,           // Image write completed successfully
     WriteImageFailed(String),      // Image write failed with error message
     WriteConfigProgress(f32),      // Update the config writing progress

@@ -983,9 +983,10 @@ impl GolemGpuImager {
                                 // Start the write process with initial 0% progress for image writing
                                 self.mode = AppMode::FlashNewImage(FlashState::WritingImage(0.0));
 
-                                // Get device path and image path
+                                // Get device path, image path, and metadata
                                 let device_path = device.path.clone();
                                 let image_path_val = image_path.clone();
+                                let image_metadata = image.metadata.clone();
                                 // Create a clone of the cancel token that we can pass to the task
                                 let cancel_token_clone = self.cancel_token.clone();
 
@@ -1030,6 +1031,7 @@ impl GolemGpuImager {
                                     let write_task = Task::sip(
                                         disk.write_image(
                                             &image_path_val,
+                                            image_metadata.clone(),
                                             task_cancel_token,
                                             config.clone(),
                                         ),
@@ -1037,18 +1039,32 @@ impl GolemGpuImager {
                                             WriteProgress::Start => {
                                                 Message::WriteImageProgress(0.0)
                                             }
-                                            WriteProgress::Write(total_bytes) => {
-                                                // Calculate progress based on total bytes processed compared to 16GB
-                                                const TOTAL_SIZE: f32 =
-                                                    16.0 * 1024.0 * 1024.0 * 1024.0;
+                                            WriteProgress::Write { total_written, total_size } => {
+                                                // Calculate progress based on actual metadata size or fallback to 16GB
+                                                let size_for_calculation = if total_size > 0 {
+                                                    total_size as f32
+                                                } else {
+                                                    16.0 * 1024.0 * 1024.0 * 1024.0 // 16GB fallback
+                                                };
 
                                                 // Calculate progress percentage (0.0-1.0)
-                                                let progress = total_bytes as f32 / TOTAL_SIZE;
+                                                let progress = total_written as f32 / size_for_calculation;
 
                                                 // Clamp to make sure we don't go over 100%
                                                 let clamped_progress = progress.min(1.0);
 
                                                 Message::WriteImageProgress(clamped_progress)
+                                            }
+                                            WriteProgress::Verifying { verified_bytes, total_size } => {
+                                                // Calculate verification progress (0.0-1.0)
+                                                let progress = if total_size > 0 {
+                                                    verified_bytes as f32 / total_size as f32
+                                                } else {
+                                                    0.0
+                                                };
+
+                                                // Use a separate message for verification progress
+                                                Message::VerificationProgress(progress.min(1.0))
                                             }
                                             WriteProgress::Finish => {
                                                 Message::WriteImageProgress(100.0)
@@ -1096,6 +1112,10 @@ impl GolemGpuImager {
                             info!("Cancelling disk image writing in progress");
                             self.mode = AppMode::FlashNewImage(FlashState::WritingImage(1.0));
                         }
+                        AppMode::FlashNewImage(FlashState::VerifyingImage(_)) => {
+                            info!("Cancelling image verification in progress");
+                            self.mode = AppMode::FlashNewImage(FlashState::VerifyingImage(1.0));
+                        }
                         AppMode::FlashNewImage(FlashState::WritingConfig(_)) => {
                             info!("Cancelling configuration writing in progress");
                             self.mode = AppMode::FlashNewImage(FlashState::WritingConfig(1.0));
@@ -1127,6 +1147,18 @@ impl GolemGpuImager {
                     // Update the UI with the new progress value
                     debug!("Image write progress: {:.1}%", progress * 100.0);
                     self.mode = AppMode::FlashNewImage(FlashState::WritingImage(progress));
+                }
+            }
+            Message::VerificationProgress(progress) => {
+                // Update the verification progress in the UI
+                if let AppMode::FlashNewImage(FlashState::WritingImage(_)) = &self.mode {
+                    // When we receive verification progress, transition to verifying state
+                    debug!("Verification progress: {:.1}%", progress * 100.0);
+                    self.mode = AppMode::FlashNewImage(FlashState::VerifyingImage(progress));
+                } else if let AppMode::FlashNewImage(FlashState::VerifyingImage(_)) = &self.mode {
+                    // Update verification progress
+                    debug!("Verification progress: {:.1}%", progress * 100.0);
+                    self.mode = AppMode::FlashNewImage(FlashState::VerifyingImage(progress));
                 }
             }
             Message::WriteConfigProgress(progress) => {
@@ -2083,6 +2115,9 @@ impl GolemGpuImager {
                 FlashState::WritingImage(progress) => {
                     ui::flash::view_writing_process(*progress, "Writing OS image to device...")
                 }
+                FlashState::VerifyingImage(progress) => {
+                    ui::flash::view_writing_process(*progress, "Verifying written data...")
+                }
                 FlashState::WritingConfig(progress) => {
                     ui::flash::view_writing_process(*progress, "Writing configuration to device...")
                 }
@@ -2180,6 +2215,11 @@ impl GolemGpuImager {
         match &self.mode {
             AppMode::FlashNewImage(FlashState::WritingImage(_)) => {
                 // Create a timer subscription that periodically updates the progress bar for image writing
+                iced::time::every(std::time::Duration::from_millis(200))
+                    .map(|_| Message::PollWriteProgress)
+            }
+            AppMode::FlashNewImage(FlashState::VerifyingImage(_)) => {
+                // Create a timer subscription that periodically updates the progress bar for verification
                 iced::time::every(std::time::Duration::from_millis(200))
                     .map(|_| Message::PollWriteProgress)
             }

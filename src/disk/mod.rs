@@ -7,6 +7,7 @@ use anyhow::{Context, Result, anyhow};
 use crc32fast::Hasher;
 use gpt::GptConfig;
 use iced::task::{self, Sipper};
+use sha2::Digest;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
 use tracing::{debug, error, info, warn};
@@ -461,6 +462,7 @@ impl Disk {
     ///
     /// # Arguments
     /// * `image_path` - Path to the image file to write
+    /// * `metadata` - Optional image metadata containing expected size and hash
     /// * `cancel_token` - Token to cancel the operation
     /// * `config` - Optional configuration to write after image writing
     ///
@@ -469,6 +471,7 @@ impl Disk {
     pub fn write_image(
         self,
         image_path: &str,
+        metadata: Option<crate::models::ImageMetadata>,
         cancel_token: crate::models::CancelToken,
         config: Option<ImageConfiguration>,
     ) -> impl Sipper<Result<WriteProgress>, WriteProgress> + Send + 'static {
@@ -632,10 +635,14 @@ impl Disk {
                                     // total_copied is for actual data bytes
                                     total_written += aligned_size as u64;
 
-                                    // Update total progress with written bytes
+                                    // Update total progress with written bytes and metadata size
                                     let mut sipper = sipper.clone();
+                                    let total_size = metadata.as_ref().map(|m| m.uncompressed_size).unwrap_or(0);
                                     let _ = tokio::spawn(async move {
-                                        sipper.send(WriteProgress::Write(total_written)).await
+                                        sipper.send(WriteProgress::Write {
+                                            total_written,
+                                            total_size,
+                                        }).await
                                     });
                                 }
                                 Err(e) => {
@@ -660,6 +667,85 @@ impl Disk {
                         "Successfully copied {} bytes with aligned buffers",
                         total_copied
                     );
+                }
+
+                // Verify written data if metadata is available
+                if let Some(ref meta) = metadata {
+                    info!("Starting written data verification");
+                    
+                    // Seek to start of disk for verification
+                    disk_file.seek(SeekFrom::Start(0))?;
+                    
+                    // Initialize hasher for verification
+                    let mut verifier = sha2::Sha256::new();
+                    let mut verified_bytes = 0u64;
+                    let total_size = meta.uncompressed_size;
+                    let mut buffer = vec![0u8; 4 * 1024 * 1024]; // 4MB buffer
+                    
+                    info!("Reading back {} bytes for verification", total_size);
+                    
+                    while verified_bytes < total_size {
+                        // Check for cancellation
+                        if cancel_token.is_cancelled() {
+                            info!("Verification cancelled by user");
+                            return Err(anyhow::anyhow!("Verification cancelled by user"));
+                        }
+                        
+                        let remaining = total_size - verified_bytes;
+                        let to_read = std::cmp::min(buffer.len() as u64, remaining) as usize;
+                        
+                        match disk_file.read(&mut buffer[0..to_read]) {
+                            Ok(0) => {
+                                warn!("Unexpected EOF during verification at {} bytes", verified_bytes);
+                                break;
+                            }
+                            Ok(bytes_read) => {
+                                verifier.update(&buffer[0..bytes_read]);
+                                verified_bytes += bytes_read as u64;
+                                
+                                // Send verification progress
+                                let mut sipper_clone = sipper.clone();
+                                let total_size_copy = total_size;
+                                let _ = tokio::spawn(async move {
+                                    sipper_clone.send(WriteProgress::Verifying {
+                                        verified_bytes,
+                                        total_size: total_size_copy,
+                                    }).await
+                                });
+                                
+                                // Log progress every 100MB
+                                if verified_bytes % (100 * 1024 * 1024) == 0 || verified_bytes == total_size {
+                                    info!("Verified {} / {} MB", 
+                                        verified_bytes / (1024 * 1024), 
+                                        total_size / (1024 * 1024));
+                                }
+                            }
+                            Err(e) => {
+                                error!("Error reading data for verification: {}", e);
+                                return Err(anyhow::anyhow!("Verification read failed: {}", e));
+                            }
+                        }
+                    }
+                    
+                    // Finalize hash and compare
+                    let calculated_hash = verifier.finalize();
+                    let calculated_hash_hex = hex::encode(calculated_hash);
+                    
+                    info!("Calculated hash: {}", &calculated_hash_hex[..16]);
+                    info!("Expected hash:   {}", &meta.uncompressed_hash[..16]);
+                    
+                    if calculated_hash_hex != meta.uncompressed_hash {
+                        error!("Hash verification failed!");
+                        error!("Expected: {}", meta.uncompressed_hash);
+                        error!("Got:      {}", calculated_hash_hex);
+                        return Err(anyhow::anyhow!(
+                            "Data verification failed: written data does not match expected hash"
+                        ));
+                    }
+                    
+                    info!("Hash verification successful - written data is correct");
+                } else {
+                    info!("No metadata available, skipping verification");
                 }
 
                 info!("Post-copy checks starting");

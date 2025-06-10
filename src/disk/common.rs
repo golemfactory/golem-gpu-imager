@@ -53,7 +53,14 @@ pub enum WriteStatus {
 #[derive(Debug)]
 pub enum WriteProgress {
     Start,
-    Write(u64), // total bytes processed
+    Write {
+        total_written: u64,
+        total_size: u64,
+    },
+    Verifying {
+        verified_bytes: u64,
+        total_size: u64,
+    },
     Finish,
 }
 

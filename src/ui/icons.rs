@@ -129,3 +129,21 @@ pub fn device_hub() -> iced::widget::Text<'static> {
 pub fn install() -> iced::widget::Text<'static> {
     icon('\u{E923}')
 }
+
+// Expand/collapse icons for version history
+pub fn expand_more() -> iced::widget::Text<'static> {
+    icon('\u{E5CF}') // Material Icons expand_more (down arrow)
+}
+
+pub fn expand_less() -> iced::widget::Text<'static> {
+    icon('\u{E5CE}') // Material Icons expand_less (up arrow)
+}
+
+// Additional icons for improved UX
+pub fn check() -> iced::widget::Text<'static> {
+    icon('\u{E5CA}') // Material Icons check
+}
+
+pub fn get_app() -> iced::widget::Text<'static> {
+    icon('\u{E884}') // Material Icons get_app (download)
+}

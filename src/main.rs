@@ -1,8 +1,8 @@
+use directories::ProjectDirs;
 use iced::window::{Settings, icon};
 use std::path::PathBuf;
-use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, registry, util::SubscriberInitExt};
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
-use directories::ProjectDirs;
+use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, registry, util::SubscriberInitExt};
 
 mod disk;
 mod models;
@@ -22,11 +22,12 @@ pub fn main() -> iced::Result {
     };
 
     // Allow overriding via environment variable
-    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_level));
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_level));
 
     // Check if running from console
     let is_console = is_running_from_console();
-    
+
     // Windows-specific console setup
     #[cfg(windows)]
     {
@@ -51,31 +52,46 @@ pub fn main() -> iced::Result {
         // When not running from a console, log to file
         // Set up a rolling log file - daily rotation with a max of 5 files
         let log_dir = get_log_directory();
-        let file_appender = RollingFileAppender::new(
-            Rotation::DAILY,
-            log_dir,
-            "golem-gpu-imager.log",
-        );
+        let file_appender =
+            RollingFileAppender::new(Rotation::DAILY, log_dir, "golem-gpu-imager.log");
         let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
-        
+
         // We need to keep the guard alive for the duration of the program
         // So we'll store it in a static and intentionally leak it
         let _guard = Box::leak(Box::new(_guard));
-        
+
         // Set up subscriber with file logging
         let file_layer = fmt::layer()
             .with_writer(non_blocking)
-            .with_ansi(false)  // Disable ANSI colors in file
+            .with_ansi(false) // Disable ANSI colors in file
             .with_file(true)
             .with_line_number(true);
-            
-        registry()
-            .with(filter)
-            .with(file_layer)
-            .init();
+
+        registry().with(filter).with(file_layer).init();
     }
 
-    tracing::info!("Starting Golem GPU Imager v{} built {} (console mode: {})", version::VERSION, version::BUILD_TIME, is_console);
+    tracing::info!(
+        "Starting Golem GPU Imager v{} built {} (console mode: {})",
+        version::VERSION,
+        version::BUILD_TIME,
+        is_console
+    );
+
+    // Check elevation status on Windows
+    #[cfg(windows)]
+    {
+        let elevation_status = utils::get_elevation_status();
+        tracing::info!("Privilege status: {}", elevation_status);
+
+        if !utils::is_elevated() {
+            tracing::warn!(
+                "Application is not running with administrator privileges. Some operations may fail."
+            );
+            tracing::info!(
+                "To run with administrator privileges, right-click the application and select 'Run as administrator'"
+            );
+        }
+    }
 
     let mut settings = Settings::default();
 
@@ -101,19 +117,19 @@ fn is_running_from_console() -> bool {
     #[cfg(windows)]
     {
         use windows_sys::Win32::System::Console::{GetStdHandle, STD_OUTPUT_HANDLE};
-        
+
         unsafe {
             let handle = GetStdHandle(STD_OUTPUT_HANDLE);
             if handle == 0 {
                 return false;
             }
-            
+
             let mut mode: u32 = 0;
             // If GetConsoleMode succeeds, we're running from a console
             windows_sys::Win32::System::Console::GetConsoleMode(handle, &mut mode) != 0
         }
     }
-    
+
     #[cfg(not(windows))]
     {
         // On Unix systems, check if stdout is a TTY
@@ -135,12 +151,12 @@ fn get_log_directory() -> PathBuf {
     // Use the data_local_dir (platform-specific)
     let mut log_dir = project_dirs.data_local_dir().to_path_buf();
     log_dir.push("logs");
-    
+
     // Ensure the directory exists
     if !log_dir.exists() {
         let _ = std::fs::create_dir_all(&log_dir);
     }
-    
+
     log_dir
 }
 
@@ -250,7 +266,7 @@ mod test {
         let mut spec = HashMap::new();
         eprintln!("{:?}", drive_path);
         spec.insert("drive", drive_path.into());
-        let mut obj = client
+        let obj = client
             .manager()
             .resolve_device(spec, HashMap::default())
             .await?;

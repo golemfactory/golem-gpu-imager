@@ -6,7 +6,7 @@ use iced::widget::{
 use iced::{Alignment, Color, Element, Length};
 use iced::{Border, Theme};
 
-use crate::models::{Message, NetworkType, OsImage, PaymentNetwork, StorageDevice};
+use crate::models::{Message, NetworkType, OsImage, OsImageGroup, PaymentNetwork, StorageDevice};
 use crate::style;
 use crate::ui::{LOGO_SVG, icons};
 
@@ -33,19 +33,27 @@ pub fn view_select_os_image<'a>(
         .width(Length::Fill);
 
         let action_button = if image.downloaded {
-            button("Select")
-                .on_press(Message::SelectOsImage(i))
-                .padding(10)
-                .style(if is_selected {
-                    button::success
-                } else {
-                    button::primary
-                })
+            button(
+                row![icons::check(), text("Select")]
+                    .spacing(5)
+                    .align_y(Alignment::Center)
+            )
+            .on_press(Message::SelectOsImage(i))
+            .padding(10)
+            .style(if is_selected {
+                button::success
+            } else {
+                button::primary
+            })
         } else {
-            button(text("Download"))
-                .on_press(Message::DownloadOsImage(i))
-                .padding(10)
-                .style(button::secondary)
+            button(
+                row![icons::get_app(), text("Download")]
+                    .spacing(5)
+                    .align_y(Alignment::Center)
+            )
+            .on_press(Message::DownloadOsImage(i))
+            .padding(10)
+            .style(button::secondary)
         };
 
         // Create a container for each OS image item
@@ -115,6 +123,278 @@ pub fn view_select_os_image<'a>(
         .into()
 }
 
+pub fn view_select_os_image_groups<'a>(
+    os_image_groups: &'a [OsImageGroup],
+    selected_os_image_group: Option<(usize, usize)>,
+) -> Element<'a, Message> {
+    // Page header
+    let header = container(text("Select OS Image").size(28))
+        .width(Length::Fill)
+        .padding(15)
+        .style(crate::style::bordered_box);
+
+    // Create OS image group cards
+    let os_image_list = column(
+        os_image_groups
+            .iter()
+            .enumerate()
+            .map(|(group_idx, group)| {
+                let is_selected_group = selected_os_image_group.map(|(g, _)| g) == Some(group_idx);
+                let selected_version_idx = if is_selected_group {
+                    selected_os_image_group.map(|(_, v)| v)
+                } else {
+                    None
+                };
+
+                // Latest version card (always shown)
+                let latest_is_selected = selected_version_idx == Some(0);
+                let latest_image_info = column![
+                    row![
+                        text(&group.channel_name).size(20),
+                        text("(Latest)")
+                            .size(14)
+                            .color(Color::from_rgb(0.0, 0.6, 0.0))
+                    ]
+                    .spacing(8)
+                    .align_y(Alignment::Center),
+                    text(format!("Version: {}", group.latest_version.version)).size(15),
+                    text(&group.description).size(14),
+                    text(format!("Created: {}", group.latest_version.created))
+                        .size(12)
+                        .color(Color::from_rgb(0.5, 0.5, 0.5)),
+                ]
+                .spacing(8)
+                .width(Length::Fill);
+
+                let latest_action_button = if group.latest_version.downloaded {
+                    button(
+                        row![icons::check(), text("Select")]
+                            .spacing(5)
+                            .align_y(Alignment::Center)
+                    )
+                    .on_press(Message::SelectOsImageFromGroup(group_idx, 0))
+                    .padding(10)
+                    .style(if latest_is_selected {
+                        button::success
+                    } else {
+                        button::primary
+                    })
+                } else {
+                    button(
+                        row![icons::get_app(), text("Download")]
+                            .spacing(5)
+                            .align_y(Alignment::Center)
+                    )
+                    .on_press(Message::DownloadOsImageFromGroup(group_idx, 0))
+                    .padding(10)
+                    .style(button::secondary)
+                };
+
+                // Create latest version container
+                let latest_container = container(
+                    row![latest_image_info, latest_action_button]
+                        .spacing(15)
+                        .align_y(Alignment::Center),
+                )
+                .width(Length::Fill)
+                .padding(15)
+                .style(if latest_is_selected {
+                    container::success
+                } else {
+                    crate::style::bordered_box
+                });
+
+                // Version history expansion section
+                let mut version_items = vec![latest_container.into()];
+
+                if !group.older_versions.is_empty() {
+                    // Expand/collapse toggle button
+                    let (toggle_icon, toggle_text) = if group.expanded {
+                        (
+                            icons::expand_less(),
+                            format!("Hide {} older versions", group.older_versions.len()),
+                        )
+                    } else {
+                        (
+                            icons::expand_more(),
+                            format!("Show {} older versions", group.older_versions.len()),
+                        )
+                    };
+
+                    let toggle_button = button(
+                        row![toggle_icon, text(toggle_text).size(14)]
+                            .spacing(5)
+                            .align_y(Alignment::Center),
+                    )
+                    .on_press(Message::ToggleVersionHistory(group_idx))
+                    .padding(8)
+                    .style(button::text);
+
+                    let toggle_container = container(toggle_button)
+                        .width(Length::Fill)
+                        .padding([0, 15]);
+
+                    version_items.push(toggle_container.into());
+
+                    // Older versions (shown when expanded)
+                    if group.expanded {
+                        let older_versions_list =
+                            column(group.older_versions.iter().enumerate().map(
+                                |(version_idx, older_image)| {
+                                    let actual_version_idx = version_idx + 1; // +1 because 0 is latest
+                                    let is_selected =
+                                        selected_version_idx == Some(actual_version_idx);
+
+                                    let older_image_info = column![
+                                        text(format!("Version: {}", older_image.version)).size(15),
+                                        text(format!("Created: {}", older_image.created))
+                                            .size(12)
+                                            .color(Color::from_rgb(0.5, 0.5, 0.5)),
+                                    ]
+                                    .spacing(5)
+                                    .width(Length::Fill);
+
+                                    let older_action_button = if older_image.downloaded {
+                                        button(
+                                            row![icons::check(), text("Select")]
+                                                .spacing(5)
+                                                .align_y(Alignment::Center)
+                                        )
+                                        .on_press(Message::SelectOsImageFromGroup(
+                                            group_idx,
+                                            actual_version_idx,
+                                        ))
+                                        .padding(8)
+                                        .style(if is_selected {
+                                            button::success
+                                        } else {
+                                            button::secondary
+                                        })
+                                    } else {
+                                        button(
+                                            row![icons::get_app(), text("Download")]
+                                                .spacing(5)
+                                                .align_y(Alignment::Center)
+                                        )
+                                        .on_press(Message::DownloadOsImageFromGroup(
+                                            group_idx,
+                                            actual_version_idx,
+                                        ))
+                                        .padding(8)
+                                        .style(button::secondary)
+                                    };
+
+                                    container(
+                                        row![older_image_info, older_action_button]
+                                            .spacing(15)
+                                            .align_y(Alignment::Center),
+                                    )
+                                    .width(Length::Fill)
+                                    .padding(10)
+                                    .style(if is_selected {
+                                        container::success
+                                    } else {
+                                        |theme: &Theme| {
+                                            let palette = theme.extended_palette();
+                                            container::Style {
+                                                background: Some(
+                                                    palette.background.weakest.color.into(),
+                                                ),
+                                                border: Border {
+                                                    width: 1.0,
+                                                    radius: 3.0.into(),
+                                                    color: palette.background.strong.color,
+                                                },
+                                                ..container::Style::default()
+                                            }
+                                        }
+                                    })
+                                    .into()
+                                },
+                            ))
+                            .spacing(5)
+                            .width(Length::Fill);
+
+                        let older_versions_container = container(older_versions_list)
+                            .width(Length::Fill)
+                            .padding(25); // Indent older versions
+
+                        version_items.push(older_versions_container.into());
+                    }
+                }
+
+                // Combine all version items into a group
+                container(column(version_items).spacing(5))
+                    .width(Length::Fill)
+                    .padding(5)
+                    .style(crate::style::bordered_box)
+                    .into()
+            }),
+    )
+    .spacing(15)
+    .width(Length::Fill);
+
+    // Make scrollable in case we have many images
+    let scrollable_content = scrollable(os_image_list).height(Length::Fill);
+
+    // Navigation buttons
+    let has_selection = selected_os_image_group.is_some();
+    let next_button = if has_selection {
+        button(
+            container(row!["Select Target Device", icons::navigate_next()]).center_x(Length::Fill),
+        )
+        .on_press(Message::DownloadCompleted(
+            // Extract the selected image's version ID for the next step
+            selected_os_image_group
+                .and_then(|(group_idx, version_idx)| {
+                    os_image_groups.get(group_idx).map(|group| {
+                        if version_idx == 0 {
+                            group.latest_version.version.clone()
+                        } else {
+                            group.older_versions.get(version_idx - 1)
+                                .map(|v| v.version.clone())
+                                .unwrap_or_default()
+                        }
+                    })
+                })
+                .unwrap_or_default(),
+        ))
+        .padding(12)
+        .width(220)
+        .style(button::primary)
+    } else {
+        button("Next: Select Target Device")
+            .padding(12)
+            .width(220)
+            .style(button::primary)
+    };
+
+    let back_button = button(iced::widget::row![icons::navigate_before(), "Back"])
+        .on_press(Message::BackToMainMenu)
+        .padding(12)
+        .width(100)
+        .style(button::secondary);
+
+    let navigation = container(
+        row![back_button, next_button]
+            .spacing(15)
+            .width(Length::Fill)
+            .align_y(Alignment::Center),
+    )
+    .width(Length::Fill)
+    .padding(15)
+    .style(crate::style::bordered_box);
+
+    // Main content
+    let content = column![header, scrollable_content, navigation,].width(Length::Fill);
+
+    container(content)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .style(crate::style::main_box)
+        .into()
+}
+
 pub fn view_downloading_image(
     version_id: &str,
     progress: f32,
@@ -142,9 +422,13 @@ pub fn view_downloading_image(
     let progress_bar = progress_bar(0.0..=1.0, progress).style(progress_bar::secondary);
 
     // Optional cancel button
-    let cancel_button = button("Cancel Download")
-        .on_press(Message::CancelWrite)
-        .padding(10);
+    let cancel_button = button(
+        row![icons::cancel(), text("Cancel Download")]
+            .spacing(5)
+            .align_y(Alignment::Center)
+    )
+    .on_press(Message::CancelWrite)
+    .padding(10);
 
     let content = column![
         title,
@@ -632,14 +916,24 @@ pub fn view_select_target_device<'a>(
             .spacing(5)
             .width(Length::Fill);
 
-            let select_button = button(if is_selected { "Selected" } else { "Select" })
-                .on_press(Message::SelectTargetDevice(i))
-                .padding(10)
-                .style(if is_selected {
-                    button::success
+            let select_button = button(
+                if is_selected {
+                    row![icons::check_circle(), text("Selected")]
+                        .spacing(5)
+                        .align_y(Alignment::Center)
                 } else {
-                    button::secondary
-                });
+                    row![icons::check(), text("Select")]
+                        .spacing(5)
+                        .align_y(Alignment::Center)
+                }
+            )
+            .on_press(Message::SelectTargetDevice(i))
+            .padding(10)
+            .style(if is_selected {
+                button::success
+            } else {
+                button::secondary
+            });
 
             container(
                 row![device_info, select_button,]
@@ -729,28 +1023,29 @@ pub fn view_select_target_device<'a>(
 
 pub fn view_writing_process(progress: f32, title: &'static str) -> Element<'static, Message> {
     // Page header with a more welcoming title with improved contrast
-    let header = container(
-        text(title)
-            .size(28)
-            .style(|theme: &iced::Theme| iced::widget::text::Style {
-                color: Some(iced::Color::WHITE), // Full white for maximum contrast
-                ..iced::widget::text::Style::default()
-            }),
-    )
-    .width(Length::Fill)
-    .padding(15)
-    .style(|theme: &iced::Theme| {
-        let palette = theme.extended_palette();
-        container::Style {
-            background: Some(crate::style::PRIMARY.into()),
-            border: iced::Border {
-                width: 1.0,
-                radius: 5.0.into(),
-                color: palette.primary.strong.color,
-            },
-            ..container::Style::default()
-        }
-    });
+    let header =
+        container(
+            text(title)
+                .size(28)
+                .style(|theme: &iced::Theme| iced::widget::text::Style {
+                    color: Some(iced::Color::WHITE), // Full white for maximum contrast
+                    ..iced::widget::text::Style::default()
+                }),
+        )
+        .width(Length::Fill)
+        .padding(15)
+        .style(|theme: &iced::Theme| {
+            let palette = theme.extended_palette();
+            container::Style {
+                background: Some(crate::style::PRIMARY.into()),
+                border: iced::Border {
+                    width: 1.0,
+                    radius: 5.0.into(),
+                    color: palette.primary.strong.color,
+                },
+                ..container::Style::default()
+            }
+        });
 
     // Create an icon to represent the writing process
     let writing_icon = svg::Svg::new(svg::Handle::from_memory(LOGO_SVG))
@@ -759,11 +1054,11 @@ pub fn view_writing_process(progress: f32, title: &'static str) -> Element<'stat
 
     // Calculate more precise progress information
     let progress_percentage = (progress * 100.0) as i32;
-    
+
     // Calculate approximate megabytes processed (assuming 16GB image size)
     // Adjust this value based on your actual image size
     const TOTAL_MB: u32 = 16 * 1024; // 16GB in MB
-    
+
     // Progress now represents both read and written operations combined
     // so we calculate IO processed as a percentage of total work (read+write)
     let mb_processed = (progress * TOTAL_MB as f32) as u32;
@@ -781,7 +1076,9 @@ pub fn view_writing_process(progress: f32, title: &'static str) -> Element<'stat
     let progress_text = row![
         text(format!("{}%", progress_percentage)).size(28),
         text(format!("({} MB / {} MB)", mb_processed, mb_total)).size(16)
-    ].spacing(10).align_y(Alignment::Center);
+    ]
+    .spacing(10)
+    .align_y(Alignment::Center);
 
     // Enhanced description text - show different steps based on progress with more detail
     let (step_text, step_description) = match progress_percentage {
@@ -858,10 +1155,7 @@ pub fn view_writing_process(progress: f32, title: &'static str) -> Element<'stat
                 text("Installing Golem GPU OS").size(20),
                 row![progress_text],
                 progress_value,
-                row![
-                    step_header.width(Length::Fill),
-                    time_remaining
-                ],
+                row![step_header.width(Length::Fill), time_remaining],
                 step_detail,
             ]
             .spacing(5)

@@ -1,7 +1,7 @@
 use crate::disk::{Disk, WriteProgress};
 use crate::models::{
-    AppMode, CancelToken, ConfigurationPreset, EditState, FlashState, Message, NetworkType, OsImage,
-    PaymentNetwork, StorageDevice,
+    AppMode, CancelToken, ConfigurationPreset, EditState, FlashState, Message, NetworkType,
+    OsImage, PaymentNetwork, StorageDevice,
 };
 use crate::ui;
 use crate::utils::PresetManager;
@@ -15,6 +15,8 @@ use tracing::{debug, error, info, warn};
 pub struct GolemGpuImager {
     pub mode: AppMode,
     pub os_images: Vec<OsImage>,
+    pub os_image_groups: Vec<crate::models::OsImageGroup>, // New: grouped versions with expand/collapse
+    pub selected_os_image_group: Option<(usize, usize)>,   // New: (group_index, version_index)
     pub storage_devices: Vec<StorageDevice>,
     pub selected_os_image: Option<usize>,
     pub selected_device: Option<usize>,
@@ -29,6 +31,8 @@ pub struct GolemGpuImager {
     pub locked_disk: Option<Disk>,
     pub error_message: Option<String>,
     pub cancel_token: CancelToken, // For canceling operations
+    pub elevation_status: String,  // Current elevation status message
+    pub is_elevated: bool,         // Whether the process is currently elevated
 }
 
 impl GolemGpuImager {
@@ -74,10 +78,19 @@ impl GolemGpuImager {
             }
         };
 
+        let elevation_status = crate::utils::get_elevation_status();
+        let is_elevated = crate::utils::is_elevated();
+
+        // Don't set error messages for elevation issues here
+        // The start screen will handle elevation prompts directly
+        let error_message = None;
+
         Self {
             mode: AppMode::StartScreen,
-            os_images: vec![],       // Will be populated from repo
-            storage_devices: vec![], // Will be populated when needed
+            os_images: vec![],             // Will be populated from repo (legacy)
+            os_image_groups: vec![],       // Will be populated from repo (new grouped format)
+            selected_os_image_group: None, // New grouped selection
+            storage_devices: vec![],       // Will be populated when needed
             selected_os_image: None,
             selected_device: None,
             image_repo,
@@ -89,8 +102,10 @@ impl GolemGpuImager {
             show_preset_manager: false,
             preset_manager,
             locked_disk: None,
-            error_message: None,
+            error_message,
             cancel_token: CancelToken::new(),
+            elevation_status,
+            is_elevated,
         }
     }
 
@@ -110,27 +125,26 @@ impl GolemGpuImager {
                     // Clone the metadata to avoid borrow issues
                     let metadata_cloned = metadata.clone();
 
-                    // Convert repo data to OsImage format
+                    // Convert repo data to both legacy OsImage format and new OsImageGroup format
                     let mut os_images = Vec::new();
+                    let mut os_image_groups = Vec::new();
 
                     for channel in &metadata_cloned.channels {
-                        if let Some(newest) = channel
-                            .versions
-                            .iter()
-                            .max_by(|a, b| a.created.cmp(&b.created))
-                        {
-                            let description = match channel.name.as_str() {
-                                "release" => "Stable release version",
-                                "testing" => "Testing version with latest features",
-                                "unstable" => "Development version with latest changes",
-                                "susteen" => "Enterprise support version",
-                                _ => "GPU OS version",
-                            };
+                        let description = match channel.name.as_str() {
+                            "release" => "Stable release version",
+                            "testing" => "Testing version with latest features",
+                            "unstable" => "Development version with latest changes",
+                            "susteen" => "Enterprise support version",
+                            _ => "GPU OS version",
+                        };
 
-                            // Check if the image is downloaded
+                        // Sort versions by creation date (newest first)
+                        let mut sorted_versions = channel.versions.clone();
+                        sorted_versions.sort_by(|a, b| b.created.cmp(&a.created));
+
+                        if let Some(newest) = sorted_versions.first() {
+                            // Legacy format: keep only newest for backward compatibility
                             let downloaded = repo_instance.is_image_downloaded(newest);
-
-                            // Get path if downloaded
                             let path_str = if downloaded {
                                 Some(
                                     repo_instance
@@ -150,17 +164,80 @@ impl GolemGpuImager {
                                 path: path_str,
                                 created: newest.created.clone(),
                                 sha256: newest.sha256.clone(),
+                                is_latest: true,
+                            });
+
+                            // New grouped format: include all versions
+                            let latest_os_image = OsImage {
+                                name: channel.name.clone(),
+                                version: newest.id.clone(),
+                                description: description.to_string(),
+                                downloaded: repo_instance.is_image_downloaded(newest),
+                                path: if repo_instance.is_image_downloaded(newest) {
+                                    Some(
+                                        repo_instance
+                                            .get_image_path(newest)
+                                            .to_string_lossy()
+                                            .to_string(),
+                                    )
+                                } else {
+                                    None
+                                },
+                                created: newest.created.clone(),
+                                sha256: newest.sha256.clone(),
+                                is_latest: true,
+                            };
+
+                            // Create older versions list
+                            let older_versions: Vec<OsImage> = sorted_versions
+                                .iter()
+                                .skip(1) // Skip the first (newest) version
+                                .map(|version| {
+                                    let downloaded = repo_instance.is_image_downloaded(version);
+                                    let path_str = if downloaded {
+                                        Some(
+                                            repo_instance
+                                                .get_image_path(version)
+                                                .to_string_lossy()
+                                                .to_string(),
+                                        )
+                                    } else {
+                                        None
+                                    };
+
+                                    OsImage {
+                                        name: channel.name.clone(),
+                                        version: version.id.clone(),
+                                        description: description.to_string(),
+                                        downloaded,
+                                        path: path_str,
+                                        created: version.created.clone(),
+                                        sha256: version.sha256.clone(),
+                                        is_latest: false,
+                                    }
+                                })
+                                .collect();
+
+                            // Create image group
+                            os_image_groups.push(crate::models::OsImageGroup {
+                                channel_name: channel.name.clone(),
+                                description: description.to_string(),
+                                latest_version: latest_os_image,
+                                older_versions,
+                                expanded: false,
                             });
                         }
                     }
 
-                    return Some(os_images);
+                    return Some((os_images, os_image_groups));
                 }
 
                 None
             },
             |result| match result {
-                Some(os_images) => Message::RepoDataLoaded(os_images),
+                Some((os_images, os_image_groups)) => {
+                    Message::RepoGroupDataLoaded(os_images, os_image_groups)
+                }
                 None => Message::RepoLoadFailed,
             },
         )
@@ -216,6 +293,94 @@ impl GolemGpuImager {
             }
             Message::SelectOsImage(index) => {
                 self.selected_os_image = Some(index);
+            }
+            Message::SelectOsImageFromGroup(group_index, version_index) => {
+                self.selected_os_image_group = Some((group_index, version_index));
+                // Also set legacy selection for backward compatibility
+                if let Some(group) = self.os_image_groups.get(group_index) {
+                    if version_index == 0 {
+                        // Latest version - find corresponding index in legacy os_images
+                        if let Some(legacy_index) = self.os_images.iter().position(|img| {
+                            img.name == group.channel_name
+                                && img.version == group.latest_version.version
+                        }) {
+                            self.selected_os_image = Some(legacy_index);
+                        }
+                    }
+                }
+            }
+            Message::ToggleVersionHistory(group_index) => {
+                if let Some(group) = self.os_image_groups.get_mut(group_index) {
+                    group.expanded = !group.expanded;
+                }
+            }
+            Message::DownloadOsImageFromGroup(group_index, version_index) => {
+                if let Some(group) = self.os_image_groups.get(group_index) {
+                    let image = if version_index == 0 {
+                        &group.latest_version
+                    } else if let Some(older_image) = group.older_versions.get(version_index - 1) {
+                        older_image
+                    } else {
+                        return Task::none();
+                    };
+
+                    self.selected_os_image_group = Some((group_index, version_index));
+
+                    // Set state to downloading image with progress display
+                    self.mode = AppMode::FlashNewImage(FlashState::DownloadingImage {
+                        version_id: image.version.clone(),
+                        progress: 0.0,
+                        channel: image.name.clone(),
+                        created_date: image.created.clone(),
+                    });
+
+                    // Add to downloads in progress
+                    self.downloads_in_progress
+                        .push((image.version.clone(), 0.0));
+
+                    // Start actual download
+                    let version_id = image.version.clone();
+                    let channel_name = image.name.clone();
+                    let repo: Arc<ImageRepo> = Arc::clone(&self.image_repo);
+
+                    // Create Version struct for download
+                    let version = Version {
+                        id: version_id.clone(),
+                        path: format!("golem-gpu-live-{}-{}.img.xz", channel_name, version_id),
+                        sha256: image.sha256.clone(),
+                        created: image.created.clone(),
+                    };
+
+                    // Create a task that sips from the download straw
+                    let version_id_1 = version_id.clone();
+                    let version_id_2 = version_id.clone();
+                    return Task::sip(
+                        repo.start_download(&channel_name, version),
+                        move |status| match status {
+                            DownloadStatus::NotStarted { .. } => {
+                                Message::DownloadProgress(version_id_2.clone(), 0f32)
+                            }
+                            DownloadStatus::InProgress {
+                                progress,
+                                bytes_downloaded,
+                                total_bytes,
+                            } => Message::DownloadProgress(version_id_2.clone(), progress),
+                            DownloadStatus::Completed { path } => {
+                                Message::DownloadCompleted(version_id_2.clone())
+                            }
+                            DownloadStatus::Failed { error } => {
+                                Message::DownloadFailed(version_id_2.clone(), error)
+                            }
+                        },
+                        move |done| {
+                            if let Err(_e) = done {
+                                Message::DownloadFailed(version_id_1, "Download failed".to_string())
+                            } else {
+                                Message::DownloadCompleted(version_id_1)
+                            }
+                        },
+                    );
+                }
             }
             Message::DownloadOsImage(index) => {
                 if let Some(image) = self.os_images.get(index) {
@@ -389,6 +554,11 @@ impl GolemGpuImager {
                 self.is_loading_repo = false;
                 self.os_images = os_images;
             }
+            Message::RepoGroupDataLoaded(os_images, os_image_groups) => {
+                self.is_loading_repo = false;
+                self.os_images = os_images; // Keep legacy for backward compatibility
+                self.os_image_groups = os_image_groups; // New grouped format
+            }
             Message::RepoLoadFailed => {
                 self.is_loading_repo = false;
                 // Could display an error message here
@@ -449,7 +619,7 @@ impl GolemGpuImager {
                             .collect();
 
                         debug!("Found {} available devices", self.storage_devices.len());
-                        
+
                         // Clear any previous device selection and error messages
                         self.selected_device = None;
                         self.error_message = None;
@@ -745,7 +915,7 @@ impl GolemGpuImager {
                                 let image_path_val = image_path.clone();
                                 // Create a clone of the cancel token that we can pass to the task
                                 let cancel_token_clone = self.cancel_token.clone();
-                                
+
                                 // Extract configuration before creating async closure
                                 let config = Some(crate::disk::ImageConfiguration::new(
                                     payment_network_val,
@@ -772,7 +942,9 @@ impl GolemGpuImager {
                                     // Log whether we successfully locked the disk
                                     match &locked_disk {
                                         Ok(_) => info!("Successfully locked disk: {}", device_path),
-                                        Err(e) => error!("Failed to lock disk {}: {}", device_path, e),
+                                        Err(e) => {
+                                            error!("Failed to lock disk {}: {}", device_path, e)
+                                        }
                                     }
                                     locked_disk
                                 })
@@ -781,24 +953,33 @@ impl GolemGpuImager {
                                     // Note: write_image now takes ownership of disk
                                     // Clone the cancel token again for this specific closure
                                     let task_cancel_token = cancel_token_clone.clone();
-                                    
+
                                     let write_task = Task::sip(
-                                        disk.write_image(&image_path_val, task_cancel_token, config.clone()),
+                                        disk.write_image(
+                                            &image_path_val,
+                                            task_cancel_token,
+                                            config.clone(),
+                                        ),
                                         |message| match message {
-                                            WriteProgress::Start => Message::WriteImageProgress(0.0),
+                                            WriteProgress::Start => {
+                                                Message::WriteImageProgress(0.0)
+                                            }
                                             WriteProgress::Write(total_bytes) => {
                                                 // Calculate progress based on total bytes processed compared to 16GB
-                                                const TOTAL_SIZE: f32 = 16.0 * 1024.0 * 1024.0 * 1024.0;
-                                                
+                                                const TOTAL_SIZE: f32 =
+                                                    16.0 * 1024.0 * 1024.0 * 1024.0;
+
                                                 // Calculate progress percentage (0.0-1.0)
                                                 let progress = total_bytes as f32 / TOTAL_SIZE;
-                                                
+
                                                 // Clamp to make sure we don't go over 100%
                                                 let clamped_progress = progress.min(1.0);
-                                                
+
                                                 Message::WriteImageProgress(clamped_progress)
                                             }
-                                            WriteProgress::Finish => Message::WriteImageProgress(100.0),
+                                            WriteProgress::Finish => {
+                                                Message::WriteImageProgress(100.0)
+                                            }
                                         },
                                         |result| match result {
                                             Ok(WriteProgress::Finish) => {
@@ -835,7 +1016,7 @@ impl GolemGpuImager {
                     // Cancel the writing operation by setting the cancel token
                     info!("User requested to cancel write operation");
                     self.cancel_token.cancel();
-                    
+
                     // Update the UI to show cancellation is in progress
                     match &self.mode {
                         AppMode::FlashNewImage(FlashState::WritingImage(_)) => {
@@ -862,7 +1043,7 @@ impl GolemGpuImager {
                             self.mode = AppMode::FlashNewImage(FlashState::SelectTargetDevice);
                         }
                     }
-                    
+
                     // Release any disk resources
                     self.locked_disk = None;
                 }
@@ -886,16 +1067,16 @@ impl GolemGpuImager {
             Message::WriteImageCompleted => {
                 // Log timing of the image write completion handler
                 info!("WriteImageCompleted handler starting");
-                let handler_start = std::time::Instant::now();
-                
+                let _handler_start = std::time::Instant::now();
+
                 // Reset the cancel token for future operations
                 self.cancel_token.reset();
                 info!("Cancel token reset");
-                
+
                 // Transition from image writing to configuration writing
                 if let AppMode::FlashNewImage(FlashState::WritingImage(_)) = &self.mode {
                     info!("Previous state was WritingImage - transitioning to configuration");
-                    
+
                     // Extract the device path from the selected device
                     if let Some(device_idx) = self.selected_device {
                         if let Some(device) = self.storage_devices.get(device_idx) {
@@ -914,7 +1095,10 @@ impl GolemGpuImager {
                                     ..
                                 }) = &self.mode
                                 {
-                                    info!("Configuration extraction took {:?}", config_data_start.elapsed());
+                                    info!(
+                                        "Configuration extraction took {:?}",
+                                        config_data_start.elapsed()
+                                    );
                                     Some((
                                         *payment_network,
                                         *network_type,
@@ -922,7 +1106,10 @@ impl GolemGpuImager {
                                         wallet_address.clone(),
                                     ))
                                 } else {
-                                    info!("Configuration extraction took {:?} (no config found)", config_data_start.elapsed());
+                                    info!(
+                                        "Configuration extraction took {:?} (no config found)",
+                                        config_data_start.elapsed()
+                                    );
                                     None
                                 };
 
@@ -931,12 +1118,15 @@ impl GolemGpuImager {
                             {
                                 // Image write completed, now we'll proceed to writing configuration
                                 info!("Image write completed, proceeding to configuration writing");
-                                info!("Network: {:?}, Type: {:?}, Subnet: {}", payment_network, network_type, subnet);
-                                
+                                info!(
+                                    "Network: {:?}, Type: {:?}, Subnet: {}",
+                                    payment_network, network_type, subnet
+                                );
+
                                 // Update UI to show we're starting configuration writing
                                 self.mode = AppMode::FlashNewImage(FlashState::WritingConfig(0.0));
                                 info!("UI state updated to WritingConfig");
-                                
+
                                 // Create a standalone task to handle the configuration writing
                                 // Pass the cancel token to allow cancellation during configuration writing
                                 let cancel_token_clone = self.cancel_token.clone();
@@ -946,34 +1136,48 @@ impl GolemGpuImager {
                                     async move {
                                         let config_start = std::time::Instant::now();
                                         info!("Configuration write task started");
-                                        
+
                                         // Check if already cancelled
                                         if cancel_token_clone.is_cancelled() {
                                             info!("Task cancelled before starting");
-                                            return (false, "Operation cancelled by user".to_string());
+                                            return (
+                                                false,
+                                                "Operation cancelled by user".to_string(),
+                                            );
                                         }
-                                        
-                                        info!("Attempting to lock disk for configuration at path: {}", device_path);
+
+                                        info!(
+                                            "Attempting to lock disk for configuration at path: {}",
+                                            device_path
+                                        );
                                         // First try to prepare the partition
                                         let lock_start = std::time::Instant::now();
                                         // When writing configuration after image, set edit_mode to true to skip disk cleaning
                                         let lock_result = Disk::lock_path(&device_path, true).await;
                                         info!("Disk lock took {:?}", lock_start.elapsed());
-                                        
+
                                         match lock_result {
                                             Ok(mut disk) => {
                                                 info!("Successfully locked disk for configuration");
                                                 // Config partition UUID
                                                 let config_partition_uuid =
                                                     "33b921b8-edc5-46a0-8baa-d0b7ad84fc71";
-                                                info!("Using configuration partition UUID: {}", config_partition_uuid);
+                                                info!(
+                                                    "Using configuration partition UUID: {}",
+                                                    config_partition_uuid
+                                                );
 
                                                 // Check for cancellation before formatting
                                                 if cancel_token_clone.is_cancelled() {
-                                                    info!("Task cancelled before formatting partition");
-                                                    return (false, "Operation cancelled by user".to_string());
+                                                    info!(
+                                                        "Task cancelled before formatting partition"
+                                                    );
+                                                    return (
+                                                        false,
+                                                        "Operation cancelled by user".to_string(),
+                                                    );
                                                 }
-                                                
+
                                                 // Format configuration partition if needed before writing
                                                 info!("Preparing to find or create partition");
                                                 let partition_start = std::time::Instant::now();
@@ -982,23 +1186,40 @@ impl GolemGpuImager {
                                                         config_partition_uuid,
                                                         true,
                                                     );
-                                                    info!("Partition find/create took {:?}", partition_start.elapsed());
-                                                    
+                                                    info!(
+                                                        "Partition find/create took {:?}",
+                                                        partition_start.elapsed()
+                                                    );
+
                                                     if let Err(e) = &result {
-                                                        warn!("Failed to prepare configuration partition: {}", e);
-                                                        return (false, format!("Failed to prepare configuration partition: {}", e));
+                                                        warn!(
+                                                            "Failed to prepare configuration partition: {}",
+                                                            e
+                                                        );
+                                                        return (
+                                                            false,
+                                                            format!(
+                                                                "Failed to prepare configuration partition: {}",
+                                                                e
+                                                            ),
+                                                        );
                                                     }
                                                     // Let the FileSystem drop here to release the borrow
                                                     info!("Partition successfully prepared");
                                                     true
                                                 };
-                                                
+
                                                 // Check for cancellation before writing configuration
                                                 if cancel_token_clone.is_cancelled() {
-                                                    info!("Task cancelled before writing configuration");
-                                                    return (false, "Operation cancelled by user".to_string());
+                                                    info!(
+                                                        "Task cancelled before writing configuration"
+                                                    );
+                                                    return (
+                                                        false,
+                                                        "Operation cancelled by user".to_string(),
+                                                    );
                                                 }
-                                                
+
                                                 // Now try to write the configuration
                                                 info!("Starting to write configuration data");
                                                 let write_start = std::time::Instant::now();
@@ -1009,19 +1230,36 @@ impl GolemGpuImager {
                                                     &subnet,
                                                     &wallet_address,
                                                 );
-                                                info!("Configuration write took {:?}", write_start.elapsed());
+                                                info!(
+                                                    "Configuration write took {:?}",
+                                                    write_start.elapsed()
+                                                );
 
                                                 if let Err(e) = &result {
-                                                    warn!("Writing configuration failed after {:?}: {}", config_start.elapsed(), e);
+                                                    warn!(
+                                                        "Writing configuration failed after {:?}: {}",
+                                                        config_start.elapsed(),
+                                                        e
+                                                    );
                                                     (false, e.to_string())
                                                 } else {
-                                                    info!("Applied configuration successfully in {:?}", config_start.elapsed());
-                                                    (true, "Configuration applied successfully".to_string())
+                                                    info!(
+                                                        "Applied configuration successfully in {:?}",
+                                                        config_start.elapsed()
+                                                    );
+                                                    (
+                                                        true,
+                                                        "Configuration applied successfully"
+                                                            .to_string(),
+                                                    )
                                                 }
                                             }
                                             Err(e) => {
-                                                warn!("Failed to lock device for configuration after {:?}: {}", 
-                                                    lock_start.elapsed(), e);
+                                                warn!(
+                                                    "Failed to lock device for configuration after {:?}: {}",
+                                                    lock_start.elapsed(),
+                                                    e
+                                                );
                                                 (false, format!("Failed to lock device: {}", e))
                                             }
                                         }
@@ -1049,7 +1287,7 @@ impl GolemGpuImager {
             Message::WriteImageFailed(error_msg) => {
                 // Reset the cancel token for future operations
                 self.cancel_token.reset();
-                
+
                 // Check if this was a cancellation or a real error
                 if error_msg.contains("cancelled by user") {
                     info!("Image write was cancelled by user");
@@ -1066,19 +1304,19 @@ impl GolemGpuImager {
             Message::WriteConfigCompleted => {
                 // Configuration writing completed successfully
                 info!("Configuration write completed successfully");
-                
+
                 // Reset the cancel token for future operations
                 self.cancel_token.reset();
-                
+
                 self.mode = AppMode::FlashNewImage(FlashState::Completion(true));
-                
+
                 // Release any disk resources
                 self.locked_disk = None;
             }
             Message::WriteConfigFailed(error_msg) => {
                 // Reset the cancel token for future operations
                 self.cancel_token.reset();
-                
+
                 // Check if this was a cancellation or a real error
                 if error_msg.contains("cancelled by user") {
                     info!("Configuration write was cancelled by user");
@@ -1088,10 +1326,12 @@ impl GolemGpuImager {
                     error!("Configuration write failed: {}", error_msg);
                     // Still show success for overall process since the image was written correctly
                     // Just log a warning about configuration failure
-                    warn!("The image was written correctly, but configuration failed. The device may need manual configuration.");
+                    warn!(
+                        "The image was written correctly, but configuration failed. The device may need manual configuration."
+                    );
                     self.mode = AppMode::FlashNewImage(FlashState::Completion(true));
                 }
-                
+
                 // Release any disk resources
                 self.locked_disk = None;
             }
@@ -1167,7 +1407,10 @@ impl GolemGpuImager {
 
                         // Only update UI if progress has actually changed
                         if progress > *current_progress && progress <= 1.0 {
-                            debug!("Updating config write UI progress: {:.2}%", progress * 100.0);
+                            debug!(
+                                "Updating config write UI progress: {:.2}%",
+                                progress * 100.0
+                            );
 
                             // Update mode with new progress
                             self.mode = AppMode::FlashNewImage(FlashState::WritingConfig(progress));
@@ -1276,7 +1519,8 @@ impl GolemGpuImager {
                     // First, use find_or_create_partition to format the configuration partition if needed
                     {
                         // Create a separate scope to ensure filesystem is dropped before read_configuration
-                        let partition_result = disk.find_or_create_partition(config_partition_uuid, true);
+                        let partition_result =
+                            disk.find_or_create_partition(config_partition_uuid, true);
                         if let Err(e) = partition_result {
                             // Failed to access the partition even with formatting
                             warn!("Failed to access configuration partition: {}", e);
@@ -1284,7 +1528,7 @@ impl GolemGpuImager {
                             info!("Successfully accessed configuration partition");
                         }
                     }
-                    
+
                     // Now try to read the configuration
                     match disk.read_configuration(config_partition_uuid) {
                         Ok(config) => {
@@ -1410,20 +1654,30 @@ impl GolemGpuImager {
                             // First make sure the partition is properly formatted
                             // Run this in a completely separate step before the write
                             let mut disk_clone = disk.clone();
-                            if let Err(e) = disk_clone.find_or_create_partition(config_partition_uuid, true) {
+                            if let Err(e) =
+                                disk_clone.find_or_create_partition(config_partition_uuid, true)
+                            {
                                 let mut error_msg =
                                     format!("Failed to prepare configuration partition: {}", e);
-                                
+
                                 // Enhance error message for common Windows errors
                                 if cfg!(windows) {
                                     let error_str = e.to_string();
-                                    if error_str.contains("Access denied") || error_str.contains("Odmowa dostępu") {
-                                        error_msg = format!("{} - Please ensure you are running the application with administrator privileges", error_msg);
+                                    if error_str.contains("Access denied")
+                                        || error_str.contains("Odmowa dostępu")
+                                    {
+                                        error_msg = format!(
+                                            "{} - Please ensure you are running the application with administrator privileges",
+                                            error_msg
+                                        );
                                     } else if error_str.contains("is in use") {
-                                        error_msg = format!("{} - Please close any applications that might be using this disk", error_msg);
+                                        error_msg = format!(
+                                            "{} - Please close any applications that might be using this disk",
+                                            error_msg
+                                        );
                                     }
                                 }
-                                
+
                                 error!("{}", error_msg);
                                 return (false, Some(error_msg), Some(disk));
                             }
@@ -1443,20 +1697,36 @@ impl GolemGpuImager {
                                 }
                                 Err(e) => {
                                     // There was an error writing the configuration
-                                    let mut error_msg = format!("Failed to write configuration: {}", e);
-                                    
+                                    let mut error_msg =
+                                        format!("Failed to write configuration: {}", e);
+
                                     // Enhance error message for common Windows errors
                                     if cfg!(windows) {
                                         let error_str = e.to_string();
-                                        if error_str.contains("Access denied") || error_str.contains("Odmowa dostępu") {
-                                            error_msg = format!("{} - Please run the application as administrator", error_msg);
-                                        } else if error_str.contains("is in use") || error_str.contains("jest używany") {
-                                            error_msg = format!("{} - Please close any applications using this disk", error_msg);
-                                        } else if error_str.contains("Invalid parameter") || error_str.contains("niepoprawny") {
-                                            error_msg = format!("{} - This may be due to disk alignment issues", error_msg);
+                                        if error_str.contains("Access denied")
+                                            || error_str.contains("Odmowa dostępu")
+                                        {
+                                            error_msg = format!(
+                                                "{} - Please run the application as administrator",
+                                                error_msg
+                                            );
+                                        } else if error_str.contains("is in use")
+                                            || error_str.contains("jest używany")
+                                        {
+                                            error_msg = format!(
+                                                "{} - Please close any applications using this disk",
+                                                error_msg
+                                            );
+                                        } else if error_str.contains("Invalid parameter")
+                                            || error_str.contains("niepoprawny")
+                                        {
+                                            error_msg = format!(
+                                                "{} - This may be due to disk alignment issues",
+                                                error_msg
+                                            );
                                         }
                                     }
-                                    
+
                                     error!("Configuration write error: {}", error_msg);
                                     (false, Some(error_msg), Some(disk))
                                 }
@@ -1582,6 +1852,24 @@ impl GolemGpuImager {
                     self.mode = AppMode::FlashNewImage(FlashState::SelectOsImage);
                 }
             }
+            Message::RequestElevation => {
+                #[cfg(windows)]
+                {
+                    if let Err(e) = crate::utils::request_elevation() {
+                        self.error_message = Some(format!("Failed to request elevation: {}", e));
+                        error!("Failed to request elevation: {}", e);
+                    }
+                }
+                #[cfg(not(windows))]
+                {
+                    self.error_message = Some("Elevation request is only supported on Windows. Please run with sudo on Unix systems.".to_string());
+                }
+            }
+            Message::CheckElevationStatus => {
+                self.elevation_status = crate::utils::get_elevation_status();
+                self.is_elevated = crate::utils::is_elevated();
+                info!("Updated elevation status: {}", self.elevation_status);
+            }
         }
         Task::none()
     }
@@ -1593,12 +1881,23 @@ impl GolemGpuImager {
         }
 
         match &self.mode {
-            AppMode::StartScreen => ui::view_start_screen(),
+            AppMode::StartScreen => ui::view_start_screen(
+                self.error_message.as_deref(),
+                self.is_elevated,
+                &self.elevation_status,
+            ),
             AppMode::FlashNewImage(state) => match state {
                 FlashState::SelectOsImage => {
-                    if self.os_images.is_empty() {
+                    if !self.os_image_groups.is_empty() {
+                        // Use new grouped view if we have image groups
+                        ui::flash::view_select_os_image_groups(
+                            &self.os_image_groups,
+                            self.selected_os_image_group,
+                        )
+                    } else if self.os_images.is_empty() {
                         self.view_no_images()
                     } else {
+                        // Fallback to legacy view
                         ui::view_select_os_image(&self.os_images, self.selected_os_image)
                     }
                 }
@@ -1633,15 +1932,15 @@ impl GolemGpuImager {
                 ),
                 FlashState::WritingImage(progress) => {
                     ui::flash::view_writing_process(*progress, "Writing OS image to device...")
-                },
+                }
                 FlashState::WritingConfig(progress) => {
                     ui::flash::view_writing_process(*progress, "Writing configuration to device...")
-                },
+                }
                 // Keep this case for backward compatibility with older code
                 FlashState::WritingProcess(_) => {
                     // Redirect to image writing view since it's most likely an image write
                     ui::flash::view_writing_process(0.0, "Writing to device...")
-                },
+                }
                 FlashState::Completion(success) => ui::flash::view_flash_completion(*success),
             },
             AppMode::EditExistingDisk(state) => match state {
@@ -1697,13 +1996,21 @@ impl GolemGpuImager {
     }
 
     fn view_no_images(&self) -> Element<'_, Message> {
-        use iced::widget::{button, column, container, text};
+        use iced::widget::{button, column, container, text, row};
 
         let content = column![
             text("No OS images found").size(24),
             text("Unable to fetch repository data or no images available").size(16),
-            button(text("Refresh")).on_press(Message::RefreshRepoData),
-            button(text("Back to Main Menu")).on_press(Message::BackToMainMenu)
+            button(
+                row![crate::ui::icons::refresh(), text("Refresh")]
+                    .spacing(5)
+                    .align_y(Alignment::Center)
+            ).on_press(Message::RefreshRepoData),
+            button(
+                row![crate::ui::icons::navigate_before(), text("Back to Main Menu")]
+                    .spacing(5)
+                    .align_y(Alignment::Center)
+            ).on_press(Message::BackToMainMenu)
         ]
         .width(Length::Fill)
         .align_x(Alignment::Center)
@@ -1731,7 +2038,7 @@ impl GolemGpuImager {
                 iced::time::every(std::time::Duration::from_millis(200))
                     .map(|_| Message::PollWriteProgress)
             }
-            _ => iced::Subscription::none()
+            _ => iced::Subscription::none(),
         }
     }
 }

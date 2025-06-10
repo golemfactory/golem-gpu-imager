@@ -7,6 +7,16 @@ pub struct OsImage {
     pub path: Option<String>, // Path to the image file if downloaded
     pub created: String,      // Creation date from metadata
     pub sha256: String,       // SHA256 hash for verification
+    pub is_latest: bool,      // Whether this is the latest version in the channel
+}
+
+#[derive(Debug, Clone)]
+pub struct OsImageGroup {
+    pub channel_name: String,         // Channel name (release, testing, etc.)
+    pub description: String,          // Channel description
+    pub latest_version: OsImage,      // Latest version (prominently displayed)
+    pub older_versions: Vec<OsImage>, // Older versions (in expandable section)
+    pub expanded: bool,               // Whether older versions are shown
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -50,17 +60,19 @@ impl CancelToken {
             cancelled: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
-    
+
     pub fn cancel(&self) {
-        self.cancelled.store(true, std::sync::atomic::Ordering::SeqCst);
+        self.cancelled
+            .store(true, std::sync::atomic::Ordering::SeqCst);
     }
-    
+
     pub fn is_cancelled(&self) -> bool {
         self.cancelled.load(std::sync::atomic::Ordering::SeqCst)
     }
-    
+
     pub fn reset(&self) {
-        self.cancelled.store(false, std::sync::atomic::Ordering::SeqCst);
+        self.cancelled
+            .store(false, std::sync::atomic::Ordering::SeqCst);
     }
 }
 
@@ -86,10 +98,10 @@ pub enum FlashState {
         wallet_address: String,
         is_wallet_valid: bool,
     },
-    WritingImage(f32),     // Progress 0.0 - 1.0 for image writing
-    WritingConfig(f32),    // Progress 0.0 - 1.0 for config writing
-    WritingProcess(f32),   // Legacy - for backward compatibility
-    Completion(bool),      // Success or failure
+    WritingImage(f32),   // Progress 0.0 - 1.0 for image writing
+    WritingConfig(f32),  // Progress 0.0 - 1.0 for config writing
+    WritingProcess(f32), // Legacy - for backward compatibility
+    Completion(bool),    // Success or failure
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -142,10 +154,13 @@ pub enum Message {
     EditExistingDisk,
     SelectOsImage(usize),
     DownloadOsImage(usize),
-    DownloadProgress(String, f32),  // Version ID and progress (0.0-1.0)
-    DownloadCompleted(String),      // Version ID of completed download
-    DownloadFailed(String, String), // Version ID and error message
-    GotoConfigureSettings,          // Go to image configuration screen
+    SelectOsImageFromGroup(usize, usize), // Group index, version index (0 = latest, 1+ = older)
+    DownloadOsImageFromGroup(usize, usize), // Group index, version index
+    ToggleVersionHistory(usize),          // Toggle expanded state for a group
+    DownloadProgress(String, f32),        // Version ID and progress (0.0-1.0)
+    DownloadCompleted(String),            // Version ID of completed download
+    DownloadFailed(String, String),       // Version ID and error message
+    GotoConfigureSettings,                // Go to image configuration screen
     SetPaymentNetwork(PaymentNetwork),
     SetSubnet(String),
     SetNetworkType(NetworkType),
@@ -160,9 +175,10 @@ pub enum Message {
     SaveConfiguration,
     BackToMainMenu,
     RepoDataLoaded(Vec<OsImage>),
+    RepoGroupDataLoaded(Vec<OsImage>, Vec<OsImageGroup>), // Legacy images + new grouped images
     RepoLoadFailed,
     RefreshRepoData,
-    RefreshDevices,                    // Refresh the list of available storage devices
+    RefreshDevices, // Refresh the list of available storage devices
     // Configuration preset management
     SaveAsPreset,                  // Save current configuration as a new preset
     SelectPreset(usize),           // Select a preset by index
@@ -179,11 +195,13 @@ pub enum Message {
     ConfigurationSaveFailed,       // Failed to save configuration to device
     ShowError(String),             // Show an error message to the user
     DeviceLockedForWriting(crate::disk::Disk, String), // Device locked for writing with image path
-    WriteImageProgress(f32),        // Update the image writing progress
-    WriteImageCompleted,            // Image write completed successfully
-    WriteImageFailed(String),       // Image write failed with error message
-    WriteConfigProgress(f32),       // Update the config writing progress
-    WriteConfigCompleted,           // Config write completed successfully
-    WriteConfigFailed(String),      // Config write failed with error message
-    PollWriteProgress,              // Poll for progress updates from the subscription
+    WriteImageProgress(f32),       // Update the image writing progress
+    WriteImageCompleted,           // Image write completed successfully
+    WriteImageFailed(String),      // Image write failed with error message
+    WriteConfigProgress(f32),      // Update the config writing progress
+    WriteConfigCompleted,          // Config write completed successfully
+    WriteConfigFailed(String),     // Config write failed with error message
+    PollWriteProgress,             // Poll for progress updates from the subscription
+    RequestElevation,              // Request administrator elevation (Windows only)
+    CheckElevationStatus,          // Check current elevation status
 }

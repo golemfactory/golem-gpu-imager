@@ -1,7 +1,6 @@
 use directories::ProjectDirs;
 use futures_util::StreamExt;
 use iced::task;
-use iced::task::Sipper;
 use reqwest;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -214,7 +213,7 @@ impl ImageRepo {
         version: Version,
     ) -> impl task::Sipper<Result<(), Error>, DownloadStatus> + 'static {
         let this = self.clone();
-        let channel_name = channel_name.to_string();
+        let _channel_name = channel_name.to_string();
         let version_id = version.id.clone();
         task::sipper(async move |mut sipper| -> Result<(), Error> {
             let this = this.clone();

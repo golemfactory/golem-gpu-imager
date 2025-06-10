@@ -31,9 +31,13 @@ pub fn view_select_existing_device<'a>(
         .spacing(5)
         .width(Length::Fill);
 
-        let select_button = button("Select")
-            .on_press(Message::SelectExistingDevice(i))
-            .padding(10);
+        let select_button = button(
+            row![icons::check(), text("Select")]
+                .spacing(5)
+                .align_y(Alignment::Center)
+        )
+        .on_press(Message::SelectExistingDevice(i))
+        .padding(10);
 
         let is_selected = Some(i) == selected_device;
 
@@ -185,9 +189,13 @@ pub fn view_edit_completion(success: bool) -> Element<'static, Message> {
         .height(Length::Fill)
         .width(Length::Fill);
 
-    let back_button = button("Back to Main Menu")
-        .on_press(Message::BackToMainMenu)
-        .padding(10);
+    let back_button = button(
+        row![icons::navigate_before(), text("Back to Main Menu")]
+            .spacing(5)
+            .align_y(Alignment::Center)
+    )
+    .on_press(Message::BackToMainMenu)
+    .padding(10);
 
     let content = column![title, message, spacer, back_button,]
         .spacing(20)

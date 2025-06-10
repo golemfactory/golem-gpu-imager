@@ -47,6 +47,10 @@ echo "Building installer using Docker..."
 echo "Pulling Docker image..."
 docker pull "$DOCKER_IMAGE"
 
+# Update version in installer.wxs
+echo "Updating installer.wxs with version $VERSION..."
+sed -i "s/Version=\"[0-9]*\.[0-9]*\.[0-9]*\.[0-9]*\"/Version=\"$VERSION.0\"/" installers/windows/installer.wxs
+
 # Run WiX toolset in Docker container (WiX v4 syntax)
 echo "Building MSI with WiX v4..."
 MSI_NAME="GolemGpuImager-$VERSION-x64.msi"
@@ -54,7 +58,7 @@ docker run --rm \
     -v "$(pwd):/work" \
     -w /work \
     "$DOCKER_IMAGE" \
-    build installer.wxs -arch x64 -out "$OUTPUT_DIR/$MSI_NAME"
+    build installers/windows/installer.wxs -arch x64 -out "$OUTPUT_DIR/$MSI_NAME"
 
 # Clean up intermediate files
 rm -f "$OUTPUT_DIR/installer.wixobj"

@@ -1,7 +1,9 @@
 // Common disk operation functionality shared across platforms
 
 use std::io::{self, Read, Seek, SeekFrom, Write};
-use tracing::{debug, error, info};
+use tracing::{debug, info};
+#[cfg(windows)]
+use tracing::error;
 
 /// Disk device information structure
 #[derive(Debug, Clone)]
@@ -98,7 +100,7 @@ impl<T: Read + Write + Seek> PartitionFileProxy<T> {
         let ptr_addr = buf.as_ptr() as usize;
         let buffer_len = buf.len();
         let sector_size = self.sector_size as usize;
-        
+
         // For very small reads, we'll handle them specially
         // The FAT filesystem often does tiny reads (3-4 bytes) that can't be aligned
         if buffer_len < 512 {
@@ -177,26 +179,26 @@ impl<T: Read + Write + Seek> PartitionFileProxy<T> {
                 aligned_size
             );
         }
-        
+
         // Create a properly aligned vector that uses our allocated memory
         // IMPORTANT: We must use the memory we allocated with alloc(), not create a new Vec
         let mut vec = unsafe {
             // Create an empty Vec without allocating memory
             let mut v: Vec<u8> = Vec::new();
-            
+
             // Set the Vec's internal fields to use our aligned memory
             v.reserve_exact(0); // Ensure Vec has a buffer pointer (could be null if just created)
-            
+
             // Create a custom Vec using our aligned memory
             // The Vec will take ownership of the memory we allocated
             Vec::from_raw_parts(ptr, aligned_size, aligned_size)
         };
-        
+
         // Zero the memory for safety
         unsafe {
             std::ptr::write_bytes(vec.as_mut_ptr(), 0, aligned_size);
         }
-        
+
         // Double-check memory alignment
         let addr = vec.as_ptr() as usize;
         if addr % sector_size != 0 {
@@ -271,21 +273,27 @@ impl<T: Read + Write + Seek> Read for PartitionFileProxy<T> {
 
                 // Create an aligned buffer for direct I/O
                 let mut aligned_buf = self.create_aligned_buffer(max_read_size);
-                
+
                 // Ensure we're at the correct position before reading
                 let seek_result = self.file.seek(SeekFrom::Start(current_abs_pos));
                 if let Err(e) = &seek_result {
                     error!("Windows seek error before read: {}", e);
-                    error!("Attempted to seek to absolute position: {}", current_abs_pos);
+                    error!(
+                        "Attempted to seek to absolute position: {}",
+                        current_abs_pos
+                    );
                     return Err(io::Error::new(
                         e.kind(),
-                        format!("Failed to seek to position {} before read: {}", current_abs_pos, e),
+                        format!(
+                            "Failed to seek to position {} before read: {}",
+                            current_abs_pos, e
+                        ),
                     ));
                 }
 
                 // Calculate the safe read size based on buffer capacities
                 let read_size = std::cmp::min(max_read_size, aligned_buf.len());
-                
+
                 // Read into the aligned buffer
                 debug!("Reading {} bytes into aligned buffer", read_size);
                 let read_result = self.file.read(&mut aligned_buf[0..read_size]);
@@ -297,7 +305,10 @@ impl<T: Read + Write + Seek> Read for PartitionFileProxy<T> {
                     }
                     Err(e) => {
                         error!("Windows read error with aligned buffer: {}", e);
-                        error!("Read attempted at position {} with buffer size {}", current_abs_pos, max_read_size);
+                        error!(
+                            "Read attempted at position {} with buffer size {}",
+                            current_abs_pos, max_read_size
+                        );
                         return Err(e);
                     }
                 };
@@ -306,20 +317,26 @@ impl<T: Read + Write + Seek> Read for PartitionFileProxy<T> {
                 if bytes_read > 0 {
                     // Ensure we don't copy more than the destination buffer can hold
                     let copy_size = std::cmp::min(bytes_read, buf.len());
-                    debug!("Copying {} bytes from aligned buffer to user buffer", copy_size);
+                    debug!(
+                        "Copying {} bytes from aligned buffer to user buffer",
+                        copy_size
+                    );
                     buf[0..copy_size].copy_from_slice(&aligned_buf[0..copy_size]);
-                    
+
                     // If we limited the copy due to buf size constraints,
                     // we need to adjust the reported bytes_read value
                     if copy_size < bytes_read {
-                        debug!("Limited copy to {} bytes due to destination buffer size", copy_size);
+                        debug!(
+                            "Limited copy to {} bytes due to destination buffer size",
+                            copy_size
+                        );
                         bytes_read = copy_size;
                     }
                 }
 
                 // Update current position
                 self.current_position += bytes_read as u64;
-                
+
                 return Ok(bytes_read);
             }
         }
@@ -380,7 +397,7 @@ impl<T: Read + Write + Seek> Write for PartitionFileProxy<T> {
 
                 // Create an aligned buffer for direct I/O
                 let mut aligned_buf = self.create_aligned_buffer(max_write_size);
-                
+
                 // Copy data from user buffer to aligned buffer
                 // Ensure we don't try to copy more than what is available in either buffer
                 let copy_size = std::cmp::min(max_write_size, buf.len());
@@ -391,10 +408,16 @@ impl<T: Read + Write + Seek> Write for PartitionFileProxy<T> {
                 let seek_result = self.file.seek(SeekFrom::Start(current_abs_pos));
                 if let Err(e) = &seek_result {
                     error!("Windows seek error before write: {}", e);
-                    error!("Attempted to seek to absolute position: {}", current_abs_pos);
+                    error!(
+                        "Attempted to seek to absolute position: {}",
+                        current_abs_pos
+                    );
                     return Err(io::Error::new(
                         e.kind(),
-                        format!("Failed to seek to position {} before write: {}", current_abs_pos, e),
+                        format!(
+                            "Failed to seek to position {} before write: {}",
+                            current_abs_pos, e
+                        ),
                     ));
                 }
 
@@ -402,19 +425,25 @@ impl<T: Read + Write + Seek> Write for PartitionFileProxy<T> {
                 debug!("Writing {} bytes from aligned buffer", copy_size);
                 let bytes_written = match self.file.write(&aligned_buf[0..copy_size]) {
                     Ok(bytes) => {
-                        debug!("Successfully wrote {} bytes to disk using aligned buffer", bytes);
+                        debug!(
+                            "Successfully wrote {} bytes to disk using aligned buffer",
+                            bytes
+                        );
                         bytes
                     }
                     Err(e) => {
                         error!("Windows write error with aligned buffer: {}", e);
-                        error!("Write attempted at position {} with buffer size {}", current_abs_pos, max_write_size);
+                        error!(
+                            "Write attempted at position {} with buffer size {}",
+                            current_abs_pos, max_write_size
+                        );
                         return Err(e);
                     }
                 };
 
                 // Update current position
                 self.current_position += bytes_written as u64;
-                
+
                 return Ok(bytes_written);
             }
         }

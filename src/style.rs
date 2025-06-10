@@ -55,7 +55,7 @@ pub fn bordered_box(theme: &Theme) -> container::Style {
 // Style function for valid wallet input
 pub fn valid_wallet_input(
     theme: &Theme,
-    status: iced::widget::text_input::Status,
+    _status: iced::widget::text_input::Status,
 ) -> text_input::Style {
     let palette = theme.extended_palette();
 
@@ -76,7 +76,7 @@ pub fn valid_wallet_input(
 // Style function for invalid wallet input
 pub fn invalid_wallet_input(
     theme: &Theme,
-    status: iced::widget::text_input::Status,
+    _status: iced::widget::text_input::Status,
 ) -> text_input::Style {
     let palette = theme.extended_palette();
 
@@ -95,7 +95,7 @@ pub fn invalid_wallet_input(
 }
 
 // Style function for validation success text
-pub fn valid_text_style(theme: &Theme) -> text::Style {
+pub fn valid_text_style(_theme: &Theme) -> text::Style {
     text::Style {
         color: Some(SUCCESS),
         ..text::Style::default()
@@ -103,7 +103,7 @@ pub fn valid_text_style(theme: &Theme) -> text::Style {
 }
 
 // Style function for validation error text
-pub fn invalid_text_style(theme: &Theme) -> text::Style {
+pub fn invalid_text_style(_theme: &Theme) -> text::Style {
     text::Style {
         color: Some(ERROR),
         ..text::Style::default()
@@ -129,7 +129,7 @@ pub fn invalid_message_container(_theme: &Theme) -> container::Style {
 // Default text input style
 pub fn default_text_input(
     theme: &Theme,
-    status: iced::widget::text_input::Status,
+    _status: iced::widget::text_input::Status,
 ) -> text_input::Style {
     let palette = theme.extended_palette();
 

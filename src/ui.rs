@@ -4,12 +4,15 @@ pub mod flash;
 mod icons;
 pub mod start_screen;
 
+#[allow(unused_imports)]
 pub use application::GolemGpuImager;
 pub use edit::{view_edit_completion, view_edit_configuration, view_select_existing_device};
+#[allow(unused_imports)]
 pub use flash::{
     view_configure_settings, view_flash_completion, view_select_os_image,
     view_select_target_device, view_writing_process,
 };
+#[allow(unused_imports)]
 use iced::Font;
 pub use start_screen::view_start_screen;
 

@@ -4,7 +4,7 @@ use crate::disk::common::{DiskDevice, PartitionFileProxy};
 use anyhow::{Result, anyhow};
 // GptConfig is used in handle_gpt_error implementations
 use std::fs::File;
-use std::io::{self, Read, Write, Seek};
+use std::io::{self, Read, Seek, Write};
 use std::os::windows::io::{AsRawHandle, FromRawHandle};
 use tracing::{debug, error, info, warn};
 use windows_sys::Win32::Foundation::*;
@@ -30,13 +30,16 @@ pub struct WindowsDiskAccess {
 
 impl WindowsDiskAccess {
     /// Open and lock a disk by its path
-    /// 
+    ///
     /// # Arguments
     /// * `path` - The path to the disk device
     /// * `edit_mode` - When true, we're opening for editing configuration only, not writing an image.
     ///   This skips diskpart cleaning on Windows, which avoids potential data loss during editing.
     pub async fn lock_path(path: &str, edit_mode: bool) -> Result<(File, Self)> {
-        info!("Locking Windows disk path: {} (edit_mode: {})", path, edit_mode);
+        info!(
+            "Locking Windows disk path: {} (edit_mode: {})",
+            path, edit_mode
+        );
 
         // Format the path based on whether it's a physical drive or a volume
         let disk_path = if path.contains("PhysicalDrive") {
@@ -79,102 +82,136 @@ impl WindowsDiskAccess {
             // This is critical for Windows to allow writing to the disk, but should be skipped in edit mode
             // to avoid data loss while editing configuration
             let drive_number_result = Self::extract_disk_number_from_path(path);
-            
+
             if let Ok(disk_num) = drive_number_result {
-                info!("Physical drive {} specified - cleaning disk before locking", disk_num);
-                
-                // Clean the disk with diskpart BEFORE opening it 
+                info!(
+                    "Physical drive {} specified - cleaning disk before locking",
+                    disk_num
+                );
+
+                // Clean the disk with diskpart BEFORE opening it
                 // This is important as diskpart can't clean a locked disk
                 info!("Attempting to clean disk {} with diskpart", disk_num);
-                
+
                 // Create temporary script file for diskpart
-                let script_content = format!("select disk {}\ndetail disk\nclean\ndetail disk\nrescan\nexit\n", disk_num);
-                
+                let script_content = format!(
+                    "select disk {}\ndetail disk\nclean\ndetail disk\nrescan\nexit\n",
+                    disk_num
+                );
+
                 // Use temporary file for the script
                 let temp_dir = std::env::temp_dir();
-                let script_path = temp_dir.join(format!("diskpart_script_{}.txt", std::process::id()));
-                
+                let script_path =
+                    temp_dir.join(format!("diskpart_script_{}.txt", std::process::id()));
+
                 if let Err(e) = std::fs::write(&script_path, script_content.as_bytes()) {
-                    warn!("Failed to create diskpart script file: {}, skipping disk cleaning", e);
+                    warn!(
+                        "Failed to create diskpart script file: {}, skipping disk cleaning",
+                        e
+                    );
                 } else {
                     info!("Created diskpart script at {:?}", script_path);
-                    
+
                     // Try to run diskpart with multiple attempts
                     let mut success = false;
                     let mut error_output = String::new();
-                    
+
                     // Try up to 3 times to clean the disk with diskpart
                     for attempt in 1..=3 {
-                        info!("Disk cleaning attempt {}/3 with diskpart for PhysicalDrive{}", attempt, disk_num);
-                        
+                        info!(
+                            "Disk cleaning attempt {}/3 with diskpart for PhysicalDrive{}",
+                            attempt, disk_num
+                        );
+
                         // Enhanced logging to see the exact command being executed
                         info!("Running diskpart with script at: {:?}", script_path);
-                        
+
                         // Execute diskpart with the script
                         let output = std::process::Command::new("diskpart")
                             .args(&["/s", script_path.to_str().unwrap()])
                             .output();
-                            
+
                         match output {
                             Ok(output) => {
                                 let output_msg = String::from_utf8_lossy(&output.stdout);
                                 let error_msg = String::from_utf8_lossy(&output.stderr);
-                                
+
                                 // Always log diskpart output for diagnosis
                                 info!("Diskpart stdout: {}", output_msg);
-                                
-                                if output.status.success() && !output_msg.contains("DiskPart has encountered an error") {
-                                    info!("Successfully cleaned disk {} with diskpart on attempt {}", disk_num, attempt);
+
+                                if output.status.success()
+                                    && !output_msg.contains("DiskPart has encountered an error")
+                                {
+                                    info!(
+                                        "Successfully cleaned disk {} with diskpart on attempt {}",
+                                        disk_num, attempt
+                                    );
                                     success = true;
                                     break;
                                 } else {
-                                    error_output = format!("stderr: {}, stdout: {}", error_msg, output_msg);
+                                    error_output =
+                                        format!("stderr: {}, stdout: {}", error_msg, output_msg);
                                     error!("Diskpart cleaning failed on attempt {}", attempt);
                                     error!("Error details: {}", error_output);
-                                    
+
                                     if attempt < 3 {
                                         warn!("Retrying disk cleaning in 500ms...");
                                         std::thread::sleep(std::time::Duration::from_millis(500));
                                     }
                                 }
-                            },
+                            }
                             Err(e) => {
-                                error!("Failed to execute diskpart command on attempt {}: {}", attempt, e);
+                                error!(
+                                    "Failed to execute diskpart command on attempt {}: {}",
+                                    attempt, e
+                                );
                                 if attempt < 3 {
                                     warn!("Retrying disk cleaning in 500ms...");
                                     std::thread::sleep(std::time::Duration::from_millis(500));
                                 }
-                            },
+                            }
                         }
                     }
-                    
+
                     // Clean up the script file regardless of outcome
                     if let Err(e) = std::fs::remove_file(&script_path) {
                         warn!("Failed to remove temporary diskpart script: {}", e);
                     }
-                    
+
                     if !success {
                         warn!("ALL ATTEMPTS TO CLEAN DISK FAILED: {}", error_output);
                         warn!("This may lead to access denied errors when writing to the disk.");
                         // Continue anyway - we'll still try to open the disk
                     }
                 }
-                
+
                 // Now dismount all volumes on this drive before locking it
-                info!("Attempting to dismount all volumes on physical drive {}", disk_num);
-                
+                info!(
+                    "Attempting to dismount all volumes on physical drive {}",
+                    disk_num
+                );
+
                 // Try to get all mounted volumes for this physical drive
                 let volumes = Self::get_volumes_for_physical_drive(disk_num as usize);
                 if volumes.is_empty() {
                     warn!("No volumes found for physical drive {}", disk_num);
                 }
-                
+
                 // Try to dismount each volume
                 for volume in volumes {
-                    info!("Attempting to dismount volume {} on physical drive {}", volume, disk_num);
+                    info!(
+                        "Attempting to dismount volume {} on physical drive {}",
+                        volume, disk_num
+                    );
                     match Self::dismount_volume_path(&volume) {
-                        Ok(_) => info!("Successfully dismounted volume {} on drive {}", volume, disk_num),
-                        Err(e) => warn!("Failed to dismount volume {} on drive {}: {}", volume, disk_num, e)
+                        Ok(_) => info!(
+                            "Successfully dismounted volume {} on drive {}",
+                            volume, disk_num
+                        ),
+                        Err(e) => warn!(
+                            "Failed to dismount volume {} on drive {}: {}",
+                            volume, disk_num, e
+                        ),
                     }
                 }
             } else {
@@ -184,10 +221,13 @@ impl WindowsDiskAccess {
         } else if edit_mode && (path.contains("PhysicalDrive") || path.parse::<usize>().is_ok()) {
             // We're in edit mode with a physical drive, so we skip diskpart cleaning
             info!("Edit mode enabled - skipping diskpart cleaning to preserve existing data");
-            
+
             // Extract disk number for logging purposes
             if let Ok(disk_num) = Self::extract_disk_number_from_path(path) {
-                info!("Edit mode for physical drive {} - no disk cleaning will be performed", disk_num);
+                info!(
+                    "Edit mode for physical drive {} - no disk cleaning will be performed",
+                    disk_num
+                );
             }
         }
 
@@ -221,7 +261,8 @@ impl WindowsDiskAccess {
             // This helps handle the variety of Windows configurations
 
             // Check if this is a physical drive (for flags selection)
-            let is_physical_drive = disk_path.contains("PhysicalDrive") || path.parse::<usize>().is_ok();
+            let is_physical_drive =
+                disk_path.contains("PhysicalDrive") || path.parse::<usize>().is_ok();
             let direct_io_flags = if is_physical_drive {
                 // Use direct I/O flags for physical drives - requires aligned I/O
                 // Note: Both NO_BUFFERING and WRITE_THROUGH are needed for physical drives
@@ -230,12 +271,12 @@ impl WindowsDiskAccess {
                 // No special flags for logical drives
                 0
             };
-            
+
             // Log the flags we're using
             if is_physical_drive {
                 info!("Using direct I/O flags (NO_BUFFERING | WRITE_THROUGH) for physical drive");
             }
-            
+
             // 1. Try with GENERIC_READ | GENERIC_WRITE, no sharing, and direct I/O if needed
             info!("Attempt 1: Opening with GENERIC_READ | GENERIC_WRITE, exclusive access");
             let h1 = CreateFileW(
@@ -308,7 +349,9 @@ impl WindowsDiskAccess {
                             FILE_SHARE_READ | FILE_SHARE_WRITE,
                             std::ptr::null_mut(),
                             OPEN_EXISTING,
-                            FILE_FLAG_NO_BUFFERING | FILE_FLAG_WRITE_THROUGH | FILE_FLAG_SEQUENTIAL_SCAN, // Always try with direct I/O for last attempt
+                            FILE_FLAG_NO_BUFFERING
+                                | FILE_FLAG_WRITE_THROUGH
+                                | FILE_FLAG_SEQUENTIAL_SCAN, // Always try with direct I/O for last attempt
                             0,
                         );
 
@@ -364,15 +407,19 @@ impl WindowsDiskAccess {
         info!("Successfully opened Windows disk device: {}", disk_path);
 
         // Attempt to get disk sector size for confirmation
-        let detected_sector_size = Self::get_disk_sector_size(&disk_path).unwrap_or(DEFAULT_SECTOR_SIZE);
-        
+        let detected_sector_size =
+            Self::get_disk_sector_size(&disk_path).unwrap_or(DEFAULT_SECTOR_SIZE);
+
         info!("Detected disk sector size: {} bytes", detected_sector_size);
-        
+
         // For ANY disk operations, always use the larger sector size for maximum compatibility
         // This is critical for Windows direct I/O which requires proper alignment
-        info!("Using physical sector size ({} bytes) for all disk I/O operations", PHYSICAL_SECTOR_SIZE);
+        info!(
+            "Using physical sector size ({} bytes) for all disk I/O operations",
+            PHYSICAL_SECTOR_SIZE
+        );
         let sector_size = PHYSICAL_SECTOR_SIZE;
-        
+
         // Create platform data
         let platform = WindowsDiskAccess {
             path: path.to_string(),
@@ -381,11 +428,17 @@ impl WindowsDiskAccess {
 
         // Convert Windows HANDLE to Rust File
         let file = unsafe { File::from_raw_handle(handle as *mut _) };
-        
+
         // Log successful open
-        info!("Successfully opened Windows disk device with handle: {:?}", handle);
-        info!("Using sector size: {} bytes for I/O operations", sector_size);
-        
+        info!(
+            "Successfully opened Windows disk device with handle: {:?}",
+            handle
+        );
+        info!(
+            "Using sector size: {} bytes for I/O operations",
+            sector_size
+        );
+
         Ok((file, platform))
     }
 
@@ -412,13 +465,13 @@ impl WindowsDiskAccess {
         if success == 0 {
             let error_code = unsafe { GetLastError() };
             let error_msg = Self::get_windows_error_message(error_code);
-            
+
             // Log detailed error information
             error!(
                 "Failed to duplicate file handle, error code: {} ({})",
                 error_code, error_msg
             );
-            
+
             return Err(anyhow!(
                 "Failed to duplicate file handle, error code: {} ({})",
                 error_code,
@@ -435,7 +488,7 @@ impl WindowsDiskAccess {
     }
 
     /// Create a partition file proxy with Windows-specific considerations
-    /// 
+    ///
     /// This function is no longer used as we now use in-memory partition operations
     /// to avoid alignment issues with small reads/writes on Windows.
     /// It is kept for compatibility with existing code.
@@ -468,35 +521,40 @@ impl WindowsDiskAccess {
                 } else {
                     String::new()
                 }
-            },
+            }
             Err(_) => String::new(),
         };
-        
+
         // Check if this is a physical drive path
-        let is_physical_drive = 
-            path_str.contains("PhysicalDrive") || 
-            path_str.contains("PHYSICALDRIVE");
-            
+        let is_physical_drive =
+            path_str.contains("PhysicalDrive") || path_str.contains("PHYSICALDRIVE");
+
         // Log all the path information we have for debugging
         debug!("Path string from handle: '{}'", path_str);
         debug!("Is physical drive: {}", is_physical_drive);
-        
+
         // For ANY disk operations, always use the larger sector size for maximum compatibility
         // This is critical for Windows direct I/O which requires proper alignment
         // Modern drives typically use 4K sectors internally even if they report 512 bytes
-        info!("Using physical sector size ({} bytes) for all disk I/O operations", PHYSICAL_SECTOR_SIZE);
+        info!(
+            "Using physical sector size ({} bytes) for all disk I/O operations",
+            PHYSICAL_SECTOR_SIZE
+        );
         let sector_size = PHYSICAL_SECTOR_SIZE;
-        
+
         // Use our aligned I/O implementation for Windows
         use crate::disk::windows_aligned_io::aligned_disk_io;
         let aligned_file = match aligned_disk_io(file, sector_size) {
             Ok(aligned) => aligned,
             Err(e) => {
                 error!("Failed to create aligned I/O wrapper: {}", e);
-                return Err(anyhow::anyhow!("Failed to create aligned I/O wrapper: {}", e));
+                return Err(anyhow::anyhow!(
+                    "Failed to create aligned I/O wrapper: {}",
+                    e
+                ));
             }
         };
-        
+
         // Create the PartitionFileProxy with the aligned file handle
         Ok(PartitionFileProxy {
             file: aligned_file,
@@ -516,13 +574,13 @@ impl WindowsDiskAccess {
         if let Some(path) = original_path {
             info!("Path from original handle for verification: {}", path);
         }
-        
+
         // Next, try to lock the volume for exclusive access
         let handle = disk_file.as_raw_handle() as HANDLE;
         let mut bytes_returned: u32 = 0;
-        
+
         info!("Attempting to lock disk volume for exclusive access");
-        
+
         // First, enable extended DASD I/O (Direct Access Storage Device) like RPI Imager does
         // This is essential for some operations on Windows
         info!("Enabling extended DASD I/O access");
@@ -538,17 +596,17 @@ impl WindowsDiskAccess {
                 std::ptr::null_mut(),
             )
         };
-        
+
         // Try to lock the volume with multiple attempts
         let mut locked = false;
         for attempt in 0..20 {
             // DeviceIoControl with FSCTL_LOCK_VOLUME
             info!("Locking volume, attempt {}/20", attempt + 1);
-            
+
             let lock_result = unsafe {
                 DeviceIoControl(
                     handle,
-                    FSCTL_LOCK_VOLUME,  // Control code for locking a volume
+                    FSCTL_LOCK_VOLUME, // Control code for locking a volume
                     std::ptr::null_mut(),
                     0,
                     std::ptr::null_mut(),
@@ -557,54 +615,69 @@ impl WindowsDiskAccess {
                     std::ptr::null_mut(),
                 )
             };
-            
+
             if lock_result != 0 {
                 locked = true;
                 info!("Successfully locked disk volume on attempt {}", attempt + 1);
                 break;
             }
-            
+
             let error_code = unsafe { GetLastError() };
-            info!("Lock attempt {} failed, error code: {}, waiting 100ms before retrying...", 
-                attempt + 1, error_code);
-            
+            info!(
+                "Lock attempt {} failed, error code: {}, waiting 100ms before retrying...",
+                attempt + 1,
+                error_code
+            );
+
             // Wait 100ms between attempts - exactly like in disk-image-writer
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
-        
+
         // Check if locking was successful after all attempts
         if !locked {
             // Get the last error for diagnostic purposes
             let error_code = unsafe { GetLastError() };
             let error_msg = Self::get_windows_error_message(error_code);
-            
-            error!("Failed to lock disk after 20 attempts, error code: {} ({})", error_code, error_msg);
-            
+
+            error!(
+                "Failed to lock disk after 20 attempts, error code: {} ({})",
+                error_code, error_msg
+            );
+
             match error_code {
-                32 => { // ERROR_SHARING_VIOLATION
-                    warn!("Disk access is still blocked by another process after multiple retry attempts");
+                32 => {
+                    // ERROR_SHARING_VIOLATION
+                    warn!(
+                        "Disk access is still blocked by another process after multiple retry attempts"
+                    );
                     warn!("Some volumes might not have been properly dismounted");
-                    
+
                     return Err(anyhow::anyhow!(
                         "The disk is in use by another process and cannot be locked"
                     )
                     .context("Close any programs that might be using this disk")
-                    .context("If it's a system disk, you cannot write to it while Windows is running"));
-                },
-                5 => { // ERROR_ACCESS_DENIED
-                    return Err(anyhow::anyhow!(
-                        "Access denied when trying to lock the disk"
-                    )
-                    .context("Make sure you're running with Administrator privileges")
-                    .context("The disk may be write-protected or reserved by the system"));
-                },
+                    .context(
+                        "If it's a system disk, you cannot write to it while Windows is running",
+                    ));
+                }
+                5 => {
+                    // ERROR_ACCESS_DENIED
+                    return Err(
+                        anyhow::anyhow!("Access denied when trying to lock the disk")
+                            .context("Make sure you're running with Administrator privileges")
+                            .context("The disk may be write-protected or reserved by the system"),
+                    );
+                }
                 _ => {
-                    warn!("Could not lock volume (error code: {}), continuing with caution", error_code);
+                    warn!(
+                        "Could not lock volume (error code: {}), continuing with caution",
+                        error_code
+                    );
                     warn!("Write operations may fail or be inconsistent");
                 }
             }
         }
-        
+
         // Dismount all volumes directly using the physical drive handle
         let dismount_result = unsafe {
             DeviceIoControl(
@@ -618,16 +691,19 @@ impl WindowsDiskAccess {
                 std::ptr::null_mut(),
             )
         };
-        
+
         if dismount_result == 0 {
             let error_code = unsafe { GetLastError() };
             let error_msg = Self::get_windows_error_message(error_code);
-            info!("Note: Could not dismount directly from physical device: {} ({})", error_code, error_msg);
+            info!(
+                "Note: Could not dismount directly from physical device: {} ({})",
+                error_code, error_msg
+            );
             info!("This is often normal when writing to physical drives rather than volumes");
         } else {
             info!("Successfully dismounted volumes from physical drive handle");
         }
-        
+
         // For physical devices, don't try to get metadata - it will fail
         // Also perform a zero-byte write test to verify we have write access
         match disk_file.try_clone() {
@@ -640,7 +716,7 @@ impl WindowsDiskAccess {
                             "The disk is write-protected and cannot be written to"
                         )
                         .context(
-                            "Remove write protection from the device or use a different device"
+                            "Remove write protection from the device or use a different device",
                         ));
                     } else {
                         warn!("Write test failed: {}", e);
@@ -672,9 +748,11 @@ impl WindowsDiskAccess {
             match code {
                 5 => {
                     error!("Access denied error (code 5) when writing to disk");
-                    error!("This error often occurs when disk cleaning via diskpart failed or was skipped.");
+                    error!(
+                        "This error often occurs when disk cleaning via diskpart failed or was skipped."
+                    );
                     error!("Check the logs for diskpart output or errors above.");
-                    
+
                     return Some(
                         anyhow::anyhow!(
                             "Access denied when writing to disk. Error code: 5 ({})",
@@ -682,7 +760,7 @@ impl WindowsDiskAccess {
                         )
                         .context("Make sure you're running with Administrator privileges")
                         .context("The disk may be locked by another process or write-protected")
-                        .context("Ensure diskpart is available and successfully cleaned the disk")
+                        .context("Ensure diskpart is available and successfully cleaned the disk"),
                     );
                 }
                 1117 => {
@@ -699,7 +777,7 @@ impl WindowsDiskAccess {
                             error_msg
                         )
                         .context("Check that the disk has enough free space for the image")
-                        .context("Try using a larger capacity disk")
+                        .context("Try using a larger capacity disk"),
                     );
                 }
                 1224 => {
@@ -716,7 +794,7 @@ impl WindowsDiskAccess {
                             error_msg
                         )
                         .context("This may be due to mismatched buffer alignment requirements")
-                        .context("Try restarting the application and using a different USB port")
+                        .context("Try restarting the application and using a different USB port"),
                     );
                 }
                 _ => {
@@ -741,15 +819,15 @@ impl WindowsDiskAccess {
             return Some(
                 anyhow::anyhow!("Failed to flush disk buffer: {} ({})", e, error_msg)
                     .context("Unable to ensure all data was written to disk")
-                    .context("The disk may have been disconnected or experienced an error")
+                    .context("The disk may have been disconnected or experienced an error"),
             );
         }
 
         None
     }
-    
+
     /// Extract disk number from a Windows drive path
-    /// 
+    ///
     /// This function handles various formats of Windows disk paths:
     /// - \\.\PhysicalDrive0
     /// - \\.\PHYSICALDRIVE0
@@ -767,88 +845,95 @@ impl WindowsDiskAccess {
             return Ok(disk_num_str.parse::<u32>()?);
         } else if let Some(disk_num_str) = path_str.strip_prefix("PHYSICALDRIVE") {
             return Ok(disk_num_str.parse::<u32>()?);
-        } 
-        
+        }
+
         // If the path is just a number (e.g., "0"), parse it directly
         if let Ok(num) = path_str.parse::<u32>() {
             return Ok(num);
         }
-        
+
         // If all above methods fail, use regex to find a disk number pattern anywhere in the string
         // This is useful for paths that might have unexpected formats or additional text
         let re = regex::Regex::new(r"(?i)PhysicalDrive(\d+)").unwrap_or_else(|_| {
             warn!("Failed to create regex for parsing drive number");
             regex::Regex::new(r"PhysicalDrive").unwrap()
         });
-        
+
         if let Some(caps) = re.captures(path_str) {
             if let Some(num_match) = caps.get(1) {
                 return Ok(num_match.as_str().parse::<u32>()?);
             }
         }
-        
+
         // If no match found, report a clear error
         error!("Could not extract disk number from path: {}", path_str);
-        Err(anyhow!("Could not determine disk number from path: {}", path_str))
+        Err(anyhow!(
+            "Could not determine disk number from path: {}",
+            path_str
+        ))
     }
-    
+
     /// Clean the disk by removing all partitions using diskpart (used by older disk-image-writer)
     /// This function is kept for reference but is no longer explicitly called
     pub fn clean_disk(&self) -> Result<()> {
         // Try to extract disk number from the path (like "\\.\PHYSICALDRIVE0")
         let path_str = self.path.as_str();
         let disk_num = Self::extract_disk_number_from_path(path_str)?;
-        
+
         info!("Cleaning disk {} using diskpart", disk_num);
-        
+
         // Create a temporary script file for diskpart
         let script_content = format!("select disk {}\nclean\nrescan\nexit\n", disk_num);
-        
+
         // Use temporary file crate to handle the script file
         let temp_dir = std::env::temp_dir();
         let script_path = temp_dir.join(format!("diskpart_script_{}.txt", std::process::id()));
-        
+
         // Write the script content to the file
         std::fs::write(&script_path, script_content.as_bytes())?;
-        
+
         info!("Created diskpart script at {:?}", script_path);
-        
+
         // Execute diskpart with the script
         let output = std::process::Command::new("diskpart")
             .args(&["/s", script_path.to_str().unwrap()])
             .output()?;
-            
+
         // Clean up the script file regardless of outcome
         if let Err(e) = std::fs::remove_file(&script_path) {
             warn!("Failed to remove temporary diskpart script: {}", e);
         }
-            
+
         if !output.status.success() {
             let error_msg = String::from_utf8_lossy(&output.stderr);
             let output_msg = String::from_utf8_lossy(&output.stdout);
-            
+
             error!("Diskpart error output: {}", error_msg);
             error!("Diskpart standard output: {}", output_msg);
-            
+
             return Err(anyhow!(
                 "Error running diskpart clean command: {}",
-                if error_msg.is_empty() { output_msg } else { error_msg }
+                if error_msg.is_empty() {
+                    output_msg
+                } else {
+                    error_msg
+                }
             ));
         }
-        
+
         info!("Disk {} cleaned successfully with diskpart", disk_num);
         Ok(())
     }
-    
+
     /// Internal helper to unlock a volume with just a file handle - for easy retry/error handling
     fn unlock_volume_internal(handle: HANDLE) -> Result<bool> {
         let mut bytes_returned: u32 = 0;
-        
+
         // Use DeviceIoControl with FSCTL_UNLOCK_VOLUME
         let unlock_result = unsafe {
             DeviceIoControl(
                 handle,
-                FSCTL_UNLOCK_VOLUME,  // Control code for unlocking a volume
+                FSCTL_UNLOCK_VOLUME, // Control code for unlocking a volume
                 std::ptr::null_mut(),
                 0,
                 std::ptr::null_mut(),
@@ -857,64 +942,81 @@ impl WindowsDiskAccess {
                 std::ptr::null_mut(),
             )
         };
-        
+
         if unlock_result != 0 {
             info!("Volume unlocked successfully");
             Ok(true)
         } else {
             let error_code = unsafe { GetLastError() };
             let error_msg = Self::get_windows_error_message(error_code);
-            
+
             warn!("Failed to unlock volume: {} ({})", error_code, error_msg);
-            Err(anyhow!("Failed to unlock volume: {} ({})", error_code, error_msg))
+            Err(anyhow!(
+                "Failed to unlock volume: {} ({})",
+                error_code,
+                error_msg
+            ))
         }
     }
-    
+
     /// Unlock a previously locked volume - with retry mechanism
     pub fn unlock_volume(disk_file: &File) -> Result<()> {
         let handle = disk_file.as_raw_handle() as HANDLE;
-        
-        info!("Attempting to unlock disk volume, handle = {:p}", handle as *const std::ffi::c_void);
-        
+
+        info!(
+            "Attempting to unlock disk volume, handle = {:p}",
+            handle as *const std::ffi::c_void
+        );
+
         // Try to unlock the volume multiple times
         for attempt in 0..5 {
             info!("Unlock attempt {}/5", attempt + 1);
-            
+
             // Get the timing for this unlock attempt
             let attempt_start = std::time::Instant::now();
-            
+
             // Try to unlock using the internal helper
             let unlock_result = Self::unlock_volume_internal(handle);
             let attempt_duration = attempt_start.elapsed();
-            
+
             match unlock_result {
                 Ok(_) => {
-                    info!("Successfully unlocked disk volume on attempt {} in {:?}", 
-                        attempt + 1, attempt_duration);
+                    info!(
+                        "Successfully unlocked disk volume on attempt {} in {:?}",
+                        attempt + 1,
+                        attempt_duration
+                    );
                     return Ok(());
-                },
+                }
                 Err(e) => {
                     if attempt < 4 {
-                        warn!("Unlock attempt {} failed after {:?}: {}, waiting 100ms before retrying...", 
-                            attempt + 1, attempt_duration, e);
-                        
+                        warn!(
+                            "Unlock attempt {} failed after {:?}: {}, waiting 100ms before retrying...",
+                            attempt + 1,
+                            attempt_duration,
+                            e
+                        );
+
                         // Wait 100ms between attempts - exactly like disk-image-writer
                         std::thread::sleep(std::time::Duration::from_millis(100));
                     } else {
                         // Last attempt
-                        warn!("Final unlock attempt failed after {:?}: {}", attempt_duration, e);
+                        warn!(
+                            "Final unlock attempt failed after {:?}: {}",
+                            attempt_duration, e
+                        );
                     }
                 }
             }
         }
-        
+
         // All unlock attempts failed - but we continue anyway since this is non-critical
         warn!("Failed to unlock disk volume after 5 attempts");
         warn!("This may prevent other applications from accessing the disk until reboot");
-        
+
         // Log some additional information about the disk file that might be useful
         info!("Continuing despite unlock failure - this is non-critical");
-        
+
         // Return success anyway since unlocking failure isn't critical
         Ok(())
     }
@@ -922,15 +1024,15 @@ impl WindowsDiskAccess {
     /// Enable extended DASD I/O access on a file handle
     pub fn enable_extended_dasd_io(file: &File) -> bool {
         use std::os::windows::io::AsRawHandle;
-        
+
         // Get the raw handle
         let handle = file.as_raw_handle() as HANDLE;
         let mut bytes_returned: u32 = 0;
-        
+
         // Define the FSCTL_ALLOW_EXTENDED_DASD_IO constant if needed
         // FSCTL_ALLOW_EXTENDED_DASD_IO = 0x00090083
         const FSCTL_ALLOW_EXTENDED_DASD_IO: u32 = 0x00090083;
-        
+
         // Call DeviceIoControl
         let result = unsafe {
             DeviceIoControl(
@@ -944,33 +1046,33 @@ impl WindowsDiskAccess {
                 std::ptr::null_mut(),
             )
         };
-        
+
         // Return true if successful
         result != 0
     }
-    
+
     /// Lock a volume with multiple retry attempts
     pub fn lock_volume_with_retry(file: &File, max_attempts: u32) -> bool {
         use std::os::windows::io::AsRawHandle;
-        
+
         // Get the raw handle
         let handle = file.as_raw_handle() as HANDLE;
         let mut bytes_returned: u32 = 0;
-        
+
         // Define the FSCTL_LOCK_VOLUME constant if needed
         // FSCTL_LOCK_VOLUME = 0x00090018
         const FSCTL_LOCK_VOLUME: u32 = 0x00090018;
-        
+
         // Try to lock the volume with multiple attempts
         let mut locked = false;
         for attempt in 0..max_attempts {
             // DeviceIoControl with FSCTL_LOCK_VOLUME
             info!("Locking volume, attempt {}/{}", attempt + 1, max_attempts);
-            
+
             let lock_result = unsafe {
                 DeviceIoControl(
                     handle,
-                    FSCTL_LOCK_VOLUME,  // Control code for locking a volume
+                    FSCTL_LOCK_VOLUME, // Control code for locking a volume
                     std::ptr::null_mut(),
                     0,
                     std::ptr::null_mut(),
@@ -979,36 +1081,39 @@ impl WindowsDiskAccess {
                     std::ptr::null_mut(),
                 )
             };
-            
+
             if lock_result != 0 {
                 locked = true;
                 info!("Successfully locked disk volume on attempt {}", attempt + 1);
                 break;
             }
-            
+
             let error_code = unsafe { GetLastError() };
-            info!("Lock attempt {} failed, error code: {}, waiting 100ms before retrying...", 
-                attempt + 1, error_code);
-            
+            info!(
+                "Lock attempt {} failed, error code: {}, waiting 100ms before retrying...",
+                attempt + 1,
+                error_code
+            );
+
             // Wait 100ms between attempts
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
-        
+
         locked
     }
-    
+
     /// Dismount a volume from a file handle
     pub fn dismount_volume_from_handle(file: &File) -> Result<()> {
         use std::os::windows::io::AsRawHandle;
-        
+
         // Get the raw handle
         let handle = file.as_raw_handle() as HANDLE;
         let mut bytes_returned: u32 = 0;
-        
+
         // Define the FSCTL_DISMOUNT_VOLUME constant if needed
         // FSCTL_DISMOUNT_VOLUME = 0x00090020
         const FSCTL_DISMOUNT_VOLUME: u32 = 0x00090020;
-        
+
         // Call DeviceIoControl
         let result = unsafe {
             DeviceIoControl(
@@ -1022,16 +1127,20 @@ impl WindowsDiskAccess {
                 std::ptr::null_mut(),
             )
         };
-        
+
         if result == 0 {
             let error_code = unsafe { GetLastError() };
             let error_msg = Self::get_windows_error_message(error_code);
-            Err(anyhow!("Failed to dismount volume: {} ({})", error_code, error_msg))
+            Err(anyhow!(
+                "Failed to dismount volume: {} ({})",
+                error_code,
+                error_msg
+            ))
         } else {
             Ok(())
         }
     }
-    
+
     /// Handle GPT reading errors with Windows-specific solutions
     pub fn handle_gpt_error(
         disk: &crate::disk::Disk,
@@ -1045,7 +1154,7 @@ impl WindowsDiskAccess {
 
         // Try a different approach with aligned I/O for Windows
         info!("Attempting Windows-specific GPT reading with aligned I/O");
-        
+
         // Get a new file handle
         let file = match disk.file.try_clone() {
             Ok(f) => f,
@@ -1054,10 +1163,10 @@ impl WindowsDiskAccess {
                 return Ok(None); // Let the original error propagate
             }
         };
-        
+
         // Use our AlignedDiskIO implementation for better Windows compatibility
         use crate::disk::windows_aligned_io::aligned_disk_io;
-        
+
         // Always use 4KB sector size for maximum compatibility with modern disks
         let sector_size = 512;
         // Try to create an aligned disk I/O wrapper
@@ -1068,19 +1177,19 @@ impl WindowsDiskAccess {
                 return Ok(None); // Let the original error propagate
             }
         };
-        
+
         // Create a new GptConfig with relaxed validation
         let cfg = gpt::GptConfig::new()
             .writable(false)
             .initialized(true) // Skip checking LBA0 for MBR
             .logical_block_size(gpt::disk::LogicalBlockSize::Lb512);
-            
+
         // Try to open the GPT disk with our aligned wrapper
         match cfg.open_from_device(Box::new(aligned_file)) {
             Ok(disk) => {
                 info!("Successfully read GPT partition table with aligned I/O");
                 Ok(Some(disk))
-            },
+            }
             Err(e) => {
                 error!("Even with aligned I/O, failed to parse GPT: {}", e);
                 Ok(None) // Let the original error propagate
@@ -1225,7 +1334,7 @@ impl WindowsDiskAccess {
                 "Could not open volume {} exclusively, trying with shared access: {} ({})",
                 drive_path, error_code, error_msg
             );
-            
+
             // Try again with shared access as fallback
             let handle = unsafe {
                 CreateFileW(
@@ -1238,16 +1347,18 @@ impl WindowsDiskAccess {
                     0,
                 )
             };
-            
+
             if handle == INVALID_HANDLE_VALUE {
                 let error_code = unsafe { GetLastError() };
                 let error_msg = Self::get_windows_error_message(error_code);
                 return Err(anyhow!(
                     "Failed to open volume {}, error code: {} ({})",
-                    drive_path, error_code, error_msg
+                    drive_path,
+                    error_code,
+                    error_msg
                 ));
             }
-            
+
             // Continue with the obtained handle
             Self::dismount_volume_with_handle(handle, &drive_path)
         } else {
@@ -1255,13 +1366,16 @@ impl WindowsDiskAccess {
             Self::dismount_volume_with_handle(handle, &drive_path)
         }
     }
-    
+
     /// Helper function to dismount a volume using an already opened handle - with RPI Imager's retry logic
     fn dismount_volume_with_handle(handle: HANDLE, drive_path: &str) -> Result<()> {
         let mut bytes_returned: u32 = 0;
-        
+
         // Enable extended DASD I/O access first, just like RPI Imager
-        info!("Enabling extended DASD I/O access for volume {}", drive_path);
+        info!(
+            "Enabling extended DASD I/O access for volume {}",
+            drive_path
+        );
         unsafe {
             DeviceIoControl(
                 handle,
@@ -1274,14 +1388,14 @@ impl WindowsDiskAccess {
                 std::ptr::null_mut(),
             )
         };
-        
+
         // Step 1: Lock the volume with retries (just like RPI Imager)
         info!("Locking volume: {} with up to 20 attempts", drive_path);
-        
+
         let mut locked = false;
         for attempt in 0..20 {
             info!("Lock attempt {}/20 for volume {}", attempt + 1, drive_path);
-            
+
             let lock_result = unsafe {
                 DeviceIoControl(
                     handle,
@@ -1294,41 +1408,54 @@ impl WindowsDiskAccess {
                     std::ptr::null_mut(),
                 )
             };
-            
+
             if lock_result != 0 {
                 locked = true;
-                info!("Successfully locked volume {} on attempt {}", drive_path, attempt + 1);
+                info!(
+                    "Successfully locked volume {} on attempt {}",
+                    drive_path,
+                    attempt + 1
+                );
                 break;
             }
-            
+
             let error_code = unsafe { GetLastError() };
-            info!("Lock attempt {} failed for volume {}, error: {}, waiting 100ms...", 
-                  attempt + 1, drive_path, error_code);
-            
+            info!(
+                "Lock attempt {} failed for volume {}, error: {}, waiting 100ms...",
+                attempt + 1,
+                drive_path,
+                error_code
+            );
+
             // Wait 100ms between attempts (exactly like RPI Imager)
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
-        
+
         if !locked {
             let error_code = unsafe { GetLastError() };
             let error_msg = Self::get_windows_error_message(error_code);
-            warn!("Failed to lock volume {} after 20 attempts: {} ({})", 
-                  drive_path, error_code, error_msg);
-            
+            warn!(
+                "Failed to lock volume {} after 20 attempts: {} ({})",
+                drive_path, error_code, error_msg
+            );
+
             // For volumes (unlike physical drives), we'll return an error if we can't lock
             // This helps diagnose issues with specific volumes
             unsafe { CloseHandle(handle) };
             return Err(anyhow!(
                 "Failed to lock volume {} after multiple attempts: {} ({})",
-                drive_path, error_code, error_msg
+                drive_path,
+                error_code,
+                error_msg
             ));
         }
-        
+
         // Step 2: Dismount the volume - also with retries
         info!("Dismounting volume: {}", drive_path);
-        
+
         let mut dismounted = false;
-        for attempt in 0..5 { // Fewer retries for dismounting, usually succeeds on first try if locked
+        for attempt in 0..5 {
+            // Fewer retries for dismounting, usually succeeds on first try if locked
             let dismount_result = unsafe {
                 DeviceIoControl(
                     handle,
@@ -1341,21 +1468,29 @@ impl WindowsDiskAccess {
                     std::ptr::null_mut(),
                 )
             };
-            
+
             if dismount_result != 0 {
                 dismounted = true;
-                info!("Successfully dismounted volume {} on attempt {}", drive_path, attempt + 1);
+                info!(
+                    "Successfully dismounted volume {} on attempt {}",
+                    drive_path,
+                    attempt + 1
+                );
                 break;
             }
-            
+
             let error_code = unsafe { GetLastError() };
-            info!("Dismount attempt {} failed for volume {}, error: {}, waiting 100ms...", 
-                  attempt + 1, drive_path, error_code);
-            
+            info!(
+                "Dismount attempt {} failed for volume {}, error: {}, waiting 100ms...",
+                attempt + 1,
+                drive_path,
+                error_code
+            );
+
             // Wait 100ms between attempts
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
-        
+
         if !dismounted {
             let error_code = unsafe { GetLastError() };
             let error_msg = Self::get_windows_error_message(error_code);
@@ -1365,13 +1500,13 @@ impl WindowsDiskAccess {
             );
             // We'll continue despite dismount failures
         }
-        
+
         // Step 3: Try to take the volume offline (like RPI Imager does)
         info!("Taking volume {} offline", drive_path);
-        
+
         // Define IOCTL code for taking volume offline (not in the windows-sys crate)
         const IOCTL_VOLUME_OFFLINE: u32 = 0x56C000;
-        
+
         let offline_result = unsafe {
             DeviceIoControl(
                 handle,
@@ -1384,7 +1519,7 @@ impl WindowsDiskAccess {
                 std::ptr::null_mut(),
             )
         };
-        
+
         if offline_result == 0 {
             let error_code = unsafe { GetLastError() };
             let error_msg = Self::get_windows_error_message(error_code);
@@ -1400,10 +1535,13 @@ impl WindowsDiskAccess {
         // Just to be safe, sleep another 100ms to ensure Windows has fully processed our requests
         // RPI Imager sometimes does this to ensure operations have time to complete
         std::thread::sleep(std::time::Duration::from_millis(100));
-        
+
         // Close the handle but keep the volume locked
         // Windows will automatically unlock the volume when all handles are closed
-        info!("Closing handle but volume {} remains dismounted", drive_path);
+        info!(
+            "Closing handle but volume {} remains dismounted",
+            drive_path
+        );
         unsafe { CloseHandle(handle) };
 
         debug!("Successfully processed volume: {}", drive_path);
@@ -1584,7 +1722,7 @@ impl WindowsDiskAccess {
     fn get_volumes_for_physical_drive(drive_number: usize) -> Vec<String> {
         debug!("Getting volumes for physical drive {}", drive_number);
         let mut volumes = Vec::new();
-        
+
         // Try to use rs-drivelist to map physical drives to volumes
         match rs_drivelist::drive_list() {
             Ok(drives) => {
@@ -1594,17 +1732,18 @@ impl WindowsDiskAccess {
                         .devicePath
                         .as_ref()
                         .map_or_else(|| drive.device.clone(), |p| p.clone());
-                    
+
                     if device_path.contains(&format!("PHYSICALDRIVE{}", drive_number)) {
                         // This drive matches our physical drive, get all mount points
                         for mountpoint in &drive.mountpoints {
                             let mount_path = &mountpoint.path;
                             if mount_path.ends_with(":") || mount_path.ends_with(":\\") {
                                 // Extract just the drive letter (e.g., "C:")
-                                let drive_letter = mount_path
-                                    .trim_end_matches('\\')
-                                    .to_string();
-                                debug!("Found volume {} on physical drive {}", drive_letter, drive_number);
+                                let drive_letter = mount_path.trim_end_matches('\\').to_string();
+                                debug!(
+                                    "Found volume {} on physical drive {}",
+                                    drive_letter, drive_number
+                                );
                                 volumes.push(drive_letter);
                             }
                         }
@@ -1613,40 +1752,44 @@ impl WindowsDiskAccess {
             }
             Err(e) => {
                 error!("Failed to list drives using rs-drivelist: {}", e);
-                
+
                 // Fallback approach: try common drive letters and check their physical drive
                 for letter in b'C'..=b'Z' {
                     let drive_letter = format!("{}:", char::from(letter));
-                    
+
                     // Try to check if this drive letter is on the target physical drive
                     // This is a simplified approach and may not work in all cases
-                    if let Ok(true) = Self::is_volume_on_physical_drive(&drive_letter, drive_number) {
-                        debug!("Found volume {} on physical drive {}", drive_letter, drive_number);
+                    if let Ok(true) = Self::is_volume_on_physical_drive(&drive_letter, drive_number)
+                    {
+                        debug!(
+                            "Found volume {} on physical drive {}",
+                            drive_letter, drive_number
+                        );
                         volumes.push(drive_letter);
                     }
                 }
             }
         }
-        
+
         volumes
     }
-    
+
     /// Check if a volume (e.g., "C:") is on a specific physical drive
     /// This is a simplified version that uses a heuristic instead of exact Windows API calls
     fn is_volume_on_physical_drive(volume: &str, drive_number: usize) -> Result<bool> {
         // For cross-compilation purposes, we'll use a simplified approach that assumes
         // information from rs-drivelist is sufficient
-        
+
         // This is a simpler fallback approach that doesn't use the native Windows IOCTL
         // We can use this method as a simplified way to check if we think a volume is on a physical drive
-        
+
         // Simply try to open the volume and see if we can read from it
         let volume_path = format!(r"\\.\{}", volume.trim_end_matches('\\'));
         let path_wide: Vec<u16> = volume_path
             .encode_utf16()
             .chain(std::iter::once(0))
             .collect();
-        
+
         // Try to open the volume
         let handle = unsafe {
             CreateFileW(
@@ -1659,21 +1802,24 @@ impl WindowsDiskAccess {
                 0,
             )
         };
-        
+
         if handle == INVALID_HANDLE_VALUE {
             return Ok(false); // Can't access this volume
         }
-        
+
         // If we can open it, we'll check if the volume is accessible
-        // This is a very simple approach - in a real implementation, we'd use the 
+        // This is a very simple approach - in a real implementation, we'd use the
         // IOCTL_STORAGE_GET_DEVICE_NUMBER to definitively check the drive number
-        
+
         // For now, we close the handle and log that we're checking
         unsafe { CloseHandle(handle) };
-        
+
         // Log this as an assumption rather than a confirmed fact
-        debug!("Checking volume {} - treating as potentially on physical drive {}", volume, drive_number);
-        
+        debug!(
+            "Checking volume {} - treating as potentially on physical drive {}",
+            volume, drive_number
+        );
+
         // For safety, let's treat this volume as potentially on the target drive
         // Better to dismount too many volumes than too few
         Ok(true)
@@ -1684,29 +1830,55 @@ impl WindowsDiskAccess {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_extract_disk_number_from_path() {
         // Test full Windows path with backslashes
-        assert_eq!(WindowsDiskAccess::extract_disk_number_from_path(r"\\.\PhysicalDrive0").unwrap(), 0);
-        assert_eq!(WindowsDiskAccess::extract_disk_number_from_path(r"\\.\PhysicalDrive12").unwrap(), 12);
-        
+        assert_eq!(
+            WindowsDiskAccess::extract_disk_number_from_path(r"\\.\PhysicalDrive0").unwrap(),
+            0
+        );
+        assert_eq!(
+            WindowsDiskAccess::extract_disk_number_from_path(r"\\.\PhysicalDrive12").unwrap(),
+            12
+        );
+
         // Test uppercase variant
-        assert_eq!(WindowsDiskAccess::extract_disk_number_from_path(r"\\.\PHYSICALDRIVE3").unwrap(), 3);
-        
+        assert_eq!(
+            WindowsDiskAccess::extract_disk_number_from_path(r"\\.\PHYSICALDRIVE3").unwrap(),
+            3
+        );
+
         // Test without leading backslashes
-        assert_eq!(WindowsDiskAccess::extract_disk_number_from_path("PhysicalDrive5").unwrap(), 5);
-        
+        assert_eq!(
+            WindowsDiskAccess::extract_disk_number_from_path("PhysicalDrive5").unwrap(),
+            5
+        );
+
         // Test uppercase without backslashes
-        assert_eq!(WindowsDiskAccess::extract_disk_number_from_path("PHYSICALDRIVE7").unwrap(), 7);
-        
+        assert_eq!(
+            WindowsDiskAccess::extract_disk_number_from_path("PHYSICALDRIVE7").unwrap(),
+            7
+        );
+
         // Test just the number
-        assert_eq!(WindowsDiskAccess::extract_disk_number_from_path("9").unwrap(), 9);
-        
+        assert_eq!(
+            WindowsDiskAccess::extract_disk_number_from_path("9").unwrap(),
+            9
+        );
+
         // Test with text before or after
-        assert_eq!(WindowsDiskAccess::extract_disk_number_from_path("Selected disk: PhysicalDrive11").unwrap(), 11);
-        assert_eq!(WindowsDiskAccess::extract_disk_number_from_path("PhysicalDrive8 (External USB Drive)").unwrap(), 8);
-        
+        assert_eq!(
+            WindowsDiskAccess::extract_disk_number_from_path("Selected disk: PhysicalDrive11")
+                .unwrap(),
+            11
+        );
+        assert_eq!(
+            WindowsDiskAccess::extract_disk_number_from_path("PhysicalDrive8 (External USB Drive)")
+                .unwrap(),
+            8
+        );
+
         // Test invalid input
         assert!(WindowsDiskAccess::extract_disk_number_from_path("No disk number here").is_err());
         assert!(WindowsDiskAccess::extract_disk_number_from_path("").is_err());

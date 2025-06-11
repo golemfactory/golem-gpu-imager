@@ -213,16 +213,18 @@ jobs:
           echo "Building MSI: $MSI_NAME"
           
           # Set proper permissions for Docker
-          chmod -R 755 .
+          chmod -R 777 .
+          chmod -R 777 dist
           
           # Build with more verbose output and error handling
           docker run --rm \
             -v "$(pwd):/work" \
             -w /work \
             jkroepke/wixtoolset:latest \
-            build installers/windows/installer.wxs -arch x64 -out "dist/$MSI_NAME" -v
+            build installers/windows/installer.wxs -arch x64 -out "$MSI_NAME" -v
           
-          # Fix permissions on generated files
+          # Move MSI to dist directory and fix permissions
+          mv "$MSI_NAME" "dist/$MSI_NAME"
           sudo chown -R runner:docker dist/
           
           # Verify MSI was created

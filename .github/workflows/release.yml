@@ -17,33 +17,45 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        target:
-          - x86_64-unknown-linux-gnu
-          - x86_64-pc-windows-gnu
+        include:
+          - rust_target: x86_64-unknown-linux-gnu
+            zigbuild_target: x86_64-unknown-linux-gnu.2.31
+            artifact_name: golem-gpu-imager-linux-x64
+          - rust_target: aarch64-unknown-linux-gnu
+            zigbuild_target: aarch64-unknown-linux-gnu.2.31
+            artifact_name: golem-gpu-imager-linux-arm64
+          - rust_target: x86_64-pc-windows-gnu
+            zigbuild_target: x86_64-pc-windows-gnu
+            artifact_name: golem-gpu-imager-windows
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          lfs: true
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: ${{ matrix.rust_target }}
 
-      # Cache system packages for Windows cross-compilation
-      - name: Cache mingw packages
-        if: matrix.target == 'x86_64-pc-windows-gnu'
-        id: cache-mingw
+      # Cache system packages for cross-compilation
+      - name: Cache cross-compilation packages
+        id: cache-cross-deps
         uses: actions/cache@v4
         with:
           path: /var/cache/apt/archives
-          key: ${{ runner.os }}-mingw-packages-v1
+          key: ${{ runner.os }}-cross-packages-v2
 
       - name: Install cross-compilation dependencies
-        if: matrix.target == 'x86_64-pc-windows-gnu' && steps.cache-mingw.outputs.cache-hit != 'true'
+        if: steps.cache-cross-deps.outputs.cache-hit != 'true'
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-mingw-w64-x86-64
+          if [[ "${{ matrix.rust_target }}" == "x86_64-pc-windows-gnu" ]]; then
+            sudo apt-get install -y gcc-mingw-w64-x86-64
+          elif [[ "${{ matrix.rust_target }}" == "aarch64-unknown-linux-gnu" ]]; then
+            sudo apt-get install -y gcc-aarch64-linux-gnu
+          fi
 
       # Cache Cargo tools
       - name: Cache cargo tools
@@ -106,50 +118,135 @@ jobs:
         uses: actions/cache@v4
         with:
           path: target
-          key: ${{ runner.os }}-cargo-build-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}-${{ hashFiles('src/**') }}
+          key: ${{ runner.os }}-cargo-build-${{ matrix.rust_target }}-${{ hashFiles('**/Cargo.lock') }}-${{ hashFiles('src/**') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-build-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}-
-            ${{ runner.os }}-cargo-build-${{ matrix.target }}-
+            ${{ runner.os }}-cargo-build-${{ matrix.rust_target }}-${{ hashFiles('**/Cargo.lock') }}-
+            ${{ runner.os }}-cargo-build-${{ matrix.rust_target }}-
 
-      - name: Build for ${{ matrix.target }}
-        run: |
-          if [[ "${{ matrix.target }}" == "x86_64-pc-windows-gnu" ]]; then
-            cargo zigbuild --target ${{ matrix.target }} --release
-          else
-            cargo build --target ${{ matrix.target }} --release
-          fi
+      - name: Build for ${{ matrix.zigbuild_target }}
+        run: cargo zigbuild --target ${{ matrix.zigbuild_target }} --release
 
       - name: Prepare artifacts
         run: |
           mkdir -p artifacts
           
           # Determine binary name and extension
-          if [[ "${{ matrix.target }}" == *"windows"* ]]; then
+          if [[ "${{ matrix.rust_target }}" == *"windows"* ]]; then
             BINARY_NAME="golem-gpu-imager.exe"
-            ARTIFACT_NAME="golem-gpu-imager-windows.exe"
+            ARTIFACT_NAME="${{ matrix.artifact_name }}.exe"
           else
             BINARY_NAME="golem-gpu-imager"
-            ARTIFACT_NAME="golem-gpu-imager-linux"
+            ARTIFACT_NAME="${{ matrix.artifact_name }}"
           fi
           
           # Copy binary
-          cp "target/${{ matrix.target }}/release/${BINARY_NAME}" "artifacts/${ARTIFACT_NAME}"
+          cp "target/${{ matrix.rust_target }}/release/${BINARY_NAME}" "artifacts/${ARTIFACT_NAME}"
           
-          # Create archives
+          # Create appropriate archives based on platform
           cd artifacts
-          tar -czf "${ARTIFACT_NAME}.tar.gz" "${ARTIFACT_NAME}"
-          zip "${ARTIFACT_NAME}.zip" "${ARTIFACT_NAME}"
+          if [[ "${{ matrix.rust_target }}" == *"windows"* ]]; then
+            # Windows: create ZIP only
+            zip "${{ matrix.artifact_name }}.zip" "${ARTIFACT_NAME}"
+          else
+            # Linux: create TAR.GZ only
+            tar -czf "${{ matrix.artifact_name }}.tar.gz" "${ARTIFACT_NAME}"
+          fi
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: golem-gpu-imager-${{ matrix.target }}
+          name: golem-gpu-imager-${{ matrix.rust_target }}
           path: artifacts/*
           compression-level: 0  # Files are already compressed
 
+  build-msi:
+    name: Build Windows MSI
+    needs: build
+    runs-on: ubuntu-latest
+    if: always() && (needs.build.result == 'success')
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Download Windows build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: golem-gpu-imager-x86_64-pc-windows-gnu
+          path: artifacts
+
+      - name: Prepare MSI build
+        run: |
+          # Extract version from Cargo.toml
+          VERSION=$(grep '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "Building MSI for version: $VERSION"
+          
+          # Debug: List downloaded artifacts
+          echo "Downloaded artifacts:"
+          find artifacts -type f -ls
+          
+          # Create target directory structure expected by installer
+          mkdir -p target/x86_64-pc-windows-gnu/release
+          cp artifacts/golem-gpu-imager-windows.exe target/x86_64-pc-windows-gnu/release/golem-gpu-imager.exe
+          
+          # Verify the binary was copied
+          echo "Target binary:"
+          ls -la target/x86_64-pc-windows-gnu/release/
+          
+          # Update version in installer.wxs
+          sed -i "s/Version=\"[0-9]*\.[0-9]*\.[0-9]*\.[0-9]*\"/Version=\"$VERSION.0\"/" installers/windows/installer.wxs
+          
+          # Show updated installer.wxs version
+          echo "Updated installer.wxs version:"
+          grep 'Version=' installers/windows/installer.wxs
+
+      - name: Build MSI with Docker
+        run: |
+          # Create output directory
+          mkdir -p dist
+          
+          # Verify installer.wxs exists and is readable
+          echo "Installer WXS file:"
+          ls -la installers/windows/installer.wxs
+          
+          # Build MSI using Docker with WiX Toolset v4
+          MSI_NAME="GolemGpuImager-${{ env.VERSION }}-x64.msi"
+          echo "Building MSI: $MSI_NAME"
+          
+          # Set proper permissions for Docker
+          chmod -R 777 .
+          chmod -R 777 dist
+          
+          # Build with more verbose output and error handling
+          docker run --rm \
+            -v "$(pwd):/work" \
+            -w /work \
+            jkroepke/wixtoolset:latest \
+            build installers/windows/installer.wxs -arch x64 -out "$MSI_NAME" -v
+          
+          # Move MSI to dist directory and fix permissions
+          mv "$MSI_NAME" "dist/$MSI_NAME"
+          sudo chown -R runner:docker dist/
+          
+          # Verify MSI was created
+          echo "Generated MSI:"
+          ls -la dist/
+          
+          echo "MSI_NAME=$MSI_NAME" >> $GITHUB_ENV
+
+      - name: Upload MSI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: golem-gpu-imager-msi
+          path: dist/${{ env.MSI_NAME }}
+          compression-level: 0
+
   release:
     name: Create Release
-    needs: build
+    needs: [build, build-msi]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     
@@ -161,12 +258,10 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            golem-gpu-imager-x86_64-unknown-linux-gnu/golem-gpu-imager-linux
-            golem-gpu-imager-x86_64-unknown-linux-gnu/golem-gpu-imager-linux.tar.gz
-            golem-gpu-imager-x86_64-unknown-linux-gnu/golem-gpu-imager-linux.zip
-            golem-gpu-imager-x86_64-pc-windows-gnu/golem-gpu-imager-windows.exe
-            golem-gpu-imager-x86_64-pc-windows-gnu/golem-gpu-imager-windows.tar.gz
+            golem-gpu-imager-x86_64-unknown-linux-gnu/golem-gpu-imager-linux-x64.tar.gz
+            golem-gpu-imager-aarch64-unknown-linux-gnu/golem-gpu-imager-linux-arm64.tar.gz
             golem-gpu-imager-x86_64-pc-windows-gnu/golem-gpu-imager-windows.zip
+            golem-gpu-imager-msi/*.msi
           generate_release_notes: true
           draft: false
           prerelease: false

@@ -1,11 +1,11 @@
 use crate::disk::{Disk, WriteProgress};
 use crate::models::{
-    AppMode, CancelToken, ConfigurationPreset, EditState, FlashState, Message, NetworkType,
-    OsImage, PaymentNetwork, StorageDevice,
+    AppMode, CancelToken, ConfigurationPreset, EditState, FlashState, Message,
+    NetworkType, OsImage, PaymentNetwork, StorageDevice,
 };
 use crate::ui;
-use crate::utils::PresetManager;
 use crate::utils::repo::{DownloadStatus, ImageRepo, Version};
+use crate::utils::{PresetManager, image_metadata::MetadataManager};
 // Removed unused import: use anyhow::anyhow;
 // Removed unused import: futures_util::TryStreamExt
 use iced::{Alignment, Element, Length, Task};
@@ -33,6 +33,7 @@ pub struct GolemGpuImager {
     pub cancel_token: CancelToken, // For canceling operations
     pub elevation_status: String,  // Current elevation status message
     pub is_elevated: bool,         // Whether the process is currently elevated
+    pub metadata_manager: Option<MetadataManager>, // For managing image metadata
 }
 
 impl GolemGpuImager {
@@ -81,6 +82,18 @@ impl GolemGpuImager {
         let elevation_status = crate::utils::get_elevation_status();
         let is_elevated = crate::utils::is_elevated();
 
+        // Initialize the MetadataManager
+        let metadata_manager = match MetadataManager::new() {
+            Ok(manager) => {
+                info!("Successfully initialized metadata manager");
+                Some(manager)
+            }
+            Err(e) => {
+                error!("Failed to initialize metadata manager: {}", e);
+                None
+            }
+        };
+
         // Don't set error messages for elevation issues here
         // The start screen will handle elevation prompts directly
         let error_message = None;
@@ -106,6 +119,133 @@ impl GolemGpuImager {
             cancel_token: CancelToken::new(),
             elevation_status,
             is_elevated,
+            metadata_manager,
+        }
+    }
+
+    /// Get the currently selected OS image, checking both legacy and grouped selections
+    fn get_selected_os_image(&self) -> Option<&OsImage> {
+        // First try legacy selection
+        if let Some(legacy_idx) = self.selected_os_image {
+            return self.os_images.get(legacy_idx);
+        }
+
+        // Then try grouped selection
+        if let Some((group_idx, version_idx)) = self.selected_os_image_group {
+            if let Some(group) = self.os_image_groups.get(group_idx) {
+                if version_idx == 0 {
+                    return Some(&group.latest_version);
+                } else if let Some(older_image) = group.older_versions.get(version_idx - 1) {
+                    return Some(older_image);
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Get the currently selected OS image index in the legacy os_images list
+    fn get_selected_os_image_index(&self) -> Option<usize> {
+        // First try legacy selection
+        if let Some(legacy_idx) = self.selected_os_image {
+            return Some(legacy_idx);
+        }
+
+        // Then try grouped selection and find corresponding legacy index
+        if let Some((group_idx, version_idx)) = self.selected_os_image_group {
+            if let Some(group) = self.os_image_groups.get(group_idx) {
+                let selected_image = if version_idx == 0 {
+                    &group.latest_version
+                } else if let Some(older_image) = group.older_versions.get(version_idx - 1) {
+                    older_image
+                } else {
+                    return None;
+                };
+
+                // Find corresponding index in legacy os_images
+                return self.os_images.iter().position(|img| {
+                    img.name == selected_image.name && img.version == selected_image.version
+                });
+            }
+        }
+
+        None
+    }
+
+    /// Start metadata analysis for an existing downloaded image
+    fn start_metadata_analysis_for_existing_image(&mut self, image: OsImage) -> Task<Message> {
+        info!("Starting metadata analysis for existing image: {}", image.version);
+
+        // Set state to processing with metadata phase (skip download)
+        self.mode = AppMode::FlashNewImage(FlashState::ProcessingImage {
+            version_id: image.version.clone(),
+            download_progress: 1.0, // Download already complete
+            metadata_progress: 0.0,
+            overall_progress: 0.5,  // Start at 50% (download phase done)
+            channel: image.name.clone(),
+            created_date: image.created.clone(),
+            phase: crate::utils::streaming_hash_calculator::ProcessingPhase::Metadata,
+            uncompressed_size: None,
+        });
+
+        // Add to downloads in progress for UI tracking
+        self.downloads_in_progress
+            .push((image.version.clone(), 0.5)); // Start at 50% progress
+
+        // Get the image path for analysis
+        if let Some(image_path) = image.path {
+            let version_id = image.version.clone();
+            let cancel_token = self.cancel_token.clone();
+
+            // Start metadata calculation task using the metadata calculator with progress
+            let version_id_1 = version_id.clone();
+            let version_id_2 = version_id.clone();
+            
+            Task::sip(
+                {
+                    use crate::utils::metadata_calculator::calculate_image_metadata;
+                    use std::path::Path;
+
+                    let path = Path::new(&image_path);
+                    let compressed_hash = image.sha256.clone();
+                    
+                    calculate_image_metadata(path, compressed_hash, cancel_token)
+                },
+                move |progress| {
+                    // Convert MetadataProgress to ProcessingProgress for consistency
+                    use crate::utils::streaming_hash_calculator::ProcessingProgress;
+                    
+                    let processing_progress = match progress {
+                        crate::utils::metadata_calculator::MetadataProgress::Start => {
+                            ProcessingProgress::new_metadata(0.0, None, None, None)
+                        },
+                        crate::utils::metadata_calculator::MetadataProgress::Processing { progress, .. } => {
+                            ProcessingProgress::new_metadata(progress, None, None, None)
+                        },
+                        crate::utils::metadata_calculator::MetadataProgress::Completed { metadata } => {
+                            return Message::ProcessingCompleted(version_id_2.clone(), metadata);
+                        },
+                        crate::utils::metadata_calculator::MetadataProgress::Failed { error } => {
+                            return Message::ProcessingFailed(version_id_2.clone(), error);
+                        },
+                    };
+                    
+                    Message::ProcessingProgress(version_id_2.clone(), processing_progress)
+                },
+                move |result| match result {
+                    Ok(_) => {
+                        // The completion should have been handled by the progress handler
+                        Message::BackToSelectOsImage
+                    },
+                    Err(e) => Message::ProcessingFailed(version_id_1, format!("Metadata analysis failed: {}", e)),
+                }
+            )
+        } else {
+            // This should not happen for downloaded images, but handle gracefully
+            Task::done(Message::ProcessingFailed(
+                image.version.clone(),
+                "Image path not found for downloaded image".to_string(),
+            ))
         }
     }
 
@@ -113,10 +253,20 @@ impl GolemGpuImager {
         self.is_loading_repo = true;
 
         let _repo = Arc::clone(&self.image_repo);
+        let metadata_manager = self.metadata_manager.clone();
 
         Task::perform(
             async move {
                 let mut repo_instance = ImageRepo::new(); // Create a mutable instance to fetch data
+
+                // Helper function to load metadata for downloaded images
+                let load_metadata_for_image = |sha256: &str| -> Option<crate::models::ImageMetadata> {
+                    if let Some(ref manager) = metadata_manager {
+                        manager.load_metadata(sha256).ok().flatten()
+                    } else {
+                        None
+                    }
+                };
 
                 // First fetch the metadata
                 let metadata_result = repo_instance.fetch_metadata().await;
@@ -165,15 +315,17 @@ impl GolemGpuImager {
                                 created: newest.created.clone(),
                                 sha256: newest.sha256.clone(),
                                 is_latest: true,
+                                metadata: if downloaded { load_metadata_for_image(&newest.sha256) } else { None },
                             });
 
                             // New grouped format: include all versions
+                            let latest_downloaded = repo_instance.is_image_downloaded(newest);
                             let latest_os_image = OsImage {
                                 name: channel.name.clone(),
                                 version: newest.id.clone(),
                                 description: description.to_string(),
-                                downloaded: repo_instance.is_image_downloaded(newest),
-                                path: if repo_instance.is_image_downloaded(newest) {
+                                downloaded: latest_downloaded,
+                                path: if latest_downloaded {
                                     Some(
                                         repo_instance
                                             .get_image_path(newest)
@@ -186,6 +338,7 @@ impl GolemGpuImager {
                                 created: newest.created.clone(),
                                 sha256: newest.sha256.clone(),
                                 is_latest: true,
+                                metadata: if latest_downloaded { load_metadata_for_image(&newest.sha256) } else { None },
                             };
 
                             // Create older versions list
@@ -214,6 +367,7 @@ impl GolemGpuImager {
                                         created: version.created.clone(),
                                         sha256: version.sha256.clone(),
                                         is_latest: false,
+                                        metadata: if downloaded { load_metadata_for_image(&version.sha256) } else { None },
                                     }
                                 })
                                 .collect();
@@ -253,6 +407,7 @@ impl GolemGpuImager {
                 self.mode = AppMode::FlashNewImage(FlashState::SelectOsImage);
                 self.selected_os_image = None;
                 self.selected_device = None;
+                self.error_message = None; // Clear any previous error messages
 
                 // Load repository data if we haven't yet
                 if self.os_images.is_empty() && !self.is_loading_repo {
@@ -296,17 +451,35 @@ impl GolemGpuImager {
             }
             Message::SelectOsImageFromGroup(group_index, version_index) => {
                 self.selected_os_image_group = Some((group_index, version_index));
+                debug!("Selected image from group: group_index={}, version_index={}", group_index, version_index);
+                
                 // Also set legacy selection for backward compatibility
                 if let Some(group) = self.os_image_groups.get(group_index) {
-                    if version_index == 0 {
-                        // Latest version - find corresponding index in legacy os_images
-                        if let Some(legacy_index) = self.os_images.iter().position(|img| {
-                            img.name == group.channel_name
-                                && img.version == group.latest_version.version
-                        }) {
-                            self.selected_os_image = Some(legacy_index);
-                        }
+                    let selected_image = if version_index == 0 {
+                        &group.latest_version
+                    } else if let Some(older_image) = group.older_versions.get(version_index - 1) {
+                        older_image
+                    } else {
+                        error!("Invalid version_index {} for group {}", version_index, group_index);
+                        return Task::none();
+                    };
+
+                    debug!("Looking for legacy index for image: name={}, version={}", selected_image.name, selected_image.version);
+
+                    // Find corresponding index in legacy os_images for the selected version
+                    if let Some(legacy_index) = self.os_images.iter().position(|img| {
+                        img.name == group.channel_name && img.version == selected_image.version
+                    }) {
+                        self.selected_os_image = Some(legacy_index);
+                        debug!("Found legacy index {} for selected image", legacy_index);
+                    } else {
+                        warn!("Could not find legacy index for selected image: name={}, version={}", selected_image.name, selected_image.version);
+                        debug!("Available legacy images: {:?}", self.os_images.iter().map(|img| (&img.name, &img.version)).collect::<Vec<_>>());
+                        // Clear legacy selection since we couldn't find a match
+                        self.selected_os_image = None;
                     }
+                } else {
+                    error!("Invalid group_index {} for image group selection", group_index);
                 }
             }
             Message::ToggleVersionHistory(group_index) => {
@@ -326,12 +499,16 @@ impl GolemGpuImager {
 
                     self.selected_os_image_group = Some((group_index, version_index));
 
-                    // Set state to downloading image with progress display
-                    self.mode = AppMode::FlashNewImage(FlashState::DownloadingImage {
+                    // Set state to processing image with unified progress display
+                    self.mode = AppMode::FlashNewImage(FlashState::ProcessingImage {
                         version_id: image.version.clone(),
-                        progress: 0.0,
+                        download_progress: 0.0,
+                        metadata_progress: 0.0,
+                        overall_progress: 0.0,
                         channel: image.name.clone(),
                         created_date: image.created.clone(),
+                        phase: crate::utils::streaming_hash_calculator::ProcessingPhase::Download,
+                        uncompressed_size: None,
                     });
 
                     // Add to downloads in progress
@@ -355,28 +532,28 @@ impl GolemGpuImager {
                     let version_id_1 = version_id.clone();
                     let version_id_2 = version_id.clone();
                     return Task::sip(
-                        repo.start_download(&channel_name, version),
+                        repo.start_download(&channel_name, version, self.cancel_token.clone()),
                         move |status| match status {
-                            DownloadStatus::NotStarted { .. } => {
-                                Message::DownloadProgress(version_id_2.clone(), 0f32)
+                            DownloadStatus::NotStarted => {
+                                Message::ProcessingProgress(version_id_2.clone(), 
+                                    crate::utils::streaming_hash_calculator::ProcessingProgress::new_download(0, 0))
                             }
-                            DownloadStatus::InProgress {
-                                progress,
-                                bytes_downloaded,
-                                total_bytes,
-                            } => Message::DownloadProgress(version_id_2.clone(), progress),
-                            DownloadStatus::Completed { path } => {
-                                Message::DownloadCompleted(version_id_2.clone())
+                            DownloadStatus::Processing(progress) => {
+                                Message::ProcessingProgress(version_id_2.clone(), progress)
+                            }
+                            DownloadStatus::Completed { metadata, .. } => {
+                                Message::ProcessingCompleted(version_id_2.clone(), metadata)
                             }
                             DownloadStatus::Failed { error } => {
-                                Message::DownloadFailed(version_id_2.clone(), error)
+                                Message::ProcessingFailed(version_id_2.clone(), error)
                             }
                         },
                         move |done| {
-                            if let Err(_e) = done {
-                                Message::DownloadFailed(version_id_1, "Download failed".to_string())
+                            if let Err(e) = done {
+                                Message::ProcessingFailed(version_id_1, e.to_string())
                             } else {
-                                Message::DownloadCompleted(version_id_1)
+                                // This shouldn't happen in the new flow, but handle gracefully
+                                Message::BackToSelectOsImage
                             }
                         },
                     );
@@ -386,12 +563,16 @@ impl GolemGpuImager {
                 if let Some(image) = self.os_images.get(index) {
                     self.selected_os_image = Some(index);
 
-                    // Set state to downloading image with progress display
-                    self.mode = AppMode::FlashNewImage(FlashState::DownloadingImage {
+                    // Set state to processing image with unified progress display
+                    self.mode = AppMode::FlashNewImage(FlashState::ProcessingImage {
                         version_id: image.version.clone(),
-                        progress: 0.0,
+                        download_progress: 0.0,
+                        metadata_progress: 0.0,
+                        overall_progress: 0.0,
                         channel: image.name.clone(),
                         created_date: image.created.clone(),
+                        phase: crate::utils::streaming_hash_calculator::ProcessingPhase::Download,
+                        uncompressed_size: None,
                     });
 
                     // Add to downloads in progress
@@ -415,45 +596,75 @@ impl GolemGpuImager {
                     let version_id_1 = version_id.clone();
                     let version_id_2 = version_id.clone();
                     return Task::sip(
-                        repo.start_download(&channel_name, version),
+                        repo.start_download(&channel_name, version, self.cancel_token.clone()),
                         move |status| match status {
-                            DownloadStatus::NotStarted { .. } => {
-                                Message::DownloadProgress(version_id_2.clone(), 0f32)
+                            DownloadStatus::NotStarted => {
+                                Message::ProcessingProgress(version_id_2.clone(), 
+                                    crate::utils::streaming_hash_calculator::ProcessingProgress::new_download(0, 0))
                             }
-                            DownloadStatus::InProgress {
-                                progress,
-                                bytes_downloaded,
-                                total_bytes,
-                            } => Message::DownloadProgress(version_id_2.clone(), progress),
-                            DownloadStatus::Completed { path } => {
-                                Message::DownloadCompleted(version_id_2.clone())
+                            DownloadStatus::Processing(progress) => {
+                                Message::ProcessingProgress(version_id_2.clone(), progress)
+                            }
+                            DownloadStatus::Completed { metadata, .. } => {
+                                Message::ProcessingCompleted(version_id_2.clone(), metadata)
                             }
                             DownloadStatus::Failed { error } => {
-                                Message::DownloadFailed(version_id_2.clone(), error)
+                                Message::ProcessingFailed(version_id_2.clone(), error)
                             }
                         },
                         move |done| {
                             if let Err(e) = done {
-                                Message::DownloadFailed(version_id_1, "Download failed".to_string())
+                                Message::ProcessingFailed(version_id_1, e.to_string())
                             } else {
-                                Message::DownloadCompleted(version_id_1)
+                                // This shouldn't happen in the new flow, but handle gracefully
+                                Message::BackToSelectOsImage
                             }
                         },
                     );
                 }
             }
-            Message::DownloadProgress(version_id, progress) => {
-                // Update progress in downloads list
+            Message::AnalyzeOsImage(index) => {
+                if let Some(image) = self.os_images.get(index) {
+                    if image.downloaded && image.metadata.is_none() {
+                        self.selected_os_image = Some(index);
+                        return self.start_metadata_analysis_for_existing_image(image.clone());
+                    }
+                }
+            }
+            Message::AnalyzeOsImageFromGroup(group_index, version_index) => {
+                if let Some(group) = self.os_image_groups.get(group_index) {
+                    let image = if version_index == 0 {
+                        &group.latest_version
+                    } else if let Some(older_image) = group.older_versions.get(version_index - 1) {
+                        older_image
+                    } else {
+                        return Task::none();
+                    };
+
+                    if image.downloaded && image.metadata.is_none() {
+                        self.selected_os_image_group = Some((group_index, version_index));
+                        // Also try to set legacy selection for backward compatibility
+                        if let Some(legacy_index) = self.os_images.iter().position(|img| {
+                            img.name == image.name && img.version == image.version
+                        }) {
+                            self.selected_os_image = Some(legacy_index);
+                        }
+                        return self.start_metadata_analysis_for_existing_image(image.clone());
+                    }
+                }
+            }
+            Message::ProcessingProgress(version_id, progress) => {
+                // Update progress in downloads list  
                 if let Some(index) = self
                     .downloads_in_progress
                     .iter()
                     .position(|(id, _)| id == &version_id)
                 {
-                    self.downloads_in_progress[index].1 = progress;
+                    self.downloads_in_progress[index].1 = progress.overall_progress;
                 }
 
-                // Update UI if we're in downloading state with this version
-                if let AppMode::FlashNewImage(FlashState::DownloadingImage {
+                // Update UI if we're in processing state with this version
+                if let AppMode::FlashNewImage(FlashState::ProcessingImage {
                     version_id: current_id,
                     channel,
                     created_date,
@@ -461,94 +672,87 @@ impl GolemGpuImager {
                 }) = &self.mode
                 {
                     if current_id == &version_id {
-                        self.mode = AppMode::FlashNewImage(FlashState::DownloadingImage {
+                        self.mode = AppMode::FlashNewImage(FlashState::ProcessingImage {
                             version_id: version_id.clone(),
-                            progress,
+                            download_progress: progress.download_progress,
+                            metadata_progress: progress.metadata_progress,
+                            overall_progress: progress.overall_progress,
                             channel: channel.clone(),
                             created_date: created_date.clone(),
+                            phase: progress.phase,
+                            uncompressed_size: progress.uncompressed_size,
                         });
                     }
                 }
             }
-            Message::DownloadCompleted(version_id) => {
+            Message::ProcessingCompleted(version_id, metadata) => {
+                info!("Image processing completed for: {}", version_id);
+
                 // Remove from downloads in progress
                 self.downloads_in_progress
                     .retain(|(id, _)| id != &version_id);
 
-                // Mark the OS image as downloaded
-                if let Some(index) = self
+                // Update image with completed status and metadata
+                if let Some(image) = self
                     .os_images
-                    .iter()
-                    .position(|img| img.version == version_id)
+                    .iter_mut()
+                    .find(|img| img.version == version_id)
                 {
-                    if let Some(image) = self.os_images.get_mut(index) {
-                        image.downloaded = true;
+                    image.downloaded = true;
+                    image.metadata = Some(metadata.clone());
 
-                        // Get the file path
-                        let repo_version = Version {
-                            id: image.version.clone(),
-                            path: format!("golem-gpu-live-{}-{}.img.xz", image.name, image.version),
-                            sha256: image.sha256.clone(),
-                            created: image.created.clone(),
-                        };
-
-                        let repo = ImageRepo::new(); // Create temporary instance
-                        let path = repo.get_image_path(&repo_version);
-                        image.path = Some(path.to_string_lossy().to_string());
-                    }
+                    // Set the image path
+                    let repo_version = Version {
+                        id: image.version.clone(),
+                        path: format!("golem-gpu-live-{}-{}.img.xz", image.name, image.version),
+                        sha256: image.sha256.clone(),
+                        created: image.created.clone(),
+                    };
+                    let repo = ImageRepo::new();
+                    let path = repo.get_image_path(&repo_version);
+                    image.path = Some(path.to_string_lossy().to_string());
                 }
 
-                // Refresh the list of available storage devices
-                info!("Refreshing available storage devices");
-                match rs_drivelist::drive_list() {
-                    Ok(devices) => {
-                        // Filter to only include removable, non-virtual devices
-                        self.storage_devices = devices
-                            .into_iter()
-                            .filter(|d| d.isRemovable && !d.isVirtual)
-                            .map(|d| StorageDevice {
-                                name: d.description,
-                                path: d.device,
-                                size: format!("{:.2} GB", d.size as f64 / 1000.0 / 1000.0 / 1000.0),
-                            })
-                            .collect();
-
-                        debug!("Found {} available devices", self.storage_devices.len());
-
-                        // Clear any previous device selection
-                        self.selected_device = None;
+                // Update image groups if applicable
+                for group in &mut self.os_image_groups {
+                    if group.latest_version.version == version_id {
+                        group.latest_version.downloaded = true;
+                        group.latest_version.metadata = Some(metadata.clone());
                     }
-                    Err(e) => {
-                        error!("Failed to get drive list: {}", e);
-                        // In case of error, provide an empty list
-                        self.storage_devices = vec![];
-                    }
-                }
-
-                // ALWAYS go to the device selection screen after this message
-                // Either after a download completes or when clicking next from image selection
-                debug!("Moving to device selection screen");
-                self.mode = AppMode::FlashNewImage(FlashState::SelectTargetDevice);
-            }
-            Message::DownloadFailed(version_id, error) => {
-                // Remove from downloads in progress
-                self.downloads_in_progress
-                    .retain(|(id, _)| id != &version_id);
-
-                // Update UI state if needed
-                if let Some(selected_idx) = self.selected_os_image {
-                    if let Some(image) = self.os_images.get(selected_idx) {
-                        if image.version == version_id {
-                            if let AppMode::FlashNewImage(_) = &mut self.mode {
-                                // Return to selection screen
-                                self.mode = AppMode::FlashNewImage(FlashState::SelectOsImage);
-                            }
+                    for older_version in &mut group.older_versions {
+                        if older_version.version == version_id {
+                            older_version.downloaded = true;
+                            older_version.metadata = Some(metadata.clone());
                         }
                     }
                 }
 
-                // Display error in UI or log it
-                warn!("Download failed for {}: {}", version_id, error);
+                // Ensure the selection state is properly set for the completed image
+                // This helps maintain selection across the processing flow
+                if self.selected_os_image_group.is_some() && self.selected_os_image.is_none() {
+                    // If we have a grouped selection but no legacy selection, try to synchronize
+                    if let Some(legacy_index) = self.get_selected_os_image_index() {
+                        self.selected_os_image = Some(legacy_index);
+                        debug!("Synchronized legacy selection after processing completion: index={}", legacy_index);
+                    }
+                }
+
+                // Refresh storage devices and go to device selection
+                self.refresh_storage_devices();
+                self.mode = AppMode::FlashNewImage(FlashState::SelectTargetDevice);
+            }
+            Message::ProcessingFailed(version_id, error) => {
+                error!("Image processing failed for {}: {}", version_id, error);
+
+                // Remove from downloads in progress
+                self.downloads_in_progress
+                    .retain(|(id, _)| id != &version_id);
+
+                // Store error message for UI display
+                self.error_message = Some(format!("Processing failed for {}: {}", version_id, error));
+
+                // Return to OS image selection screen
+                self.mode = AppMode::FlashNewImage(FlashState::SelectOsImage);
             }
             Message::RepoDataLoaded(os_images) => {
                 self.is_loading_repo = false;
@@ -679,6 +883,11 @@ impl GolemGpuImager {
                         self.selected_preset = None;
                     }
                 }
+            }
+            Message::GotoSelectTargetDevice => {
+                // Refresh storage devices and go to device selection
+                self.refresh_storage_devices();
+                self.mode = AppMode::FlashNewImage(FlashState::SelectTargetDevice);
             }
             Message::SetPaymentNetwork(network) => {
                 // Handle payment network update in flash mode
@@ -848,7 +1057,7 @@ impl GolemGpuImager {
             Message::WriteImage => {
                 // Start the actual writing process based on the configuration
                 // First make sure we have both an image and device selected
-                if self.selected_os_image.is_none() {
+                if self.get_selected_os_image().is_none() {
                     error!("No OS image selected for writing");
                     return Task::none();
                 }
@@ -899,7 +1108,7 @@ impl GolemGpuImager {
                 {
                     // Get the selected OS image and device
                     if let (Some(image_idx), Some(device_idx)) =
-                        (self.selected_os_image, self.selected_device)
+                        (self.get_selected_os_image_index(), self.selected_device)
                     {
                         if let (Some(image), Some(device)) = (
                             self.os_images.get(image_idx),
@@ -910,9 +1119,10 @@ impl GolemGpuImager {
                                 // Start the write process with initial 0% progress for image writing
                                 self.mode = AppMode::FlashNewImage(FlashState::WritingImage(0.0));
 
-                                // Get device path and image path
+                                // Get device path, image path, and metadata
                                 let device_path = device.path.clone();
                                 let image_path_val = image_path.clone();
+                                let image_metadata = image.metadata.clone();
                                 // Create a clone of the cancel token that we can pass to the task
                                 let cancel_token_clone = self.cancel_token.clone();
 
@@ -954,28 +1164,54 @@ impl GolemGpuImager {
                                     // Clone the cancel token again for this specific closure
                                     let task_cancel_token = cancel_token_clone.clone();
 
-                                    let write_task = Task::sip(
-                                        disk.write_image(
-                                            &image_path_val,
-                                            task_cancel_token,
-                                            config.clone(),
-                                        ),
+                                    let write_task = match &image_metadata {
+                                        Some(metadata) => Task::sip(
+                                            disk.write_image(
+                                                &image_path_val,
+                                                metadata.clone(),
+                                                task_cancel_token,
+                                                config.clone(),
+                                            ),
                                         |message| match message {
                                             WriteProgress::Start => {
                                                 Message::WriteImageProgress(0.0)
                                             }
-                                            WriteProgress::Write(total_bytes) => {
-                                                // Calculate progress based on total bytes processed compared to 16GB
-                                                const TOTAL_SIZE: f32 =
-                                                    16.0 * 1024.0 * 1024.0 * 1024.0;
+                                            WriteProgress::ClearingPartitions { progress } => {
+                                                Message::ClearPartitionsProgress(progress)
+                                            }
+                                            WriteProgress::Write {
+                                                total_written,
+                                                total_size,
+                                            } => {
+                                                // Calculate progress based on actual metadata size or fallback to 16GB
+                                                let size_for_calculation = if total_size > 0 {
+                                                    total_size as f32
+                                                } else {
+                                                    16.0 * 1024.0 * 1024.0 * 1024.0 // 16GB fallback
+                                                };
 
                                                 // Calculate progress percentage (0.0-1.0)
-                                                let progress = total_bytes as f32 / TOTAL_SIZE;
+                                                let progress =
+                                                    total_written as f32 / size_for_calculation;
 
                                                 // Clamp to make sure we don't go over 100%
                                                 let clamped_progress = progress.min(1.0);
 
                                                 Message::WriteImageProgress(clamped_progress)
+                                            }
+                                            WriteProgress::Verifying {
+                                                verified_bytes,
+                                                total_size,
+                                            } => {
+                                                // Calculate verification progress (0.0-1.0)
+                                                let progress = if total_size > 0 {
+                                                    verified_bytes as f32 / total_size as f32
+                                                } else {
+                                                    0.0
+                                                };
+
+                                                // Use a separate message for verification progress
+                                                Message::VerificationProgress(progress.min(1.0))
                                             }
                                             WriteProgress::Finish => {
                                                 Message::WriteImageProgress(100.0)
@@ -988,9 +1224,14 @@ impl GolemGpuImager {
                                                 Message::WriteImageCompleted
                                             }
                                             Ok(_) => todo!(),
-                                            Err(e) => Message::WriteImageFailed(e.to_string()),
+                                            Err(e) => Message::WriteImageFailed(format!("{:?}", e)),
                                         },
-                                    );
+                                    ),
+                                    None => {
+                                        // This should never happen in practice, but handle gracefully
+                                        Task::done(Message::WriteImageFailed("Image metadata is required for writing".to_string()))
+                                    }
+                                };
 
                                     write_task
                                 });
@@ -1019,9 +1260,17 @@ impl GolemGpuImager {
 
                     // Update the UI to show cancellation is in progress
                     match &self.mode {
+                        AppMode::FlashNewImage(FlashState::ClearingPartitions(_)) => {
+                            info!("Cancelling partition clearing in progress");
+                            self.mode = AppMode::FlashNewImage(FlashState::ClearingPartitions(1.0));
+                        }
                         AppMode::FlashNewImage(FlashState::WritingImage(_)) => {
                             info!("Cancelling disk image writing in progress");
                             self.mode = AppMode::FlashNewImage(FlashState::WritingImage(1.0));
+                        }
+                        AppMode::FlashNewImage(FlashState::VerifyingImage(_)) => {
+                            info!("Cancelling image verification in progress");
+                            self.mode = AppMode::FlashNewImage(FlashState::VerifyingImage(1.0));
                         }
                         AppMode::FlashNewImage(FlashState::WritingConfig(_)) => {
                             info!("Cancelling configuration writing in progress");
@@ -1031,10 +1280,10 @@ impl GolemGpuImager {
                             info!("Cancelling legacy writing process");
                             self.mode = AppMode::FlashNewImage(FlashState::WritingProcess(1.0));
                         }
-                        AppMode::FlashNewImage(FlashState::DownloadingImage { .. }) => {
-                            // Handle download cancellation
-                            info!("Cancelling image download");
-                            // Cancellation will be handled in the download task
+                        AppMode::FlashNewImage(FlashState::ProcessingImage { .. }) => {
+                            // Handle download/processing cancellation
+                            info!("Cancelling image processing");
+                            // Cancellation will be handled in the processing task
                             self.mode = AppMode::FlashNewImage(FlashState::SelectOsImage);
                         }
                         _ => {
@@ -1048,12 +1297,49 @@ impl GolemGpuImager {
                     self.locked_disk = None;
                 }
             }
+            Message::ClearPartitionsProgress(progress) => {
+                // Update the partition clearing progress in the UI
+                if let AppMode::FlashNewImage(FlashState::ClearingPartitions(_)) = &self.mode {
+                    // Update the UI with the new progress value
+                    debug!("Partition clearing progress: {:.1}%", progress * 100.0);
+                    self.mode = AppMode::FlashNewImage(FlashState::ClearingPartitions(progress));
+                }
+            }
+            Message::ClearPartitionsCompleted => {
+                // Move from clearing partitions to writing image
+                if let AppMode::FlashNewImage(FlashState::ClearingPartitions(_)) = &self.mode {
+                    info!("Partition clearing completed, starting image write");
+                    self.mode = AppMode::FlashNewImage(FlashState::WritingImage(0.0));
+                }
+            }
+            Message::ClearPartitionsFailed(error) => {
+                // Handle partition clearing failure
+                error!("Partition clearing failed: {}", error);
+                let error_msg = format!("Failed to clear disk partitions: {}", error);
+                self.mode = AppMode::FlashNewImage(FlashState::Completion(false));
+                self.error_message = Some(error_msg);
+
+                // Release any disk resources
+                self.locked_disk = None;
+            }
             Message::WriteImageProgress(progress) => {
                 // Update the image writing progress in the UI
                 if let AppMode::FlashNewImage(FlashState::WritingImage(_)) = &self.mode {
                     // Update the UI with the new progress value
                     debug!("Image write progress: {:.1}%", progress * 100.0);
                     self.mode = AppMode::FlashNewImage(FlashState::WritingImage(progress));
+                }
+            }
+            Message::VerificationProgress(progress) => {
+                // Update the verification progress in the UI
+                if let AppMode::FlashNewImage(FlashState::WritingImage(_)) = &self.mode {
+                    // When we receive verification progress, transition to verifying state
+                    debug!("Verification progress: {:.1}%", progress * 100.0);
+                    self.mode = AppMode::FlashNewImage(FlashState::VerifyingImage(progress));
+                } else if let AppMode::FlashNewImage(FlashState::VerifyingImage(_)) = &self.mode {
+                    // Update verification progress
+                    debug!("Verification progress: {:.1}%", progress * 100.0);
+                    self.mode = AppMode::FlashNewImage(FlashState::VerifyingImage(progress));
                 }
             }
             Message::WriteConfigProgress(progress) => {
@@ -1294,7 +1580,8 @@ impl GolemGpuImager {
                     self.mode = AppMode::FlashNewImage(FlashState::SelectTargetDevice);
                 } else {
                     // Set the completion state to failure and log the error
-                    error!("Image write failed: {}", error_msg);
+                    error!("Image write failed: {:?}", error_msg);
+                    self.error_message = Some(error_msg.clone());
                     self.mode = AppMode::FlashNewImage(FlashState::Completion(false));
                 }
 
@@ -1425,11 +1712,13 @@ impl GolemGpuImager {
                 self.mode = AppMode::FlashNewImage(FlashState::SelectOsImage);
                 self.selected_os_image = None;
                 self.selected_device = None;
+                self.error_message = None; // Clear any previous error messages
             }
             Message::Exit => {
                 self.mode = AppMode::StartScreen;
                 self.selected_os_image = None;
                 self.selected_device = None;
+                self.error_message = None; // Clear any previous error messages
             }
             Message::SelectExistingDevice(index) => {
                 self.selected_device = Some(index);
@@ -1901,14 +2190,25 @@ impl GolemGpuImager {
                         ui::view_select_os_image(&self.os_images, self.selected_os_image)
                     }
                 }
-                FlashState::DownloadingImage {
+                FlashState::ProcessingImage {
                     version_id,
-                    progress,
+                    download_progress,
+                    metadata_progress,
+                    overall_progress,
                     channel,
                     created_date,
-                } => {
-                    ui::flash::view_downloading_image(version_id, *progress, channel, created_date)
-                }
+                    phase,
+                    uncompressed_size,
+                } => ui::flash::view_processing_image(
+                    version_id,
+                    *download_progress,
+                    *metadata_progress,
+                    *overall_progress,
+                    channel,
+                    created_date,
+                    phase,
+                    *uncompressed_size,
+                ),
                 FlashState::SelectTargetDevice => ui::flash::view_select_target_device(
                     &self.storage_devices,
                     self.selected_device,
@@ -1930,8 +2230,15 @@ impl GolemGpuImager {
                     &self.new_preset_name,
                     self.show_preset_manager,
                 ),
+                FlashState::ClearingPartitions(progress) => ui::flash::view_writing_process(
+                    *progress,
+                    "Preparing disk (clearing partitions)...",
+                ),
                 FlashState::WritingImage(progress) => {
                     ui::flash::view_writing_process(*progress, "Writing OS image to device...")
+                }
+                FlashState::VerifyingImage(progress) => {
+                    ui::flash::view_writing_process(*progress, "Verifying written data...")
                 }
                 FlashState::WritingConfig(progress) => {
                     ui::flash::view_writing_process(*progress, "Writing configuration to device...")
@@ -1941,7 +2248,10 @@ impl GolemGpuImager {
                     // Redirect to image writing view since it's most likely an image write
                     ui::flash::view_writing_process(0.0, "Writing to device...")
                 }
-                FlashState::Completion(success) => ui::flash::view_flash_completion(*success),
+                FlashState::Completion(success) => {
+                    let error_ref = self.error_message.as_deref();
+                    ui::flash::view_flash_completion(*success, error_ref)
+                },
             },
             AppMode::EditExistingDisk(state) => match state {
                 EditState::SelectDevice => {
@@ -1996,7 +2306,7 @@ impl GolemGpuImager {
     }
 
     fn view_no_images(&self) -> Element<'_, Message> {
-        use iced::widget::{button, column, container, text, row};
+        use iced::widget::{button, column, container, row, text};
 
         let content = column![
             text("No OS images found").size(24),
@@ -2005,12 +2315,17 @@ impl GolemGpuImager {
                 row![crate::ui::icons::refresh(), text("Refresh")]
                     .spacing(5)
                     .align_y(Alignment::Center)
-            ).on_press(Message::RefreshRepoData),
+            )
+            .on_press(Message::RefreshRepoData),
             button(
-                row![crate::ui::icons::navigate_before(), text("Back to Main Menu")]
-                    .spacing(5)
-                    .align_y(Alignment::Center)
-            ).on_press(Message::BackToMainMenu)
+                row![
+                    crate::ui::icons::navigate_before(),
+                    text("Back to Main Menu")
+                ]
+                .spacing(5)
+                .align_y(Alignment::Center)
+            )
+            .on_press(Message::BackToMainMenu)
         ]
         .width(Length::Fill)
         .align_x(Alignment::Center)
@@ -2028,8 +2343,18 @@ impl GolemGpuImager {
     pub fn subscription(&self) -> iced::Subscription<Message> {
         // If we're in any writing mode, periodically send progress updates
         match &self.mode {
+            AppMode::FlashNewImage(FlashState::ClearingPartitions(_)) => {
+                // Create a timer subscription that periodically updates the progress bar for partition clearing
+                iced::time::every(std::time::Duration::from_millis(200))
+                    .map(|_| Message::PollWriteProgress)
+            }
             AppMode::FlashNewImage(FlashState::WritingImage(_)) => {
                 // Create a timer subscription that periodically updates the progress bar for image writing
+                iced::time::every(std::time::Duration::from_millis(200))
+                    .map(|_| Message::PollWriteProgress)
+            }
+            AppMode::FlashNewImage(FlashState::VerifyingImage(_)) => {
+                // Create a timer subscription that periodically updates the progress bar for verification
                 iced::time::every(std::time::Duration::from_millis(200))
                     .map(|_| Message::PollWriteProgress)
             }
@@ -2207,6 +2532,35 @@ impl GolemGpuImager {
                 if let Err(e) = manager.set_default_preset(0) {
                     error!("Failed to set new default preset after deletion: {}", e);
                 }
+            }
+        }
+    }
+
+    /// Helper method to refresh storage devices
+    fn refresh_storage_devices(&mut self) {
+        info!("Refreshing available storage devices");
+        match rs_drivelist::drive_list() {
+            Ok(devices) => {
+                // Filter to only include removable, non-virtual devices
+                self.storage_devices = devices
+                    .into_iter()
+                    .filter(|d| d.isRemovable && !d.isVirtual)
+                    .map(|d| StorageDevice {
+                        name: d.description,
+                        path: d.device,
+                        size: format!("{:.2} GB", d.size as f64 / 1000.0 / 1000.0 / 1000.0),
+                    })
+                    .collect();
+
+                debug!("Found {} available devices", self.storage_devices.len());
+
+                // Clear any previous device selection
+                self.selected_device = None;
+            }
+            Err(e) => {
+                error!("Failed to get drive list: {}", e);
+                // In case of error, provide an empty list
+                self.storage_devices = vec![];
             }
         }
     }

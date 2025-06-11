@@ -1,0 +1,26 @@
+[package]
+name = "golem-partition-lister"
+version = "0.1.6"
+edition = "2024"
+
+[[bin]]
+name = "golem-partition-lister"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.98"
+clap = { version = "4.5.1", features = ["derive"] }
+gpt = "3.1.0"
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter", "registry"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.52.0", features = [
+    "Win32_Foundation", 
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_Ioctl"
+]}
+
+# We need to add golem-gpu-imager as a dependency to access the aligned_disk_io function
+golem-gpu-imager = { path = "../.." }

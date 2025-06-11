@@ -1,20 +1,16 @@
+[workspace]
+members = [
+    ".",
+    "crates/golem-config-reader",
+    "crates/golem-gpt-repair", 
+    "crates/golem-partition-lister"
+]
+
 [package]
 name = "golem-gpu-imager"
 version = "0.1.6"
 edition = "2024"
 build = "build.rs"
-
-[[bin]]
-name = "golem-config-reader"
-path = "src/bin/golem-config-reader.rs"
-
-[[bin]]
-name = "golem-partition-lister"
-path = "src/bin/golem-partition-lister.rs"
-
-[[bin]]
-name = "golem-gpt-repair"
-path = "src/bin/golem-gpt-repair.rs"
 
 [dependencies]
 directories = "6.0.0"
@@ -23,7 +19,7 @@ futures-util = "0.3.30"
 hex = "0.4.3"
 iced = { git = "https://github.com/iced-rs/iced.git", features = ["canvas", "tokio", "svg", "image", "sipper"] }
 rs-drivelist = "0.9.4"
-reqwest = {  version = "0.12.15", features = ["stream", "rustls-tls-webpki-roots", "json"] }
+reqwest = { version = "0.12.15", default-features = false, features = ["stream", "rustls-tls-webpki-roots", "json"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = "0.10"
@@ -41,8 +37,8 @@ tokio-stream = "0.1.17"
 once_cell = "1.19.0"
 xz4rust = "0.2.1"
 regex = "1.10.2"
-clap = { version = "4.5.1", features = ["derive"] }
 crc32fast = "1.3.2"
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 
 [target.'cfg(target_os="linux")'.dependencies]
 udisks2 = "0.3.1"
@@ -81,9 +77,16 @@ codegen-units = 1
 opt-level = 3
 strip = true
 
+[profile.debug-optimized]
+inherits = "release"
+debug-assertions = true
+strip = false
+lto = false
+
 [features]
 default = []
 enterprise = []
+debug = []
 
 [package.metadata.bundle]
 name = "Golem GPU Imager"

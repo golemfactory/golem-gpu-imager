@@ -4,7 +4,7 @@
            Language="1033" 
            Version="0.1.6.0" 
            Manufacturer="Golem Factory" 
-           ProductCode="710FCE6E-94E1-48E1-B880-A7000C3EA326"
+           ProductCode="*"
            UpgradeCode="A8B9C0D1-E2F3-4A5B-6C7D-8E9F0A1B2C3D"
            InstallerVersion="500" 
            Compressed="true"
@@ -12,7 +12,7 @@
     
     <MajorUpgrade 
       AllowDowngrades="false"
-      AllowSameVersionUpgrades="false"
+      AllowSameVersionUpgrades="true"
       DowngradeErrorMessage="A newer version of [ProductName] is already installed."
       Schedule="afterInstallInitialize" />
     

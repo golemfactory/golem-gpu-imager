@@ -4,13 +4,11 @@ use gpt::GptConfig;
 use std::fs::File;
 use std::io;
 use std::io::{Read, Write};
-// use std::io::SeekFrom::Start; // Uncomment if needed
 use std::path::PathBuf;
 
 use gpt::disk::LogicalBlockSize;
 #[cfg(windows)]
 use std::os::windows::fs::OpenOptionsExt;
-// use iced::mouse::Cursor; // Uncomment if needed
 use tracing::{debug, error, info, warn};
 
 // Import Windows-specific aligned I/O implementation
@@ -127,15 +125,6 @@ impl std::fmt::Display for PartitionInfo {
 }
 
 /// Dump raw sectors from a disk for debugging purposes
-///
-/// This function reads and prints the first few sectors of a disk in hex format.
-/// Useful for diagnosing partition table issues.
-///
-/// # Arguments
-/// * `device_path` - Path to the disk device
-///
-/// # Returns
-/// * Result with unit type on success
 fn dump_raw_sectors(device_path: &str) -> Result<()> {
     println!("Dumping raw sectors from device: {}", device_path);
 
@@ -606,15 +595,6 @@ fn dump_raw_sectors(device_path: &str) -> Result<()> {
 }
 
 /// List partitions on Windows using a fallback method
-///
-/// This function uses Windows-specific APIs to read the partition table
-/// when the GPT crate fails.
-///
-/// # Arguments
-/// * `device_path` - Path to the disk device
-///
-/// # Returns
-/// * Result with unit type on success
 #[cfg(windows)]
 fn list_partitions_windows_fallback(_device_path: &str) -> Result<()> {
     println!("Windows fallback method not fully implemented yet.");
@@ -631,15 +611,6 @@ fn list_partitions_windows_fallback(_device_path: &str) -> Result<()> {
 }
 
 /// List partitions on Linux using a fallback method
-///
-/// This function uses Linux-specific tools to read the partition table
-/// when the GPT crate fails.
-///
-/// # Arguments
-/// * `device_path` - Path to the disk device
-///
-/// # Returns
-/// * Result with unit type on success
 #[cfg(unix)]
 fn list_partitions_linux_fallback(device_path: &str) -> Result<()> {
     use std::process::Command;
@@ -685,15 +656,6 @@ fn list_partitions_linux_fallback(device_path: &str) -> Result<()> {
 }
 
 /// List partitions on a disk
-///
-/// This function opens a disk and lists all GPT partitions using the gpt crate.
-///
-/// # Arguments
-/// * `device_path` - Path to the disk device
-/// * `verbose` - Whether to include detailed information
-///
-/// # Returns
-/// * A vector of PartitionInfo structs
 fn list_partitions(device_path: &str, verbose: bool) -> Result<Vec<PartitionInfo>> {
     // Print access information
     println!("Attempting to access device: {}", device_path);
@@ -750,17 +712,6 @@ fn list_partitions(device_path: &str, verbose: bool) -> Result<Vec<PartitionInfo
     } else {
         GptConfig::new().writable(false)
     };
-
-    //let mut data = vec![0u8; 16382464*2];
-    //file.seek(Start(0))?;
-    //file.read_exact(&mut data)?;
-
-    // MyDisk implementation removed - now we directly use:
-    // - aligned_disk_io() on Windows
-    // - standard File on non-Windows platforms
-    //
-    // This simplifies the code and avoids cross-compilation issues with
-    // traits like AsRawHandle that vary between platforms
 
     // Create disk wrapper based on platform
     #[allow(unused_mut)]

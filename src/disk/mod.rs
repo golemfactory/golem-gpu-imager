@@ -3,10 +3,12 @@
 // This module provides platform-independent disk access with platform-specific
 // implementations where necessary. Common operations share implementation code.
 
+use std::cmp;
 use anyhow::{Context, Result, anyhow};
 use crc32fast::Hasher;
 use gpt::GptConfig;
 use iced::task::{self, Sipper};
+use sha2::Digest;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
 use tracing::{debug, error, info, warn};
@@ -302,6 +304,7 @@ impl Disk {
         let mut start_offset = 0u64;
         let mut partition_size = 0u64;
         let mut found = false;
+        let mut discovered_partitions = Vec::new();
 
         for i in 0..num_partition_entries {
             let entry_offset = (i as usize) * (partition_entry_size as usize);
@@ -311,33 +314,84 @@ impl Disk {
 
             // Extract partition GUID (bytes 16-31 of partition entry)
             let partition_guid = &partition_table[entry_offset + 16..entry_offset + 32];
+            
+            // Skip empty partition entries (all zeros)
+            if partition_guid.iter().all(|&b| b == 0) {
+                continue;
+            }
+
+            // Convert partition GUID to UUID string for logging
+            // GPT uses mixed-endian format: first 8 bytes need byte-swapping, last 8 bytes unchanged
+            let mut guid_bytes = [0u8; 16];
+            guid_bytes.copy_from_slice(partition_guid);
+            
+            // Apply UEFI GUID mixed-endian conversion:
+            // - Bytes 0-3: little-endian (swap)
+            // - Bytes 4-5: little-endian (swap) 
+            // - Bytes 6-7: little-endian (swap)
+            // - Bytes 8-15: big-endian (unchanged)
+            guid_bytes[0..4].reverse();   // First 4 bytes
+            guid_bytes[4..6].reverse();   // Next 2 bytes  
+            guid_bytes[6..8].reverse();   // Next 2 bytes
+            // Last 8 bytes remain unchanged
+            
+            let partition_uuid = Uuid::from_bytes(guid_bytes);
+            
+            // Extract partition type GUID (bytes 0-15 of partition entry)  
+            let type_guid = &partition_table[entry_offset..entry_offset + 16];
+            let mut type_bytes = [0u8; 16];
+            type_bytes.copy_from_slice(type_guid);
+            
+            // Apply same UEFI GUID conversion for type UUID
+            type_bytes[0..4].reverse();   // First 4 bytes
+            type_bytes[4..6].reverse();   // Next 2 bytes  
+            type_bytes[6..8].reverse();   // Next 2 bytes
+            // Last 8 bytes remain unchanged
+            
+            let type_uuid = Uuid::from_bytes(type_bytes);
+            
+            // Extract LBA range for size calculation  
+            let first_lba = u64::from_le_bytes([
+                partition_table[entry_offset + 32],
+                partition_table[entry_offset + 33],
+                partition_table[entry_offset + 34],
+                partition_table[entry_offset + 35],
+                partition_table[entry_offset + 36],
+                partition_table[entry_offset + 37],
+                partition_table[entry_offset + 38],
+                partition_table[entry_offset + 39],
+            ]);
+            let last_lba = u64::from_le_bytes([
+                partition_table[entry_offset + 40],
+                partition_table[entry_offset + 41],
+                partition_table[entry_offset + 42],
+                partition_table[entry_offset + 43],
+                partition_table[entry_offset + 44],
+                partition_table[entry_offset + 45],
+                partition_table[entry_offset + 46],
+                partition_table[entry_offset + 47],
+            ]);
+            let part_size = (last_lba - first_lba + 1) * LOGICAL_SECTOR_SIZE;
+            
+            // Store discovered partition info for logging
+            discovered_partitions.push(format!(
+                "Partition {}: UUID={}, Type={}, Size={}MB", 
+                i, partition_uuid, type_uuid, part_size / (1024 * 1024)
+            ));
 
             // Convert target UUID to byte array for comparison
             let target_bytes = target_uuid.as_bytes();
 
-            if partition_guid == target_bytes {
-                // Found our partition! Extract LBA range (bytes 32-47)
-                let first_lba = u64::from_le_bytes([
-                    partition_table[entry_offset + 32],
-                    partition_table[entry_offset + 33],
-                    partition_table[entry_offset + 34],
-                    partition_table[entry_offset + 35],
-                    partition_table[entry_offset + 36],
-                    partition_table[entry_offset + 37],
-                    partition_table[entry_offset + 38],
-                    partition_table[entry_offset + 39],
-                ]);
-                let last_lba = u64::from_le_bytes([
-                    partition_table[entry_offset + 40],
-                    partition_table[entry_offset + 41],
-                    partition_table[entry_offset + 42],
-                    partition_table[entry_offset + 43],
-                    partition_table[entry_offset + 44],
-                    partition_table[entry_offset + 45],
-                    partition_table[entry_offset + 46],
-                    partition_table[entry_offset + 47],
-                ]);
+            // Apply same UEFI GUID conversion to partition_guid for comparison
+            let mut comparison_guid_bytes = [0u8; 16];
+            comparison_guid_bytes.copy_from_slice(partition_guid);
+            comparison_guid_bytes[0..4].reverse();   // First 4 bytes
+            comparison_guid_bytes[4..6].reverse();   // Next 2 bytes  
+            comparison_guid_bytes[6..8].reverse();   // Next 2 bytes
+            // Last 8 bytes remain unchanged
 
+            if comparison_guid_bytes == *target_bytes {
+                // Found our partition! Use already extracted LBA values
                 start_offset = first_lba * LOGICAL_SECTOR_SIZE;
                 partition_size = (last_lba - first_lba + 1) * LOGICAL_SECTOR_SIZE;
                 found = true;
@@ -350,10 +404,26 @@ impl Disk {
             }
         }
 
+        // Log all discovered partitions for debugging
+        info!("Discovered {} partitions in GPT:", discovered_partitions.len());
+        for partition_info in &discovered_partitions {
+            info!("  {}", partition_info);
+        }
+
         if !found {
+            error!("Configuration partition {} not found", CONFIG_PARTITION_UUID);
+            error!("Available partitions:");
+            for partition_info in &discovered_partitions {
+                error!("  {}", partition_info);
+            }
             return Err(anyhow!(
-                "Configuration partition {} not found",
-                CONFIG_PARTITION_UUID
+                "Configuration partition {} not found. Available partitions: {}",
+                CONFIG_PARTITION_UUID,
+                if discovered_partitions.is_empty() { 
+                    "None".to_string() 
+                } else { 
+                    discovered_partitions.join(", ") 
+                }
             ));
         }
 
@@ -461,6 +531,7 @@ impl Disk {
     ///
     /// # Arguments
     /// * `image_path` - Path to the image file to write
+    /// * `metadata` - Image metadata containing expected size and hash
     /// * `cancel_token` - Token to cancel the operation
     /// * `config` - Optional configuration to write after image writing
     ///
@@ -469,12 +540,14 @@ impl Disk {
     pub fn write_image(
         self,
         image_path: &str,
+        metadata: crate::models::ImageMetadata,
         cancel_token: crate::models::CancelToken,
         config: Option<ImageConfiguration>,
     ) -> impl Sipper<Result<WriteProgress>, WriteProgress> + Send + 'static {
         debug!("Opening image file: {}", image_path);
-        let image_file_r = File::open(image_path)
-            .with_context(|| format!("Failed to open image file: {}", image_path));
+        let image_path_owned = image_path.to_string();
+        let image_file_r = File::open(&image_path_owned)
+            .with_context(|| format!("Failed to open image file: {}", image_path_owned));
 
         // Use a larger buffer for better performance (matching disk-image-writer)
         const BUFFER_SIZE: usize = 4 * 1024 * 1024; // 4MB buffer
@@ -512,6 +585,32 @@ impl Disk {
                 // Use ? operator for more concise error handling
                 PlatformDiskAccess::pre_write_checks(&disk_file, Some(&original_path))?;
 
+                // Clear first and last 4MB of disk to remove any existing partition tables or file systems
+                info!("Clearing first and last 4MB of disk");
+                
+                // Get disk size
+                let disk_size = get_disk_size_windows(&mut disk_file)?;
+                
+                // Create 4MB zero buffer (sector-aligned for Windows compatibility)
+                let zero_buffer = vec![0u8; 4 * 1024 * 1024];
+                
+                // Clear first 4MB
+                disk_file.seek(SeekFrom::Start(0))?;
+                disk_file.write_all(&zero_buffer)?;
+                
+                // Clear last 4MB (if disk is large enough)
+                if disk_size > 8 * 1024 * 1024 {
+                    let last_4mb_start = disk_size - (4 * 1024 * 1024);
+                    disk_file.seek(SeekFrom::Start(last_4mb_start))?;
+                    disk_file.write_all(&zero_buffer)?;
+                    info!("Cleared first and last 4MB of disk ({} MB total disk size)", disk_size / (1024 * 1024));
+                } else {
+                    info!("Disk too small ({} MB), only cleared first 4MB", disk_size / (1024 * 1024));
+                }
+
+                // Seek back to the beginning of the disk to start writing image data
+                disk_file.seek(SeekFrom::Start(0))?;
+
                 // Create XZ reader with our tracked file
                 // Force buffer size to be a multiple of 4096 for Windows direct I/O
                 let buffer_size = std::num::NonZeroUsize::new(4 * 1024 * 1024).unwrap(); // 4MB aligned buffer
@@ -525,6 +624,10 @@ impl Disk {
                     XzReader::new_with_buffer_size(tracked_image_file, buffer_size);
 
                 info!("Starting to copy decompressed image data to disk");
+
+                // Track total bytes copied for verification later
+                let mut total_copied: u64 = 0;
+                let mut total_written: u64 = 0;
 
                 // Use a properly aligned buffer for consistent behavior across platforms
                 // Direct I/O on Windows requires alignment, and this approach helps with
@@ -542,117 +645,35 @@ impl Disk {
                         ALIGNED_BUFFER_SIZE
                     );
 
-                    // Read from source, write to disk in aligned chunks
-                    let mut total_copied: u64 = 0;
-                    let mut total_written: u64 = 0;
+                    let mut ramaining_bytes = metadata.uncompressed_size;
+                    let total_size = metadata.uncompressed_size;
 
-                    // Track how much data is in the buffer between reads
-                    let mut buffer_used: usize = 0;
-
-                    loop {
+                    while ramaining_bytes > 0 {
                         // Check if operation was cancelled before reading the next chunk
                         if cancel_token.is_cancelled() {
                             info!("Disk write operation cancelled by user");
                             return Err(anyhow::anyhow!("Operation cancelled by user"));
                         }
 
-                        // Shift any remaining data to the start of the buffer if needed
-                        if buffer_used > 0 && buffer_used < ALIGNED_BUFFER_SIZE {
-                            buffer.copy_within(buffer_used.., 0);
-                        }
+                        let bytes_to_write: usize = cmp::min(ramaining_bytes, ALIGNED_BUFFER_SIZE as u64).try_into()?;
 
-                        // Reset buffer usage to account for any shifting
-                        // We don't actually need to track remaining_space since we use buffer_used
+                        source_file.read_exact(&mut buffer[..bytes_to_write])?;
+                        disk_file.write_all(&buffer[0..bytes_to_write])?;
 
-                        // Read a chunk of data into our aligned buffer, starting after any existing data
-                        let bytes_read = match source_file.read(&mut buffer[buffer_used..]) {
-                            Ok(0) => {
-                                // EOF - check if we have any remaining data to write
-                                if buffer_used == 0 {
-                                    break; // No data left, we're done
-                                }
-                                0 // No new bytes read, but we still have data to process
-                            }
-                            Ok(n) => n,
-                            Err(e) => {
-                                error!("Error reading from source: {}", e);
-                                return Err(anyhow::anyhow!("Failed to read from source: {}", e));
-                            }
-                        };
+                        total_copied += bytes_to_write as u64;
+                        total_written += bytes_to_write as u64;
+                        ramaining_bytes -= bytes_to_write as u64;
 
-                        // Update total bytes in buffer
-                        buffer_used += bytes_read;
-
-                        // Calculate padding needed to align to sector boundary
-                        let remainder = buffer_used % SECTOR_SIZE;
-
-                        // Calculate how many bytes we can write aligned to sector size
-                        let aligned_size = if remainder == 0 {
-                            // Already aligned - use all data in buffer
-                            buffer_used
-                        } else if bytes_read == 0 && buffer_used > 0 {
-                            // Final chunk with unaligned data - pad with zeros
-                            let padding = SECTOR_SIZE - remainder;
-                            // Use iterator approach instead of range loop for better performance
-                            buffer
-                                .iter_mut()
-                                .skip(buffer_used)
-                                .take(padding)
-                                .for_each(|b| *b = 0);
-                            buffer_used + padding
-                        } else {
-                            // Still more data to come - only write up to the last complete sector
-                            buffer_used - remainder
-                        };
-
-                        // Only write if we have a complete sector
-                        if aligned_size >= SECTOR_SIZE {
-                            // Check if operation was cancelled before writing to disk
-                            if cancel_token.is_cancelled() {
-                                info!("Disk write operation cancelled by user after reading data");
-                                return Err(anyhow::anyhow!("Operation cancelled by user"));
-                            }
-
-                            info!("Writing {} bytes to disk", aligned_size);
-                            // Write the aligned buffer to disk
-                            match disk_file.write_all(&buffer[0..aligned_size]) {
-                                Ok(_) => {
-                                    // Calculate actual data bytes (not including padding)
-                                    let actual_data = (aligned_size
-                                        - (if remainder == 0 {
-                                            0
-                                        } else {
-                                            SECTOR_SIZE - remainder
-                                        }))
-                                        as u64;
-                                    total_copied += actual_data;
-
-                                    // Update tracking counts
-                                    // Only use total_written for sector-size aligned data
-                                    // total_copied is for actual data bytes
-                                    total_written += aligned_size as u64;
-
-                                    // Update total progress with written bytes
-                                    let mut sipper = sipper.clone();
-                                    let _ = tokio::spawn(async move {
-                                        sipper.send(WriteProgress::Write(total_written)).await
-                                    });
-                                }
-                                Err(e) => {
-                                    error!("Error writing to disk: {}", e);
-                                    return Err(anyhow::anyhow!("Failed to write to disk: {}", e));
-                                }
-                            };
-                            info!("Wrote {} bytes to disk, ", bytes_to_mb(total_written));
-                            info!("Total copied: {} bytes", bytes_to_mb(total_copied));
-
-                            // Keep track of any unaligned data at the end for the next iteration
-                            buffer_used -= aligned_size;
-                        }
-
-                        // If EOF and all data has been written, exit loop
-                        if bytes_read == 0 && buffer_used == 0 {
-                            break;
+                        {
+                            let mut sipper = sipper.clone();
+                            let _ = tokio::spawn(async move {
+                                sipper
+                                    .send(WriteProgress::Write {
+                                        total_written,
+                                        total_size,
+                                    })
+                                    .await
+                            });
                         }
                     }
 
@@ -662,7 +683,267 @@ impl Disk {
                     );
                 }
 
+                // DEBUG: Block-by-block comparison of XZ content vs disk content
+                #[cfg(feature = "debug")]
+                {
+                    info!("DEBUG: Starting block-by-block comparison of XZ content vs disk content");
+                        
+                        // Re-open XZ file for comparison
+                        let debug_image_file = File::open(&image_path_owned)?;
+                        let debug_buffer_size = std::num::NonZeroUsize::new(4 * 1024 * 1024).unwrap();
+                        let mut debug_xz_reader = XzReader::new_with_buffer_size(debug_image_file, debug_buffer_size);
+                        
+                        // Seek disk back to start for comparison
+                        disk_file.seek(SeekFrom::Start(0))?;
+                        
+                        let block_size = 1024 * 1024; // 1MB blocks
+                        let mut debug_xz_buffer = vec![0u8; block_size];
+                        let mut debug_disk_buffer = vec![0u8; block_size];
+                        let mut block_number = 0;
+                        let mut total_compared = 0u64;
+                        let mut differences_found = 0;
+                        
+                        loop {
+                            // Check if we've compared enough (limit to image size)
+                            if total_compared >= metadata.uncompressed_size {
+                                break;
+                            }
+                            
+                            // Calculate how much to read in this block
+                            let remaining = metadata.uncompressed_size - total_compared;
+                            let bytes_to_read = std::cmp::min(block_size as u64, remaining) as usize;
+                            if remaining == 0 {
+                                break
+                            }
+                            
+                            // Read from XZ
+                            debug_xz_reader.read_exact(&mut debug_xz_buffer[0..bytes_to_read])?;
+                            
+                            // Read from disk
+                            let disk_bytes = disk_file.read(&mut debug_disk_buffer[0..bytes_to_read])?;
+                            
+                            if disk_bytes != bytes_to_read {
+                                error!("DEBUG: Block {} size mismatch: XZ={}, Disk={}", block_number, bytes_to_read, disk_bytes);
+                                differences_found += 1;
+                                break;
+                            }
+                            
+                            // Compare the blocks
+                            if debug_xz_buffer[0..bytes_to_read] != debug_disk_buffer[0..bytes_to_read] {
+                                error!("DEBUG: Block {} differs at offset {}", block_number, total_compared);
+                                differences_found += 1;
+                                
+                                // Find first differing byte
+                                for i in 0..bytes_to_read {
+                                    if debug_xz_buffer[i] != debug_disk_buffer[i] {
+                                        error!("DEBUG: First difference at byte {}: XZ=0x{:02x}, Disk=0x{:02x}", 
+                                               total_compared + i as u64, debug_xz_buffer[i], debug_disk_buffer[i]);
+                                        
+                                        // Show context around the difference
+                                        let start = i.saturating_sub(8);
+                                        let end = (i + 8).min(bytes_to_read);
+                                        error!("DEBUG: XZ  context: {:02x?}", &debug_xz_buffer[start..end]);
+                                        error!("DEBUG: Disk context: {:02x?}", &debug_disk_buffer[start..end]);
+                                        break;
+                                    }
+                                }
+                                
+                                // Calculate hashes of this block
+                                let xz_block_hash = sha2::Sha256::digest(&debug_xz_buffer[0..bytes_to_read]);
+                                let disk_block_hash = sha2::Sha256::digest(&debug_disk_buffer[0..bytes_to_read]);
+                                error!("DEBUG: Block {} XZ hash:   {}", block_number, hex::encode(&xz_block_hash[..8]));
+                                error!("DEBUG: Block {} Disk hash: {}", block_number, hex::encode(&disk_block_hash[..8]));
+                                
+                                // Limit to first few differing blocks to avoid spam
+                                if differences_found >= 5 {
+                                    error!("DEBUG: Stopping after {} differences to avoid log spam", differences_found);
+                                    break;
+                                }
+                            }
+                            
+                            total_compared += bytes_to_read as u64;
+                            block_number += 1;
+                            
+                            // Safety limit to avoid infinite loops
+                            if block_number > 20000 { // ~20GB worth of 1MB blocks
+                                warn!("DEBUG: Stopping comparison after {} blocks to avoid excessive processing", block_number);
+                                break;
+                            }
+                        }
+                        
+                        if differences_found == 0 {
+                            info!("DEBUG: No differences found between XZ and disk content ({} bytes in {} blocks)", total_compared, block_number);
+                        } else {
+                            error!("DEBUG: Found {} differences in {} blocks ({} bytes compared)", differences_found, block_number, total_compared);
+                        }
+                }
+
+                // Verify written data
+                info!("Starting written data verification");
+
+                // Seek to start of disk for verification
+                disk_file.seek(SeekFrom::Start(0))?;
+
+                // Initialize hasher for verification
+                let mut verifier = sha2::Sha256::new();
+                let mut verified_bytes = 0u64;
+                // Use metadata.uncompressed_size for verification to match hash calculation
+                // This ensures we only verify the exact bytes that were in the original image
+                let total_size = metadata.uncompressed_size;
+                    const SECTOR_SIZE: u64 = 4096; // Use 4KB alignment for Windows compatibility
+                    let buffer_size = 4 * 1024 * 1024; // 4MB buffer
+                    let mut buffer = vec![0u8; buffer_size];
+
+                    info!(
+                        "Reading back {} bytes for verification (actual bytes written)",
+                        total_size
+                    );
+
+                    while verified_bytes < total_size {
+                        // Check for cancellation
+                        if cancel_token.is_cancelled() {
+                            info!("Verification cancelled by user");
+                            return Err(anyhow::anyhow!("Verification cancelled by user"));
+                        }
+
+                        let remaining = total_size - verified_bytes;
+
+                        // For Windows direct I/O, we need to read in sector-aligned chunks
+                        // Calculate aligned read size, but ensure we don't read beyond what we need
+
+                        // For the final chunk, we need to be careful not to read beyond the image boundary
+                        // even when aligning to sectors. Only align if we're reading the final incomplete chunk.
+                        let aligned_read_size = if remaining <= buffer.len() as u64 {
+                            // This is the final chunk - only align if the remaining bytes are not already aligned
+                            if remaining % SECTOR_SIZE == 0 {
+                                // Already sector-aligned, read exactly what we need
+                                remaining
+                            } else {
+                                // Not aligned, so we need to read a sector-aligned amount
+                                // But limit it to avoid reading beyond device boundaries
+                                let aligned_size =
+                                    ((remaining + SECTOR_SIZE - 1) / SECTOR_SIZE) * SECTOR_SIZE;
+                                // Only use aligned size if it's within reasonable bounds (not more than one extra sector)
+                                if aligned_size - remaining <= SECTOR_SIZE {
+                                    aligned_size
+                                } else {
+                                    // Fall back to exact size if alignment would read too much
+                                    remaining
+                                }
+                            }
+                        } else {
+                            // For full buffer reads, use the buffer size (which should be sector-aligned)
+                            buffer.len() as u64
+                        };
+
+                        // Ensure we don't exceed buffer size
+                        let final_read_size =
+                            std::cmp::min(aligned_read_size, buffer.len() as u64) as usize;
+
+                        match disk_file.read(&mut buffer[0..final_read_size]) {
+                            Ok(0) => {
+                                warn!(
+                                    "Unexpected EOF during verification at {} bytes",
+                                    verified_bytes
+                                );
+                                break;
+                            }
+                            Ok(bytes_read) => {
+                                // Only hash the actual data bytes, not padding
+                                let actual_data_bytes =
+                                    std::cmp::min(bytes_read as u64, remaining) as usize;
+                                verifier.update(&buffer[0..actual_data_bytes]);
+                                verified_bytes += actual_data_bytes as u64;
+
+                                // Send verification progress
+                                let mut sipper_clone = sipper.clone();
+                                let total_size_copy = total_size;
+                                let _ = tokio::spawn(async move {
+                                    sipper_clone
+                                        .send(WriteProgress::Verifying {
+                                            verified_bytes,
+                                            total_size: total_size_copy,
+                                        })
+                                        .await
+                                });
+
+                                // Log progress every 100MB
+                                if verified_bytes % (100 * 1024 * 1024) == 0
+                                    || verified_bytes == total_size
+                                {
+                                    info!(
+                                        "Verified {} / {} MB",
+                                        verified_bytes / (1024 * 1024),
+                                        total_size / (1024 * 1024)
+                                    );
+                                }
+                            }
+                            Err(e) => {
+                                error!("Error reading data for verification: {}", e);
+                                
+                                // Check for specific Windows errors that indicate device disconnection
+                                if let Some(error_code) = e.raw_os_error() {
+                                    match error_code {
+                                        433 => {
+                                            // Device does not exist - USB disconnected or reassigned
+                                            warn!("USB device became unavailable during verification (error 433)");
+                                            warn!("This often happens with USB devices during long operations");
+                                            return Err(anyhow::anyhow!(
+                                                "Device became unavailable during verification. \
+                                                The image was successfully written, but verification failed because \
+                                                the USB device was disconnected or reassigned by Windows. \
+                                                You can safely use the device - the write operation completed successfully."
+                                            ));
+                                        }
+                                        21 => {
+                                            // Device not ready
+                                            warn!("Device not ready during verification (error 21)");
+                                            return Err(anyhow::anyhow!(
+                                                "Device not ready during verification. \
+                                                The image was successfully written, but the device may need to be \
+                                                reconnected for verification."
+                                            ));
+                                        }
+                                        _ => {
+                                            // Other I/O errors
+                                            return Err(anyhow::anyhow!("Verification read failed: {}", e));
+                                        }
+                                    }
+                                } else {
+                                    return Err(anyhow::anyhow!("Verification read failed: {}", e));
+                                }
+                            }
+                        }
+                    }
+
+                    // Finalize hash and compare
+                    let calculated_hash = verifier.finalize();
+                    let calculated_hash_hex = hex::encode(calculated_hash);
+
+                    info!("Calculated hash: {}", &calculated_hash_hex[..16]);
+                    info!("Expected hash:   {}", &metadata.uncompressed_hash[..16]);
+
+                    if calculated_hash_hex != metadata.uncompressed_hash {
+                        error!("Hash verification failed!");
+                        error!("Expected: {}", metadata.uncompressed_hash);
+                        error!("Got:      {}", calculated_hash_hex);
+                        return Err(anyhow::anyhow!(
+                            "Data verification failed: written data does not match expected hash"
+                        ));
+                    }
+
+                    info!("Hash verification successful - written data is correct");
+
                 info!("Post-copy checks starting");
+
+                // Fix GPT backup header location after unlocking volume
+                info!("Checking and fixing GPT backup header location if needed");
+                if let Err(e) = fix_gpt_backup_header(&mut disk_file) {
+                    warn!("Failed to fix GPT backup header (non-fatal): {:?}", e);
+                }
+                if let Some(config) = config {
+                    Self::write_configuration_to_partition(&mut disk_file, &config).context("failed to write configuration")?;
+                }
 
                 // On Windows, unlock the volume first to allow GPT operations
                 #[cfg(windows)]
@@ -683,25 +964,7 @@ impl Disk {
                     }
                 }
 
-                // Fix GPT backup header location after unlocking volume
-                info!("Checking and fixing GPT backup header location if needed");
-                if let Err(e) = fix_gpt_backup_header(&mut disk_file) {
-                    warn!("Failed to fix GPT backup header (non-fatal): {}", e);
-                }
 
-                // Write configuration to partition after unlocking volume
-                if let Some(config) = config {
-                    info!("Writing configuration to partition after volume unlock");
-                    if let Err(e) = Self::write_configuration_to_partition(&mut disk_file, &config)
-                    {
-                        warn!(
-                            "Failed to write configuration to partition (non-fatal): {}",
-                            e
-                        );
-                    } else {
-                        info!("Successfully wrote configuration to partition");
-                    }
-                }
 
                 // We already handled the copy with our manual implementation
                 let copy_result = Ok(0); // Placeholder since we already did the copy
@@ -780,17 +1043,6 @@ impl Disk {
                 } else {
                     info!("Disk flush completed successfully in {:?}", flush_duration);
                 }
-
-                // Volume unlock already happened before GPT operations for Windows
-                #[cfg(not(windows))]
-                {
-                    info!("Non-Windows platform - no volume unlock needed");
-                }
-                #[cfg(windows)]
-                {
-                    info!("Windows: Volume was already unlocked before GPT operations");
-                }
-
                 info!("Successfully wrote image to disk");
 
                 anyhow::Ok(WriteProgress::Finish)

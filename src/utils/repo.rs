@@ -1,3 +1,5 @@
+use crate::models::CancelToken;
+use crate::utils::streaming_hash_calculator::{ProcessingProgress, StreamingHashCalculator};
 use directories::ProjectDirs;
 use futures_util::StreamExt;
 use iced::task;
@@ -33,13 +35,10 @@ pub struct RepoMetadata {
 #[derive(Debug, Clone)]
 pub enum DownloadStatus {
     NotStarted,
-    InProgress {
-        progress: f32,
-        bytes_downloaded: u64,
-        total_bytes: u64,
-    },
+    Processing(ProcessingProgress),
     Completed {
         path: PathBuf,
+        metadata: crate::models::ImageMetadata,
     },
     Failed {
         error: String,
@@ -71,6 +70,12 @@ impl From<std::io::Error> for Error {
 
 impl From<reqwest::Error> for Error {
     fn from(e: reqwest::Error) -> Self {
+        Error(e.to_string())
+    }
+}
+
+impl From<anyhow::Error> for Error {
+    fn from(e: anyhow::Error) -> Self {
         Error(e.to_string())
     }
 }
@@ -211,6 +216,7 @@ impl ImageRepo {
         self: Arc<Self>,
         channel_name: &str,
         version: Version,
+        cancel_token: CancelToken,
     ) -> impl task::Sipper<Result<(), Error>, DownloadStatus> + 'static {
         let this = self.clone();
         let _channel_name = channel_name.to_string();
@@ -231,41 +237,18 @@ impl ImageRepo {
                 cache_dir.join(&version_clone.path)
             };
 
-            // If already downloaded and verified, return completed status immediately
+            // If already downloaded and verified, check if we have cached metadata
             if final_path.exists() {
-                // Verify hash in a blocking task
-                let existing_path = final_path.clone();
-                let expected_hash_clone = expected_hash.clone();
-                match tokio::task::spawn_blocking(move || {
-                    let mut file = File::open(&existing_path)?;
-                    let mut hasher = Sha256::new();
-                    let mut buffer = [0; 8192];
-
-                    loop {
-                        let bytes_read = file.read(&mut buffer)?;
-                        if bytes_read == 0 {
-                            break;
-                        }
-                        hasher.update(&buffer[..bytes_read]);
-                    }
-
-                    let hash = hasher.finalize();
-                    let hash_hex = hex::encode(hash);
-
-                    if hash_hex == expected_hash_clone.to_lowercase() {
-                        Ok(())
-                    } else {
-                        Err(Error(format!(
-                            "Hash verification failed. Expected: {}, got: {}",
-                            expected_hash_clone, hash_hex
-                        )))
-                    }
-                })
-                .await
-                {
-                    Ok(Ok(_)) => {
+                // Try to load existing metadata
+                let metadata_manager = crate::utils::image_metadata::MetadataManager::new()
+                    .map_err(|e| Error(format!("Failed to create metadata manager: {}", e)))?;
+                
+                if let Ok(Some(metadata)) = metadata_manager.load_metadata(&expected_hash) {
+                    // Verify hash quickly
+                    if let Ok(_) = this.verify_hash(&final_path, &expected_hash) {
                         let status = DownloadStatus::Completed {
                             path: final_path.clone(),
+                            metadata,
                         };
                         this.downloads
                             .lock()
@@ -274,21 +257,19 @@ impl ImageRepo {
                         sipper.send(status).await;
                         return Ok(());
                     }
-                    Ok(Err(_)) | Err(_) => {
-                        // Continue with download if verification fails
-                    }
                 }
+                // If hash verification fails or no metadata, continue with download
             }
 
             // Use a temporary file during download
             let temp_path = cache_dir.join(format!("{}.download", version_clone.path));
 
-            // Set initial status
-            let status = DownloadStatus::InProgress {
-                progress: 0.0,
-                bytes_downloaded: 0,
-                total_bytes: 0,
-            };
+            // Initialize streaming hash calculator
+            let mut calculator = StreamingHashCalculator::new(cancel_token.clone());
+
+            // Set initial download status
+            let initial_progress = ProcessingProgress::new_download(0, 0);
+            let status = DownloadStatus::Processing(initial_progress.clone());
             this.downloads
                 .lock()
                 .unwrap()
@@ -310,25 +291,26 @@ impl ImageRepo {
             let mut output_file = tokio::fs::File::create(&temp_path).await?;
             let mut stream = response.bytes_stream();
 
+            // Download phase: stream chunks and calculate compressed hash
             while let Some(item) = stream.next().await {
+                if cancel_token.is_cancelled() {
+                    let _ = fs::remove_file(&temp_path);
+                    return Err(Error("Download cancelled by user".to_string()));
+                }
+
                 let chunk = item?;
 
+                // Process chunk for compressed hash calculation
+                calculator.process_download_chunk(&chunk)?;
+
+                // Write to file
                 output_file.write_all(&chunk).await?;
 
                 downloaded += chunk.len() as u64;
-                let progress = if total_size > 0 {
-                    downloaded as f32 / total_size as f32
-                } else {
-                    0.0
-                };
 
-                // Update status and send progress
-                let status = DownloadStatus::InProgress {
-                    progress,
-                    bytes_downloaded: downloaded,
-                    total_bytes: total_size,
-                };
-
+                // Send download progress
+                let progress = ProcessingProgress::new_download(downloaded, total_size);
+                let status = DownloadStatus::Processing(progress);
                 this.downloads
                     .lock()
                     .unwrap()
@@ -340,49 +322,63 @@ impl ImageRepo {
             output_file.flush().await?;
             drop(output_file);
 
-            // Verify the hash in a blocking task
-            let temp_path_clone = temp_path.clone();
+            // Verify compressed hash
+            let compressed_hash = calculator.finalize_compressed_hash();
+            if compressed_hash.to_lowercase() != expected_hash.to_lowercase() {
+                let _ = fs::remove_file(&temp_path);
+                return Err(Error(format!(
+                    "Hash verification failed. Expected: {}, got: {}",
+                    expected_hash, compressed_hash
+                )));
+            }
+
+            // Move temporary file to final location
+            if let Err(e) = fs::rename(&temp_path, &final_path) {
+                let _ = fs::remove_file(&temp_path);
+                return Err(e.into());
+            }
+
+            // Metadata calculation phase
             let final_path_clone = final_path.clone();
-            let expected_hash_clone = expected_hash.clone();
+            let version_id_clone = version_id.clone();
+            let this_clone = this.clone();
+            let mut sipper_clone = sipper.clone();
 
-            match tokio::task::spawn_blocking(move || -> Result<PathBuf, Error> {
-                // Verify hash
-                let mut file = File::open(&temp_path_clone)?;
-                let mut hasher = Sha256::new();
-                let mut buffer = [0; 8192];
+            // Create a channel for progress updates
+            let (progress_tx, mut progress_rx) = tokio::sync::mpsc::unbounded_channel();
 
-                loop {
-                    let bytes_read = file.read(&mut buffer)?;
-                    if bytes_read == 0 {
-                        break;
+            // Spawn task to handle progress updates
+            let progress_handler = tokio::spawn(async move {
+                while let Some(progress) = progress_rx.recv().await {
+                    let status = DownloadStatus::Processing(progress);
+                    this_clone.downloads
+                        .lock()
+                        .unwrap()
+                        .insert(version_id_clone.clone(), status.clone());
+                    let _ = sipper_clone.send(status).await;
+                }
+            });
+
+            let result = calculator.calculate_metadata(&final_path_clone, compressed_hash, progress_tx).await;
+            
+            // Clean up progress handler
+            progress_handler.abort();
+            
+            match result {
+                Ok(metadata) => {
+                    // Store metadata for future use
+                    let metadata_manager = crate::utils::image_metadata::MetadataManager::new()
+                        .map_err(|e| Error(format!("Failed to create metadata manager: {}", e)))?;
+                    
+                    if let Err(e) = metadata_manager.store_metadata(&expected_hash, &metadata) {
+                        tracing::warn!("Failed to store metadata: {}", e);
                     }
-                    hasher.update(&buffer[..bytes_read]);
-                }
 
-                let hash = hasher.finalize();
-                let hash_hex = hex::encode(hash);
-
-                if hash_hex != expected_hash_clone.to_lowercase() {
-                    let _ = fs::remove_file(&temp_path_clone);
-                    return Err(Error(format!(
-                        "Hash verification failed. Expected: {}, got: {}",
-                        expected_hash_clone, hash_hex
-                    )));
-                }
-
-                // Move temporary file to final location
-                if let Err(e) = fs::rename(&temp_path_clone, &final_path_clone) {
-                    let _ = fs::remove_file(&temp_path_clone);
-                    return Err(e.into());
-                }
-
-                Ok(final_path_clone)
-            })
-            .await
-            {
-                Ok(Ok(path)) => {
                     // Update final status to completed
-                    let final_status = DownloadStatus::Completed { path };
+                    let final_status = DownloadStatus::Completed { 
+                        path: final_path,
+                        metadata,
+                    };
                     this.downloads
                         .lock()
                         .unwrap()
@@ -390,29 +386,16 @@ impl ImageRepo {
                     sipper.send(final_status).await;
                     Ok(())
                 }
-                Ok(Err(e)) => {
+                Err(e) => {
                     // Update final status to failed
-                    let error_msg = e.0.clone();
+                    let error_msg = e.to_string();
                     let final_status = DownloadStatus::Failed { error: error_msg };
                     this.downloads
                         .lock()
                         .unwrap()
                         .insert(version_id.clone(), final_status.clone());
                     sipper.send(final_status).await;
-                    Err(e)
-                }
-                Err(e) => {
-                    // Handle task join error
-                    let error_msg = format!("Task panicked: {}", e);
-                    let final_status = DownloadStatus::Failed {
-                        error: error_msg.clone(),
-                    };
-                    this.downloads
-                        .lock()
-                        .unwrap()
-                        .insert(version_id.clone(), final_status.clone());
-                    sipper.send(final_status).await;
-                    Err(Error(error_msg))
+                    Err(Error(e.to_string()))
                 }
             }
         })

@@ -1,9 +1,9 @@
 // Common disk operation functionality shared across platforms
 
 use std::io::{self, Read, Seek, SeekFrom, Write};
-use tracing::{debug, info};
 #[cfg(windows)]
 use tracing::error;
+use tracing::{debug, info};
 
 /// Disk device information structure
 #[derive(Debug, Clone)]
@@ -53,6 +53,9 @@ pub enum WriteStatus {
 #[derive(Debug)]
 pub enum WriteProgress {
     Start,
+    ClearingPartitions {
+        progress: f32,
+    },
     Write {
         total_written: u64,
         total_size: u64,

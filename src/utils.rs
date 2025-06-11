@@ -5,6 +5,7 @@ pub mod image_metadata;
 pub mod metadata_calculator;
 pub mod preset_manager;
 pub mod repo;
+pub mod streaming_hash_calculator;
 
 pub use elevation::*;
 #[allow(unused_imports)]

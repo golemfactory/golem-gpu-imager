@@ -6,6 +6,7 @@ use anyhow::{Result, anyhow};
 use std::fs::File;
 use std::io::{self, Read, Seek, Write};
 use std::os::windows::io::{AsRawHandle, FromRawHandle};
+use std::os::windows::process::CommandExt;
 use tracing::{debug, error, info, warn};
 use windows_sys::Win32::Foundation::*;
 use windows_sys::Win32::Storage::FileSystem::*;
@@ -29,6 +30,264 @@ pub struct WindowsDiskAccess {
 }
 
 impl WindowsDiskAccess {
+    /// Clear disk partitions using diskpart with progress reporting
+    ///
+    /// # Arguments
+    /// * `path` - The path to the disk device
+    /// * `cancel_token` - Token to cancel the operation
+    ///
+    /// # Returns
+    /// * A sipper that reports progress updates as the clearing proceeds
+    pub fn clear_disk_partitions(
+        path: &str,
+        cancel_token: crate::models::CancelToken,
+    ) -> impl iced::task::Sipper<
+        Result<crate::disk::common::WriteProgress>,
+        crate::disk::common::WriteProgress,
+    > + Send
+    + 'static {
+        use crate::disk::common::WriteProgress;
+        use iced::task;
+
+        let path_owned = path.to_string();
+
+        task::sipper(async move |mut sipper| -> Result<WriteProgress> {
+            sipper
+                .send(WriteProgress::ClearingPartitions { progress: 0.0 })
+                .await;
+
+            // Use blocking task for diskpart operations
+            let r = tokio::task::spawn_blocking(move || -> Result<WriteProgress> {
+                // Check if operation was cancelled before starting
+                if cancel_token.is_cancelled() {
+                    info!("Partition clearing cancelled by user before starting");
+                    return Err(anyhow::anyhow!("Operation cancelled by user"));
+                }
+
+                info!("Starting disk partition clearing for path: {}", path_owned);
+
+                // Extract disk number from path using robust regex-based approach
+                let disk_num = match Self::extract_disk_number_from_path_robust(&path_owned) {
+                    Ok(num) => num,
+                    Err(e) => {
+                        error!(
+                            "Failed to extract disk number from path '{}': {}",
+                            path_owned, e
+                        );
+                        return Err(anyhow::anyhow!("Invalid disk path: {}", e));
+                    }
+                };
+
+                info!("Clearing partitions on PhysicalDrive{}", disk_num);
+
+                // Create enhanced diskpart commands - include online disk to handle offline disks with signature collisions
+                let script_content = format!(
+                    "select disk {}\ndetail disk\nonline disk\ndetail disk\nclean\ndetail disk\nrescan\nexit\n",
+                    disk_num
+                );
+
+                info!("Diskpart commands: {}", script_content.replace('\n', "; "));
+
+                // Execute diskpart with enhanced retry logic using stdin
+                let mut success = false;
+                let mut last_error = String::new();
+
+                for attempt in 1..=3 {
+                    // Check for cancellation before each attempt
+                    if cancel_token.is_cancelled() {
+                        info!(
+                            "Partition clearing cancelled by user during attempt {}",
+                            attempt
+                        );
+                        return Err(anyhow::anyhow!("Operation cancelled by user"));
+                    }
+
+                    info!(
+                        "Diskpart attempt {}/3 for PhysicalDrive{}",
+                        attempt, disk_num
+                    );
+
+                    // Update progress based on attempt
+                    let _progress = (attempt as f32 - 1.0) / 3.0;
+                    // Note: We can't send progress updates from inside spawn_blocking
+                    // The UI will show progress based on the subscription
+
+                    let mut child = match std::process::Command::new("diskpart")
+                        .stdin(std::process::Stdio::piped())
+                        .stdout(std::process::Stdio::piped())
+                        .stderr(std::process::Stdio::piped())
+                        .creation_flags(0x08000000) // CREATE_NO_WINDOW
+                        .spawn()
+                    {
+                        Ok(child) => child,
+                        Err(e) => {
+                            last_error = format!("Failed to spawn diskpart: {}", e);
+                            error!("Diskpart spawn failed on attempt {}: {}", attempt, e);
+
+                            if attempt < 3 {
+                                warn!("Retrying partition clearing in 500ms...");
+                                std::thread::sleep(std::time::Duration::from_millis(500));
+                            }
+                            continue;
+                        }
+                    };
+
+                    // Write commands to stdin
+                    if let Some(stdin) = child.stdin.take() {
+                        use std::io::Write;
+                        let mut stdin = stdin;
+                        if let Err(e) = stdin.write_all(script_content.as_bytes()) {
+                            warn!("Failed to write to diskpart stdin: {}", e);
+                        }
+                        // stdin is automatically closed when dropped
+                    }
+
+                    // Wait for completion and get output
+                    let output = match child.wait_with_output() {
+                        Ok(output) => output,
+                        Err(e) => {
+                            last_error = format!("Failed to get diskpart output: {}", e);
+                            error!("Diskpart output failed on attempt {}: {}", attempt, e);
+
+                            if attempt < 3 {
+                                warn!("Retrying partition clearing in 500ms...");
+                                std::thread::sleep(std::time::Duration::from_millis(500));
+                            }
+                            continue;
+                        }
+                    };
+
+                    let output_msg = String::from_utf8_lossy(&output.stdout);
+                    let error_msg = String::from_utf8_lossy(&output.stderr);
+
+                    info!("Diskpart attempt {} output: {}", attempt, output_msg);
+                    if !error_msg.is_empty() {
+                        warn!("Diskpart attempt {} stderr: {}", attempt, error_msg);
+                    }
+
+                    // Enhanced error detection for offline disks and signature collisions
+                    let has_diskpart_error = output_msg.contains("DiskPart has encountered an error");
+                    let has_offline_error = output_msg.contains("Offline") || 
+                                          output_msg.contains("offline") ||
+                                          output_msg.contains("nie jest dozwolona dla dysku w trybie offline"); // Polish
+                    let has_signature_collision = output_msg.contains("Signature Collision") ||
+                                               output_msg.contains("signature collision");
+                    let has_vds_error = output_msg.contains("Virtual Disk Service error");
+
+                    if output.status.success() && !has_diskpart_error && !has_offline_error && !has_vds_error {
+                        info!(
+                            "Successfully cleared partitions on disk {} (attempt {})",
+                            disk_num, attempt
+                        );
+                        success = true;
+                        break;
+                    } else {
+                        // Provide specific error information
+                        if has_offline_error || has_signature_collision {
+                            warn!("Diskpart failed on attempt {} - disk is offline with signature collision", attempt);
+                            warn!("This usually happens when Windows detects duplicate disk signatures");
+                        } else if has_vds_error {
+                            warn!("Diskpart failed on attempt {} - Virtual Disk Service error", attempt);
+                        }
+                        
+                        last_error = format!(
+                            "Diskpart failed - stdout: {}, stderr: {}",
+                            output_msg, error_msg
+                        );
+                        error!("Diskpart attempt {} failed: {}", attempt, last_error);
+
+                        if attempt < 3 {
+                            warn!("Retrying partition clearing in 500ms...");
+                            std::thread::sleep(std::time::Duration::from_millis(500));
+                        }
+                    }
+                }
+
+                if !success {
+                    error!(
+                        "All diskpart attempts failed for disk {}: {}",
+                        disk_num, last_error
+                    );
+                    return Err(anyhow::anyhow!(
+                        "Failed to clear disk partitions: {}",
+                        last_error
+                    ));
+                } else {
+                    // Add sleep after successful diskpart operations to allow Windows to process changes
+                    info!("Waiting 2 seconds for Windows to process diskpart changes...");
+                    std::thread::sleep(std::time::Duration::from_millis(2000));
+                }
+
+                // Dismount any remaining volumes
+                info!("Dismounting volumes on PhysicalDrive{}", disk_num);
+                let volumes = Self::get_volumes_for_physical_drive(disk_num as usize);
+
+                for volume in volumes {
+                    if cancel_token.is_cancelled() {
+                        return Err(anyhow::anyhow!("Operation cancelled by user"));
+                    }
+
+                    info!("Dismounting volume {}", volume);
+                    if let Err(e) = Self::dismount_volume_path(&volume) {
+                        warn!("Failed to dismount volume {}: {}", volume, e);
+                        // Continue with other volumes - dismount failures are non-fatal
+                    }
+                }
+
+                info!("Successfully cleared all partitions on disk {}", disk_num);
+                Ok(WriteProgress::Finish)
+            })
+            .await?;
+
+            r
+        })
+    }
+
+    /// Extract disk number from path using robust regex pattern matching
+    ///
+    /// Uses the same approach as the C++ example: std::regex("\\\\\.\\PHYSICALDRIVE(\d+)", std::regex_constants::icase)
+    pub fn extract_disk_number_from_path_robust(path_str: &str) -> Result<u32> {
+        use regex::Regex;
+
+        // Create case-insensitive regex pattern matching the C++ example
+        let pattern = r"(?i)\\\\\.\\PHYSICALDRIVE(\d+)";
+        let re = Regex::new(pattern)
+            .map_err(|e| anyhow::anyhow!("Failed to compile regex pattern: {}", e))?;
+
+        // First try the robust regex approach
+        if let Some(caps) = re.captures(path_str) {
+            if let Some(num_match) = caps.get(1) {
+                return num_match
+                    .as_str()
+                    .parse::<u32>()
+                    .map_err(|e| anyhow::anyhow!("Invalid disk number format: {}", e));
+            }
+        }
+
+        // Fallback to simple number parsing if path is just a number
+        if let Ok(num) = path_str.parse::<u32>() {
+            return Ok(num);
+        }
+
+        // Enhanced fallback with more patterns
+        if let Some(disk_num_str) = path_str.strip_prefix(r"\\.\PhysicalDrive") {
+            return disk_num_str
+                .parse::<u32>()
+                .map_err(|e| anyhow::anyhow!("Invalid disk number in path: {}", e));
+        }
+
+        if let Some(disk_num_str) = path_str.strip_prefix("PhysicalDrive") {
+            return disk_num_str
+                .parse::<u32>()
+                .map_err(|e| anyhow::anyhow!("Invalid disk number in path: {}", e));
+        }
+
+        Err(anyhow::anyhow!(
+            "Could not extract disk number from path: {}",
+            path_str
+        ))
+    }
+
     /// Open and lock a disk by its path
     ///
     /// # Arguments
@@ -93,96 +352,124 @@ impl WindowsDiskAccess {
                 // This is important as diskpart can't clean a locked disk
                 info!("Attempting to clean disk {} with diskpart", disk_num);
 
-                // Create temporary script file for diskpart
+                // Create diskpart commands - include online disk to handle offline disks with signature collisions
                 let script_content = format!(
-                    "select disk {}\ndetail disk\nclean\ndetail disk\nrescan\nexit\n",
+                    "select disk {}\ndetail disk\nonline disk\ndetail disk\nclean\ndetail disk\nrescan\nexit\n",
                     disk_num
                 );
 
-                // Use temporary file for the script
-                let temp_dir = std::env::temp_dir();
-                let script_path =
-                    temp_dir.join(format!("diskpart_script_{}.txt", std::process::id()));
+                info!("Diskpart commands: {}", script_content.replace('\n', "; "));
 
-                if let Err(e) = std::fs::write(&script_path, script_content.as_bytes()) {
-                    warn!(
-                        "Failed to create diskpart script file: {}, skipping disk cleaning",
-                        e
+                // Try to run diskpart with multiple attempts using stdin
+                let mut success = false;
+                let mut error_output = String::new();
+
+                // Try up to 3 times to clean the disk with diskpart
+                for attempt in 1..=3 {
+                    info!(
+                        "Disk cleaning attempt {}/3 with diskpart for PhysicalDrive{}",
+                        attempt, disk_num
                     );
-                } else {
-                    info!("Created diskpart script at {:?}", script_path);
 
-                    // Try to run diskpart with multiple attempts
-                    let mut success = false;
-                    let mut error_output = String::new();
+                    // Execute diskpart using stdin
+                    let mut child = match std::process::Command::new("diskpart")
+                        .stdin(std::process::Stdio::piped())
+                        .stdout(std::process::Stdio::piped())
+                        .stderr(std::process::Stdio::piped())
+                        .creation_flags(0x08000000) // CREATE_NO_WINDOW
+                        .spawn()
+                    {
+                        Ok(child) => child,
+                        Err(e) => {
+                            error!(
+                                "Failed to spawn diskpart command on attempt {}: {}",
+                                attempt, e
+                            );
+                            if attempt < 3 {
+                                warn!("Retrying disk cleaning in 500ms...");
+                                std::thread::sleep(std::time::Duration::from_millis(500));
+                            }
+                            continue;
+                        }
+                    };
 
-                    // Try up to 3 times to clean the disk with diskpart
-                    for attempt in 1..=3 {
+                    // Write commands to stdin
+                    if let Some(stdin) = child.stdin.take() {
+                        use std::io::Write;
+                        let mut stdin = stdin;
+                        if let Err(e) = stdin.write_all(script_content.as_bytes()) {
+                            warn!("Failed to write to diskpart stdin: {}", e);
+                        }
+                        // stdin is automatically closed when dropped
+                    }
+
+                    // Wait for completion and get output
+                    let output = match child.wait_with_output() {
+                        Ok(output) => output,
+                        Err(e) => {
+                            error!(
+                                "Failed to get diskpart output on attempt {}: {}",
+                                attempt, e
+                            );
+                            if attempt < 3 {
+                                warn!("Retrying disk cleaning in 500ms...");
+                                std::thread::sleep(std::time::Duration::from_millis(500));
+                            }
+                            continue;
+                        }
+                    };
+
+                    let output_msg = String::from_utf8_lossy(&output.stdout);
+                    let error_msg = String::from_utf8_lossy(&output.stderr);
+
+                    // Always log diskpart output for diagnosis
+                    info!("Diskpart stdout: {}", output_msg);
+
+                    // Enhanced error detection for offline disks and signature collisions
+                    let has_diskpart_error = output_msg.contains("DiskPart has encountered an error");
+                    let has_offline_error = output_msg.contains("Offline") || 
+                                          output_msg.contains("offline") ||
+                                          output_msg.contains("nie jest dozwolona dla dysku w trybie offline"); // Polish
+                    let has_signature_collision = output_msg.contains("Signature Collision") ||
+                                               output_msg.contains("signature collision");
+                    let has_vds_error = output_msg.contains("Virtual Disk Service error");
+
+                    if output.status.success() && !has_diskpart_error && !has_offline_error && !has_vds_error {
                         info!(
-                            "Disk cleaning attempt {}/3 with diskpart for PhysicalDrive{}",
-                            attempt, disk_num
+                            "Successfully cleaned disk {} with diskpart on attempt {}",
+                            disk_num, attempt
                         );
+                        success = true;
+                        break;
+                    } else {
+                        error_output = format!("stderr: {}, stdout: {}", error_msg, output_msg);
+                        
+                        // Provide specific error information
+                        if has_offline_error || has_signature_collision {
+                            error!("Diskpart failed on attempt {} - disk is offline with signature collision", attempt);
+                            error!("This usually happens when Windows detects duplicate disk signatures");
+                        } else if has_vds_error {
+                            error!("Diskpart failed on attempt {} - Virtual Disk Service error", attempt);
+                        } else {
+                            error!("Diskpart cleaning failed on attempt {}", attempt);
+                        }
+                        error!("Error details: {}", error_output);
 
-                        // Enhanced logging to see the exact command being executed
-                        info!("Running diskpart with script at: {:?}", script_path);
-
-                        // Execute diskpart with the script
-                        let output = std::process::Command::new("diskpart")
-                            .args(&["/s", script_path.to_str().unwrap()])
-                            .output();
-
-                        match output {
-                            Ok(output) => {
-                                let output_msg = String::from_utf8_lossy(&output.stdout);
-                                let error_msg = String::from_utf8_lossy(&output.stderr);
-
-                                // Always log diskpart output for diagnosis
-                                info!("Diskpart stdout: {}", output_msg);
-
-                                if output.status.success()
-                                    && !output_msg.contains("DiskPart has encountered an error")
-                                {
-                                    info!(
-                                        "Successfully cleaned disk {} with diskpart on attempt {}",
-                                        disk_num, attempt
-                                    );
-                                    success = true;
-                                    break;
-                                } else {
-                                    error_output =
-                                        format!("stderr: {}, stdout: {}", error_msg, output_msg);
-                                    error!("Diskpart cleaning failed on attempt {}", attempt);
-                                    error!("Error details: {}", error_output);
-
-                                    if attempt < 3 {
-                                        warn!("Retrying disk cleaning in 500ms...");
-                                        std::thread::sleep(std::time::Duration::from_millis(500));
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                error!(
-                                    "Failed to execute diskpart command on attempt {}: {}",
-                                    attempt, e
-                                );
-                                if attempt < 3 {
-                                    warn!("Retrying disk cleaning in 500ms...");
-                                    std::thread::sleep(std::time::Duration::from_millis(500));
-                                }
-                            }
+                        if attempt < 3 {
+                            warn!("Retrying disk cleaning in 500ms...");
+                            std::thread::sleep(std::time::Duration::from_millis(500));
                         }
                     }
+                }
 
-                    // Clean up the script file regardless of outcome
-                    if let Err(e) = std::fs::remove_file(&script_path) {
-                        warn!("Failed to remove temporary diskpart script: {}", e);
-                    }
-
-                    if !success {
-                        warn!("ALL ATTEMPTS TO CLEAN DISK FAILED: {}", error_output);
-                        warn!("This may lead to access denied errors when writing to the disk.");
-                        // Continue anyway - we'll still try to open the disk
-                    }
+                if !success {
+                    warn!("ALL ATTEMPTS TO CLEAN DISK FAILED: {}", error_output);
+                    warn!("This may lead to access denied errors when writing to the disk.");
+                    // Continue anyway - we'll still try to open the disk
+                } else {
+                    // Add sleep after successful diskpart operations to allow Windows to process changes
+                    info!("Waiting 2 seconds for Windows to process diskpart changes...");
+                    std::thread::sleep(std::time::Duration::from_millis(2000));
                 }
 
                 // Now dismount all volumes on this drive before locking it
@@ -599,9 +886,9 @@ impl WindowsDiskAccess {
 
         // Try to lock the volume with multiple attempts
         let mut locked = false;
-        for attempt in 0..20 {
+        for attempt in 0..30 {
             // DeviceIoControl with FSCTL_LOCK_VOLUME
-            info!("Locking volume, attempt {}/20", attempt + 1);
+            info!("Locking volume, attempt {}/30", attempt + 1);
 
             let lock_result = unsafe {
                 DeviceIoControl(
@@ -623,14 +910,22 @@ impl WindowsDiskAccess {
             }
 
             let error_code = unsafe { GetLastError() };
+
+            // Progressive delay strategy
+            let delay_ms = match attempt {
+                0..=5 => 100,  // First 5 attempts: 100ms
+                6..=15 => 200, // Next 10 attempts: 200ms
+                _ => 500,      // Final attempts: 500ms
+            };
+
             info!(
-                "Lock attempt {} failed, error code: {}, waiting 100ms before retrying...",
+                "Lock attempt {} failed, error code: {}, waiting {}ms before retrying...",
                 attempt + 1,
-                error_code
+                error_code,
+                delay_ms
             );
 
-            // Wait 100ms between attempts - exactly like in disk-image-writer
-            std::thread::sleep(std::time::Duration::from_millis(100));
+            std::thread::sleep(std::time::Duration::from_millis(delay_ms));
         }
 
         // Check if locking was successful after all attempts
@@ -702,34 +997,6 @@ impl WindowsDiskAccess {
             info!("This is often normal when writing to physical drives rather than volumes");
         } else {
             info!("Successfully dismounted volumes from physical drive handle");
-        }
-
-        // For physical devices, don't try to get metadata - it will fail
-        // Also perform a zero-byte write test to verify we have write access
-        match disk_file.try_clone() {
-            Ok(mut test_file) => {
-                let write_test = test_file.write(&[]);
-                if let Err(e) = write_test {
-                    if e.kind() == std::io::ErrorKind::PermissionDenied {
-                        error!("Windows disk error: Disk is write-protected, permission denied");
-                        return Err(anyhow::anyhow!(
-                            "The disk is write-protected and cannot be written to"
-                        )
-                        .context(
-                            "Remove write protection from the device or use a different device",
-                        ));
-                    } else {
-                        warn!("Write test failed: {}", e);
-                        warn!("Continuing with caution, but write operation may fail later");
-                    }
-                } else {
-                    info!("Write test passed - we have write access to the disk");
-                }
-            }
-            Err(e) => {
-                warn!("Could not clone file handle for write test: {}", e);
-                warn!("Continuing with caution, but write operation may fail later");
-            }
         }
 
         info!("Windows: Disk is ready for writing");
@@ -836,41 +1103,8 @@ impl WindowsDiskAccess {
     /// - 0 (just a number)
     /// - Any string that contains "PhysicalDrive" followed by a number
     pub fn extract_disk_number_from_path(path_str: &str) -> Result<u32> {
-        // Try to extract disk number using various prefix patterns
-        if let Some(disk_num_str) = path_str.strip_prefix(r"\\.\PhysicalDrive") {
-            return Ok(disk_num_str.parse::<u32>()?);
-        } else if let Some(disk_num_str) = path_str.strip_prefix(r"\\.\PHYSICALDRIVE") {
-            return Ok(disk_num_str.parse::<u32>()?);
-        } else if let Some(disk_num_str) = path_str.strip_prefix("PhysicalDrive") {
-            return Ok(disk_num_str.parse::<u32>()?);
-        } else if let Some(disk_num_str) = path_str.strip_prefix("PHYSICALDRIVE") {
-            return Ok(disk_num_str.parse::<u32>()?);
-        }
-
-        // If the path is just a number (e.g., "0"), parse it directly
-        if let Ok(num) = path_str.parse::<u32>() {
-            return Ok(num);
-        }
-
-        // If all above methods fail, use regex to find a disk number pattern anywhere in the string
-        // This is useful for paths that might have unexpected formats or additional text
-        let re = regex::Regex::new(r"(?i)PhysicalDrive(\d+)").unwrap_or_else(|_| {
-            warn!("Failed to create regex for parsing drive number");
-            regex::Regex::new(r"PhysicalDrive").unwrap()
-        });
-
-        if let Some(caps) = re.captures(path_str) {
-            if let Some(num_match) = caps.get(1) {
-                return Ok(num_match.as_str().parse::<u32>()?);
-            }
-        }
-
-        // If no match found, report a clear error
-        error!("Could not extract disk number from path: {}", path_str);
-        Err(anyhow!(
-            "Could not determine disk number from path: {}",
-            path_str
-        ))
+        // Use the new robust implementation
+        Self::extract_disk_number_from_path_robust(path_str)
     }
 
     /// Clean the disk by removing all partitions using diskpart (used by older disk-image-writer)
@@ -882,27 +1116,29 @@ impl WindowsDiskAccess {
 
         info!("Cleaning disk {} using diskpart", disk_num);
 
-        // Create a temporary script file for diskpart
+        // Create diskpart commands
         let script_content = format!("select disk {}\nclean\nrescan\nexit\n", disk_num);
 
-        // Use temporary file crate to handle the script file
-        let temp_dir = std::env::temp_dir();
-        let script_path = temp_dir.join(format!("diskpart_script_{}.txt", std::process::id()));
+        info!("Diskpart commands: {}", script_content.replace('\n', "; "));
 
-        // Write the script content to the file
-        std::fs::write(&script_path, script_content.as_bytes())?;
+        // Execute diskpart using stdin
+        let mut child = std::process::Command::new("diskpart")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .creation_flags(0x08000000) // CREATE_NO_WINDOW
+            .spawn()?;
 
-        info!("Created diskpart script at {:?}", script_path);
-
-        // Execute diskpart with the script
-        let output = std::process::Command::new("diskpart")
-            .args(&["/s", script_path.to_str().unwrap()])
-            .output()?;
-
-        // Clean up the script file regardless of outcome
-        if let Err(e) = std::fs::remove_file(&script_path) {
-            warn!("Failed to remove temporary diskpart script: {}", e);
+        // Write commands to stdin
+        if let Some(stdin) = child.stdin.take() {
+            use std::io::Write;
+            let mut stdin = stdin;
+            stdin.write_all(script_content.as_bytes())?;
+            // stdin is automatically closed when dropped
         }
+
+        // Wait for completion and get output
+        let output = child.wait_with_output()?;
 
         if !output.status.success() {
             let error_msg = String::from_utf8_lossy(&output.stderr);
@@ -1882,5 +2118,72 @@ mod tests {
         // Test invalid input
         assert!(WindowsDiskAccess::extract_disk_number_from_path("No disk number here").is_err());
         assert!(WindowsDiskAccess::extract_disk_number_from_path("").is_err());
+    }
+
+    #[test]
+    fn test_extract_disk_number_from_path_robust() {
+        // Test the robust regex-based implementation directly
+
+        // Test full Windows path with backslashes (C++ style pattern)
+        assert_eq!(
+            WindowsDiskAccess::extract_disk_number_from_path_robust(r"\\.\PHYSICALDRIVE0").unwrap(),
+            0
+        );
+        assert_eq!(
+            WindowsDiskAccess::extract_disk_number_from_path_robust(r"\\.\PHYSICALDRIVE12")
+                .unwrap(),
+            12
+        );
+
+        // Test case insensitive matching
+        assert_eq!(
+            WindowsDiskAccess::extract_disk_number_from_path_robust(r"\\.\physicaldrive3").unwrap(),
+            3
+        );
+        assert_eq!(
+            WindowsDiskAccess::extract_disk_number_from_path_robust(r"\\.\PhysicalDrive5").unwrap(),
+            5
+        );
+
+        // Test without leading backslashes
+        assert_eq!(
+            WindowsDiskAccess::extract_disk_number_from_path_robust("PhysicalDrive7").unwrap(),
+            7
+        );
+        assert_eq!(
+            WindowsDiskAccess::extract_disk_number_from_path_robust("PHYSICALDRIVE9").unwrap(),
+            9
+        );
+
+        // Test just number
+        assert_eq!(
+            WindowsDiskAccess::extract_disk_number_from_path_robust("15").unwrap(),
+            15
+        );
+
+        // Test paths with extra text (regex should find the pattern)
+        assert_eq!(
+            WindowsDiskAccess::extract_disk_number_from_path_robust(
+                "Selected disk: PhysicalDrive11"
+            )
+            .unwrap(),
+            11
+        );
+
+        // Test mixed case patterns
+        assert_eq!(
+            WindowsDiskAccess::extract_disk_number_from_path_robust("physicaldrive2").unwrap(),
+            2
+        );
+
+        // Test invalid inputs
+        assert!(
+            WindowsDiskAccess::extract_disk_number_from_path_robust("No disk number here").is_err()
+        );
+        assert!(WindowsDiskAccess::extract_disk_number_from_path_robust("").is_err());
+        assert!(
+            WindowsDiskAccess::extract_disk_number_from_path_robust("PhysicalDriveABC").is_err()
+        );
+        assert!(WindowsDiskAccess::extract_disk_number_from_path_robust("Drive5").is_err()); // Must contain "PhysicalDrive"
     }
 }

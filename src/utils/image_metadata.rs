@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use tracing::{debug, error, info};
 
 /// Manages storage and retrieval of image metadata
+#[derive(Clone)]
 pub struct MetadataManager {
     project_dirs: ProjectDirs,
 }
@@ -36,31 +37,43 @@ impl MetadataManager {
     /// Store metadata for an image
     pub fn store_metadata(&self, compressed_hash: &str, metadata: &ImageMetadata) -> Result<()> {
         let metadata_path = self.get_metadata_path(compressed_hash);
-        
-        debug!("Storing metadata for hash {} at {:?}", compressed_hash, metadata_path);
-        
+
+        debug!(
+            "Storing metadata for hash {} at {:?}",
+            compressed_hash, metadata_path
+        );
+
         let metadata_json = serde_json::to_string_pretty(metadata)?;
         fs::write(&metadata_path, metadata_json)?;
-        
-        info!("Successfully stored metadata for image hash: {}", compressed_hash);
+
+        info!(
+            "Successfully stored metadata for image hash: {}",
+            compressed_hash
+        );
         Ok(())
     }
 
     /// Load metadata for an image if it exists
     pub fn load_metadata(&self, compressed_hash: &str) -> Result<Option<ImageMetadata>> {
         let metadata_path = self.get_metadata_path(compressed_hash);
-        
+
         if !metadata_path.exists() {
             debug!("No metadata file found for hash: {}", compressed_hash);
             return Ok(None);
         }
 
-        debug!("Loading metadata for hash {} from {:?}", compressed_hash, metadata_path);
-        
+        debug!(
+            "Loading metadata for hash {} from {:?}",
+            compressed_hash, metadata_path
+        );
+
         let metadata_json = fs::read_to_string(&metadata_path)?;
         let metadata: ImageMetadata = serde_json::from_str(&metadata_json)?;
-        
-        debug!("Successfully loaded metadata for image hash: {}", compressed_hash);
+
+        debug!(
+            "Successfully loaded metadata for image hash: {}",
+            compressed_hash
+        );
         Ok(Some(metadata))
     }
 
@@ -73,14 +86,14 @@ impl MetadataManager {
     /// Delete metadata for an image
     pub fn delete_metadata(&self, compressed_hash: &str) -> Result<()> {
         let metadata_path = self.get_metadata_path(compressed_hash);
-        
+
         if metadata_path.exists() {
             fs::remove_file(&metadata_path)?;
             info!("Deleted metadata for image hash: {}", compressed_hash);
         } else {
             debug!("No metadata file to delete for hash: {}", compressed_hash);
         }
-        
+
         Ok(())
     }
 
@@ -96,7 +109,7 @@ impl MetadataManager {
         for entry in fs::read_dir(data_dir)? {
             let entry = entry?;
             let path = entry.path();
-            
+
             if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
                 if file_name.ends_with(".metadata.json") {
                     if let Some(hash) = file_name.strip_suffix(".metadata.json") {
@@ -111,7 +124,7 @@ impl MetadataManager {
     }
 
     /// Clean up orphaned metadata files (for images that no longer exist)
-    pub fn cleanup_orphaned_metadata<F>(&self, image_exists_fn: F) -> Result<usize> 
+    pub fn cleanup_orphaned_metadata<F>(&self, image_exists_fn: F) -> Result<usize>
     where
         F: Fn(&str) -> bool,
     {
@@ -158,28 +171,34 @@ mod tests {
     fn test_metadata_storage_and_retrieval() {
         let temp_dir = TempDir::new().unwrap();
         let mut project_dirs = ProjectDirs::from("test", "test", "test").unwrap();
-        
+
         // Override data directory for testing
         // Note: This is a simplified test - in real usage we'd need to properly mock ProjectDirs
-        
+
         let metadata = create_test_metadata();
         let hash = "test_hash";
-        
+
         // Create a simple test by directly using the storage logic
         let data_dir = temp_dir.path().join("data");
         fs::create_dir_all(&data_dir).unwrap();
-        
+
         let metadata_path = data_dir.join(format!("{}.metadata.json", hash));
         let metadata_json = serde_json::to_string_pretty(&metadata).unwrap();
         fs::write(&metadata_path, metadata_json).unwrap();
-        
+
         // Test loading
         let loaded_json = fs::read_to_string(&metadata_path).unwrap();
         let loaded_metadata: ImageMetadata = serde_json::from_str(&loaded_json).unwrap();
-        
+
         assert_eq!(loaded_metadata.compressed_hash, metadata.compressed_hash);
-        assert_eq!(loaded_metadata.uncompressed_hash, metadata.uncompressed_hash);
-        assert_eq!(loaded_metadata.uncompressed_size, metadata.uncompressed_size);
+        assert_eq!(
+            loaded_metadata.uncompressed_hash,
+            metadata.uncompressed_hash
+        );
+        assert_eq!(
+            loaded_metadata.uncompressed_size,
+            metadata.uncompressed_size
+        );
         assert_eq!(loaded_metadata.created_at, metadata.created_at);
     }
 }

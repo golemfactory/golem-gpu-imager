@@ -32,7 +32,8 @@ pub fn view_select_os_image<'a>(
 
         // Add metadata information if available
         if let Some(metadata) = &image.metadata {
-            let uncompressed_size_gb = metadata.uncompressed_size as f64 / (1024.0 * 1024.0 * 1024.0);
+            let uncompressed_size_gb =
+                metadata.uncompressed_size as f64 / (1024.0 * 1024.0 * 1024.0);
             image_info_items.push(
                 row![
                     icons::analytics(),
@@ -46,7 +47,7 @@ pub fn view_select_os_image<'a>(
                 ]
                 .spacing(5)
                 .align_y(Alignment::Center)
-                .into()
+                .into(),
             );
         }
 
@@ -54,18 +55,37 @@ pub fn view_select_os_image<'a>(
             text(format!("Created: {}", image.created))
                 .size(12)
                 .color(Color::from_rgb(0.5, 0.5, 0.5))
-                .into()
+                .into(),
         );
 
-        let image_info = column(image_info_items)
-            .spacing(8)
-            .width(Length::Fill);
+        let image_info = column(image_info_items).spacing(8).width(Length::Fill);
 
-        let action_button = if image.downloaded {
+        let action_button = if !image.downloaded {
+            // State 1: Not downloaded
+            button(
+                row![icons::get_app(), text("Download")]
+                    .spacing(5)
+                    .align_y(Alignment::Center),
+            )
+            .on_press(Message::DownloadOsImage(i))
+            .padding(10)
+            .style(button::secondary)
+        } else if image.metadata.is_none() {
+            // State 2: Downloaded but needs analysis
+            button(
+                row![icons::analytics(), text("Analyze")]
+                    .spacing(5)
+                    .align_y(Alignment::Center),
+            )
+            .on_press(Message::AnalyzeOsImage(i))
+            .padding(10)
+            .style(button::secondary)
+        } else {
+            // State 3: Ready to select
             button(
                 row![icons::check(), text("Select")]
                     .spacing(5)
-                    .align_y(Alignment::Center)
+                    .align_y(Alignment::Center),
             )
             .on_press(Message::SelectOsImage(i))
             .padding(10)
@@ -74,15 +94,6 @@ pub fn view_select_os_image<'a>(
             } else {
                 button::primary
             })
-        } else {
-            button(
-                row![icons::get_app(), text("Download")]
-                    .spacing(5)
-                    .align_y(Alignment::Center)
-            )
-            .on_press(Message::DownloadOsImage(i))
-            .padding(10)
-            .style(button::secondary)
         };
 
         // Create a container for each OS image item
@@ -111,11 +122,7 @@ pub fn view_select_os_image<'a>(
         button(
             container(row!["Select Target Device", icons::navigate_next()]).center_x(Length::Fill),
         )
-        .on_press(Message::DownloadCompleted(
-            selected_os_image
-                .map(|i| os_images[i].version.clone())
-                .unwrap_or_default(),
-        ))
+        .on_press(Message::GotoSelectTargetDevice)
         .padding(12)
         .width(220)
         .style(button::primary)
@@ -187,13 +194,16 @@ pub fn view_select_os_image_groups<'a>(
                     .spacing(8)
                     .align_y(Alignment::Center)
                     .into(),
-                    text(format!("Version: {}", group.latest_version.version)).size(15).into(),
+                    text(format!("Version: {}", group.latest_version.version))
+                        .size(15)
+                        .into(),
                     text(&group.description).size(14).into(),
                 ];
 
                 // Add metadata information if available
                 if let Some(metadata) = &group.latest_version.metadata {
-                    let uncompressed_size_gb = metadata.uncompressed_size as f64 / (1024.0 * 1024.0 * 1024.0);
+                    let uncompressed_size_gb =
+                        metadata.uncompressed_size as f64 / (1024.0 * 1024.0 * 1024.0);
                     image_info_items.push(
                         row![
                             icons::analytics(),
@@ -207,7 +217,7 @@ pub fn view_select_os_image_groups<'a>(
                         ]
                         .spacing(5)
                         .align_y(Alignment::Center)
-                        .into()
+                        .into(),
                     );
                 }
 
@@ -215,18 +225,37 @@ pub fn view_select_os_image_groups<'a>(
                     text(format!("Created: {}", group.latest_version.created))
                         .size(12)
                         .color(Color::from_rgb(0.5, 0.5, 0.5))
-                        .into()
+                        .into(),
                 );
 
-                let latest_image_info = column(image_info_items)
-                    .spacing(8)
-                    .width(Length::Fill);
+                let latest_image_info = column(image_info_items).spacing(8).width(Length::Fill);
 
-                let latest_action_button = if group.latest_version.downloaded {
+                let latest_action_button = if !group.latest_version.downloaded {
+                    // State 1: Not downloaded
+                    button(
+                        row![icons::get_app(), text("Download")]
+                            .spacing(5)
+                            .align_y(Alignment::Center),
+                    )
+                    .on_press(Message::DownloadOsImageFromGroup(group_idx, 0))
+                    .padding(10)
+                    .style(button::secondary)
+                } else if group.latest_version.metadata.is_none() {
+                    // State 2: Downloaded but needs analysis
+                    button(
+                        row![icons::analytics(), text("Analyze")]
+                            .spacing(5)
+                            .align_y(Alignment::Center),
+                    )
+                    .on_press(Message::AnalyzeOsImageFromGroup(group_idx, 0))
+                    .padding(10)
+                    .style(button::secondary)
+                } else {
+                    // State 3: Ready to select
                     button(
                         row![icons::check(), text("Select")]
                             .spacing(5)
-                            .align_y(Alignment::Center)
+                            .align_y(Alignment::Center),
                     )
                     .on_press(Message::SelectOsImageFromGroup(group_idx, 0))
                     .padding(10)
@@ -235,15 +264,6 @@ pub fn view_select_os_image_groups<'a>(
                     } else {
                         button::primary
                     })
-                } else {
-                    button(
-                        row![icons::get_app(), text("Download")]
-                            .spacing(5)
-                            .align_y(Alignment::Center)
-                    )
-                    .on_press(Message::DownloadOsImageFromGroup(group_idx, 0))
-                    .padding(10)
-                    .style(button::secondary)
                 };
 
                 // Create latest version container
@@ -302,18 +322,25 @@ pub fn view_select_os_image_groups<'a>(
                                         selected_version_idx == Some(actual_version_idx);
 
                                     let mut older_info_items = vec![
-                                        text(format!("Version: {}", older_image.version)).size(15).into(),
+                                        text(format!("Version: {}", older_image.version))
+                                            .size(15)
+                                            .into(),
                                     ];
 
                                     // Add metadata information if available for older versions
                                     if let Some(metadata) = &older_image.metadata {
-                                        let uncompressed_size_gb = metadata.uncompressed_size as f64 / (1024.0 * 1024.0 * 1024.0);
+                                        let uncompressed_size_gb = metadata.uncompressed_size
+                                            as f64
+                                            / (1024.0 * 1024.0 * 1024.0);
                                         older_info_items.push(
                                             row![
                                                 icons::analytics(),
-                                                text(format!("Uncompressed: {:.2} GB", uncompressed_size_gb))
-                                                    .size(11)
-                                                    .color(Color::from_rgb(0.0, 0.5, 0.8)),
+                                                text(format!(
+                                                    "Uncompressed: {:.2} GB",
+                                                    uncompressed_size_gb
+                                                ))
+                                                .size(11)
+                                                .color(Color::from_rgb(0.0, 0.5, 0.8)),
                                                 icons::verified(),
                                                 text("Verified")
                                                     .size(11)
@@ -321,7 +348,7 @@ pub fn view_select_os_image_groups<'a>(
                                             ]
                                             .spacing(4)
                                             .align_y(Alignment::Center)
-                                            .into()
+                                            .into(),
                                         );
                                     }
 
@@ -329,34 +356,18 @@ pub fn view_select_os_image_groups<'a>(
                                         text(format!("Created: {}", older_image.created))
                                             .size(12)
                                             .color(Color::from_rgb(0.5, 0.5, 0.5))
-                                            .into()
+                                            .into(),
                                     );
 
-                                    let older_image_info = column(older_info_items)
-                                        .spacing(5)
-                                        .width(Length::Fill);
+                                    let older_image_info =
+                                        column(older_info_items).spacing(5).width(Length::Fill);
 
-                                    let older_action_button = if older_image.downloaded {
-                                        button(
-                                            row![icons::check(), text("Select")]
-                                                .spacing(5)
-                                                .align_y(Alignment::Center)
-                                        )
-                                        .on_press(Message::SelectOsImageFromGroup(
-                                            group_idx,
-                                            actual_version_idx,
-                                        ))
-                                        .padding(8)
-                                        .style(if is_selected {
-                                            button::success
-                                        } else {
-                                            button::secondary
-                                        })
-                                    } else {
+                                    let older_action_button = if !older_image.downloaded {
+                                        // State 1: Not downloaded
                                         button(
                                             row![icons::get_app(), text("Download")]
                                                 .spacing(5)
-                                                .align_y(Alignment::Center)
+                                                .align_y(Alignment::Center),
                                         )
                                         .on_press(Message::DownloadOsImageFromGroup(
                                             group_idx,
@@ -364,6 +375,38 @@ pub fn view_select_os_image_groups<'a>(
                                         ))
                                         .padding(8)
                                         .style(button::secondary)
+                                    } else if older_image.metadata.is_none() {
+                                        // State 2: Downloaded but needs analysis
+                                        button(
+                                            row![icons::analytics(), text("Analyze")]
+                                                .spacing(5)
+                                                .align_y(Alignment::Center),
+                                        )
+                                        .on_press(Message::AnalyzeOsImageFromGroup(
+                                            group_idx,
+                                            actual_version_idx,
+                                        ))
+                                        .padding(8)
+                                        .style(button::secondary)
+                                    } else {
+                                        // State 3: Ready to select
+                                        button(
+                                            row![icons::check(), text("Select")]
+                                                .spacing(5)
+                                                .align_y(Alignment::Center),
+                                        )
+                                        .on_press(Message::SelectOsImageFromGroup(
+                                            group_idx,
+                                            actual_version_idx,
+                                        ))
+                                        .padding(8)
+                                        .style(
+                                            if is_selected {
+                                                button::success
+                                            } else {
+                                                button::secondary
+                                            },
+                                        )
                                     };
 
                                     container(
@@ -425,22 +468,7 @@ pub fn view_select_os_image_groups<'a>(
         button(
             container(row!["Select Target Device", icons::navigate_next()]).center_x(Length::Fill),
         )
-        .on_press(Message::DownloadCompleted(
-            // Extract the selected image's version ID for the next step
-            selected_os_image_group
-                .and_then(|(group_idx, version_idx)| {
-                    os_image_groups.get(group_idx).map(|group| {
-                        if version_idx == 0 {
-                            group.latest_version.version.clone()
-                        } else {
-                            group.older_versions.get(version_idx - 1)
-                                .map(|v| v.version.clone())
-                                .unwrap_or_default()
-                        }
-                    })
-                })
-                .unwrap_or_default(),
-        ))
+        .on_press(Message::GotoSelectTargetDevice)
         .padding(12)
         .width(220)
         .style(button::primary)
@@ -477,17 +505,26 @@ pub fn view_select_os_image_groups<'a>(
         .into()
 }
 
-pub fn view_calculating_metadata(
+pub fn view_processing_image(
     version_id: &str,
-    progress: f32,
+    download_progress: f32,
+    metadata_progress: f32,
+    overall_progress: f32,
     channel: &str,
     created_date: &str,
+    phase: &crate::utils::streaming_hash_calculator::ProcessingPhase,
     uncompressed_size: Option<u64>,
 ) -> Element<'static, Message> {
-    let title = text("Analyzing Downloaded Image")
-        .size(30)
-        .width(Length::Fill)
-        .align_x(Horizontal::Center);
+    use crate::utils::streaming_hash_calculator::ProcessingPhase;
+    
+    let title = match phase {
+        ProcessingPhase::Download => text("Downloading and Verifying OS Image"),
+        ProcessingPhase::Metadata => text("Analyzing Downloaded Image"),
+        ProcessingPhase::Complete => text("Processing Complete"),
+    }
+    .size(30)
+    .width(Length::Fill)
+    .align_x(Horizontal::Center);
 
     // Image details at the top
     let image_details = column![
@@ -500,24 +537,60 @@ pub fn view_calculating_metadata(
     .align_x(Alignment::Center);
 
     // Two-stage progress indicator
-    let download_stage = row![
-        icons::check_circle().style(|_| iced::widget::text::Style {
-            color: Some(crate::style::SUCCESS),
-            ..iced::widget::text::Style::default()
-        }),
-        text("Download Complete").style(|_| iced::widget::text::Style {
-            color: Some(crate::style::SUCCESS),
-            ..iced::widget::text::Style::default()
-        }),
-    ]
+    let download_stage = if download_progress >= 1.0 {
+        row![
+            icons::check_circle().style(|_| iced::widget::text::Style {
+                color: Some(crate::style::SUCCESS),
+                ..iced::widget::text::Style::default()
+            }),
+            text("Download Complete").style(|_| iced::widget::text::Style {
+                color: Some(crate::style::SUCCESS),
+                ..iced::widget::text::Style::default()
+            }),
+        ]
+    } else {
+        row![
+            icons::timer(),
+            text("Downloading..."),
+            text(format!("{}%", (download_progress * 100.0) as i32)).size(16),
+        ]
+    }
     .spacing(8)
     .align_y(Alignment::Center);
 
-    let metadata_stage = row![
-        icons::timer(),
-        text("Calculating SHA256 hash and size..."),
-        text(format!("{}%", (progress * 100.0) as i32)).size(16),
-    ]
+    let metadata_stage = match phase {
+        ProcessingPhase::Download => {
+            row![
+                icons::timer().style(|_| iced::widget::text::Style {
+                    color: Some(Color::from_rgb(0.5, 0.5, 0.5)),
+                    ..iced::widget::text::Style::default()
+                }),
+                text("Waiting for download...").style(|_| iced::widget::text::Style {
+                    color: Some(Color::from_rgb(0.5, 0.5, 0.5)),
+                    ..iced::widget::text::Style::default()
+                }),
+            ]
+        }
+        ProcessingPhase::Metadata => {
+            row![
+                icons::timer(),
+                text("Calculating SHA256 hash and size..."),
+                text(format!("{}%", (metadata_progress * 100.0) as i32)).size(16),
+            ]
+        }
+        ProcessingPhase::Complete => {
+            row![
+                icons::check_circle().style(|_| iced::widget::text::Style {
+                    color: Some(crate::style::SUCCESS),
+                    ..iced::widget::text::Style::default()
+                }),
+                text("Analysis Complete").style(|_| iced::widget::text::Style {
+                    color: Some(crate::style::SUCCESS),
+                    ..iced::widget::text::Style::default()
+                }),
+            ]
+        }
+    }
     .spacing(8)
     .align_y(Alignment::Center);
 
@@ -526,34 +599,59 @@ pub fn view_calculating_metadata(
         .width(Length::Fill)
         .align_x(Alignment::Center);
 
-    // Progress indicator
-    let progress_percentage = (progress * 100.0) as i32;
+    // Progress indicator - use overall progress
+    let progress_percentage = (overall_progress * 100.0) as i32;
     let progress_text = text(format!("{}%", progress_percentage)).size(25);
-    let progress_bar = progress_bar(0.0..=1.0, progress).style(progress_bar::primary);
+    let progress_bar = match phase {
+        ProcessingPhase::Download => progress_bar(0.0..=1.0, overall_progress).style(progress_bar::secondary),
+        ProcessingPhase::Metadata | ProcessingPhase::Complete => progress_bar(0.0..=1.0, overall_progress).style(progress_bar::primary),
+    };
 
     // Size information if available
     let size_info = if let Some(size) = uncompressed_size {
         let size_gb = size as f64 / (1024.0 * 1024.0 * 1024.0);
-        text(format!("Estimated uncompressed size: {:.2} GB", size_gb))
+        text(format!("Uncompressed size: {:.2} GB", size_gb))
             .size(16)
             .style(|_| iced::widget::text::Style {
-                color: Some(Color::from_rgb(0.5, 0.5, 0.5)),
+                color: Some(Color::from_rgb(0.0, 0.6, 0.0)),
                 ..iced::widget::text::Style::default()
             })
     } else {
-        text("Calculating uncompressed size...")
-            .size(16)
-            .style(|_| iced::widget::text::Style {
-                color: Some(Color::from_rgb(0.5, 0.5, 0.5)),
-                ..iced::widget::text::Style::default()
-            })
+        match phase {
+            ProcessingPhase::Download => text("Calculating size during processing...")
+                .size(16)
+                .style(|_| iced::widget::text::Style {
+                    color: Some(Color::from_rgb(0.5, 0.5, 0.5)),
+                    ..iced::widget::text::Style::default()
+                }),
+            _ => text("Calculating uncompressed size...")
+                .size(16)
+                .style(|_| iced::widget::text::Style {
+                    color: Some(Color::from_rgb(0.5, 0.5, 0.5)),
+                    ..iced::widget::text::Style::default()
+                })
+        }
+    };
+
+    // Status message
+    let status_message = match phase {
+        ProcessingPhase::Download => text("Download and verification in progress, please wait...").size(16),
+        ProcessingPhase::Metadata => text("Analyzing image data, please wait...").size(16),
+        ProcessingPhase::Complete => text("Processing completed successfully!").size(16),
     };
 
     // Optional cancel button
     let cancel_button = button(
-        row![icons::cancel(), text("Cancel Analysis")]
-            .spacing(5)
-            .align_y(Alignment::Center)
+        row![
+            icons::cancel(), 
+            text(match phase {
+                ProcessingPhase::Download => "Cancel Download",
+                ProcessingPhase::Metadata => "Cancel Analysis", 
+                ProcessingPhase::Complete => "Cancel",
+            })
+        ]
+        .spacing(5)
+        .align_y(Alignment::Center),
     )
     .on_press(Message::CancelWrite)
     .padding(10);
@@ -568,68 +666,7 @@ pub fn view_calculating_metadata(
         progress_text,
         progress_bar,
         size_info,
-        text("Analyzing image data, please wait...").size(16),
-        container(column![])
-            .height(Length::Fill)
-            .width(Length::Fill),
-        cancel_button,
-    ]
-    .spacing(20)
-    .padding(20)
-    .width(Length::Fill)
-    .align_x(Alignment::Center);
-
-    Container::new(content)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .center_x(Length::Fill)
-        .into()
-}
-
-pub fn view_downloading_image(
-    version_id: &str,
-    progress: f32,
-    channel: &str,
-    created_date: &str,
-) -> Element<'static, Message> {
-    let title = text("Downloading OS Image")
-        .size(30)
-        .width(Length::Fill)
-        .align_x(Horizontal::Center);
-
-    // Image details at the top
-    let image_details = column![
-        text(format!("Channel: {}", channel)).size(18),
-        text(format!("Version: {}", version_id)).size(18),
-        text(format!("Created: {}", created_date)).size(16),
-    ]
-    .spacing(10)
-    .width(Length::Fill)
-    .align_x(Alignment::Center);
-
-    // Progress indicator
-    let progress_percentage = (progress * 100.0) as i32;
-    let progress_text = text(format!("{}%", progress_percentage)).size(25);
-    let progress_bar = progress_bar(0.0..=1.0, progress).style(progress_bar::secondary);
-
-    // Optional cancel button
-    let cancel_button = button(
-        row![icons::cancel(), text("Cancel Download")]
-            .spacing(5)
-            .align_y(Alignment::Center)
-    )
-    .on_press(Message::CancelWrite)
-    .padding(10);
-
-    let content = column![
-        title,
-        image_details,
-        container(column![])
-            .height(Length::Fill)
-            .width(Length::Fill),
-        progress_text,
-        progress_bar,
-        text("Download in progress, please wait...").size(16),
+        status_message,
         container(column![])
             .height(Length::Fill)
             .width(Length::Fill),
@@ -1107,17 +1144,15 @@ pub fn view_select_target_device<'a>(
             .spacing(5)
             .width(Length::Fill);
 
-            let select_button = button(
-                if is_selected {
-                    row![icons::check_circle(), text("Selected")]
-                        .spacing(5)
-                        .align_y(Alignment::Center)
-                } else {
-                    row![icons::check(), text("Select")]
-                        .spacing(5)
-                        .align_y(Alignment::Center)
-                }
-            )
+            let select_button = button(if is_selected {
+                row![icons::check_circle(), text("Selected")]
+                    .spacing(5)
+                    .align_y(Alignment::Center)
+            } else {
+                row![icons::check(), text("Select")]
+                    .spacing(5)
+                    .align_y(Alignment::Center)
+            })
             .on_press(Message::SelectTargetDevice(i))
             .padding(10)
             .style(if is_selected {
@@ -1271,39 +1306,11 @@ pub fn view_writing_process(progress: f32, title: &'static str) -> Element<'stat
     .spacing(10)
     .align_y(Alignment::Center);
 
-    // Enhanced description text - show different steps based on progress with more detail
-    let (step_text, step_description) = match progress_percentage {
-        0..=5 => (
-            "Initializing Write Process",
-            "Preparing disk and validating image data...",
-        ),
-        6..=15 => (
-            "Preparing Disk",
-            "Creating partition table and file system structure...",
-        ),
-        16..=30 => (
-            "Writing Boot Sectors",
-            "Installing bootloader and system configuration...",
-        ),
-        31..=75 => (
-            "Writing OS Image",
-            "Transferring main system files to device...",
-        ),
-        76..=90 => (
-            "Writing Configuration",
-            "Applying your custom settings to the device...",
-        ),
-        91..=99 => (
-            "Finalizing",
-            "Verifying data integrity and completing installation...",
-        ),
-        _ => (
-            "Completing Installation",
-            "Almost done! Finishing up the final steps...",
-        ),
-    };
+    // Simple progress description
+    let step_text = "Writing Image Data";
+    let step_description = "Copying image data to device...";
 
-    // Create a progress step indicator with more visual impact
+    // Create a simple progress indicator
     let step_header = text(step_text).size(18).style(text::primary);
     let step_detail = text(step_description).size(14);
 
@@ -1424,7 +1431,7 @@ pub fn view_writing_process(progress: f32, title: &'static str) -> Element<'stat
         .into()
 }
 
-pub fn view_flash_completion(success: bool) -> Element<'static, Message> {
+pub fn view_flash_completion(success: bool, error_message: Option<&str>) -> Element<'_, Message> {
     // Page header with success/error status with improved styling
     let header_text = if success {
         "Installation Successful"
@@ -1482,6 +1489,54 @@ pub fn view_flash_completion(success: bool) -> Element<'static, Message> {
     })
     .size(16);
 
+    // Error message container (only shown if error_message is Some and not success)
+    let error_container = if !success {
+        if let Some(error) = error_message {
+            // Truncate very long error messages and format them better
+            let formatted_error = if error.len() > 500 {
+                // For very long errors, show first part and indicate truncation
+                format!("{}... (error truncated, see logs for full details)", &error[..500])
+            } else {
+                error.to_string()
+            };
+            
+            Some(container(
+                scrollable(
+                    column![
+                        row![
+                            icons::error().color(Color::from_rgb(0.8, 0.0, 0.0)),
+                            text("Error Details:").size(16).color(Color::from_rgb(0.8, 0.0, 0.0))
+                        ]
+                        .spacing(10)
+                        .align_y(Alignment::Center),
+                        
+                        text(formatted_error)
+                            .size(14)
+                            .color(Color::from_rgb(0.7, 0.0, 0.0))
+                    ]
+                    .spacing(10)
+                )
+            )
+            .width(Length::Fill)
+            .height(Length::Fixed(120.0)) // Fixed height with scrolling
+            .padding(15)
+            .style(|_theme| container::Style {
+                text_color: Some(Color::from_rgb(0.8, 0.0, 0.0)),
+                background: Some(Color::from_rgb(1.0, 0.9, 0.9).into()),
+                border: iced::Border {
+                    radius: 5.0.into(),
+                    width: 1.0,
+                    color: Color::from_rgb(0.8, 0.0, 0.0),
+                },
+                ..container::Style::default()
+            }))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
     // Add next steps for success case
     let next_steps_content = if success {
         column![
@@ -1537,15 +1592,24 @@ pub fn view_flash_completion(success: bool) -> Element<'static, Message> {
 
     // Information container with improved visual hierarchy
     let success_clone = success;
+    let mut info_column = column![
+        status_icon,
+        status_title,
+        column![].height(15), // Small spacer
+        status_message,
+    ];
+
+    // Add error message if present
+    if let Some(error_widget) = error_container {
+        info_column = info_column.push(column![].height(15)); // Add spacer
+        info_column = info_column.push(error_widget);
+    }
+
+    info_column = info_column.push(column![].height(25)); // Larger spacer
+    info_column = info_column.push(next_steps);
+
     let info_container = container(
-        column![
-            status_icon,
-            status_title,
-            column![].height(15), // Small spacer
-            status_message,
-            column![].height(25), // Larger spacer
-            next_steps,
-        ]
+        info_column
         .spacing(10)
         .align_x(Alignment::Center),
     )

@@ -34,7 +34,7 @@ pub fn view_select_existing_device<'a>(
         let select_button = button(
             row![icons::check(), text("Select")]
                 .spacing(5)
-                .align_y(Alignment::Center)
+                .align_y(Alignment::Center),
         )
         .on_press(Message::SelectExistingDevice(i))
         .padding(10);
@@ -192,7 +192,7 @@ pub fn view_edit_completion(success: bool) -> Element<'static, Message> {
     let back_button = button(
         row![icons::navigate_before(), text("Back to Main Menu")]
             .spacing(5)
-            .align_y(Alignment::Center)
+            .align_y(Alignment::Center),
     )
     .on_press(Message::BackToMainMenu)
     .padding(10);

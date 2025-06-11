@@ -9,11 +9,11 @@ use std::io::{self, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::num::NonZeroUsize;
 use uuid::Uuid;
 // Import tracing for comprehensive logging capability
-use tracing::{debug, error, info};
 #[cfg(test)]
 use tracing::trace;
 #[cfg(windows)]
 use tracing::warn;
+use tracing::{debug, error, info};
 use xz4rust::XzReader;
 
 // OS-specific imports

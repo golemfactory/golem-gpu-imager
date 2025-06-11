@@ -1,21 +1,21 @@
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ImageMetadata {
-    pub compressed_hash: String,      // Original SHA256 from repo
-    pub uncompressed_hash: String,    // SHA256 of decompressed data
-    pub uncompressed_size: u64,       // Size of decompressed image
-    pub created_at: String,           // When metadata was calculated
+    pub compressed_hash: String,   // Original SHA256 from repo
+    pub uncompressed_hash: String, // SHA256 of decompressed data
+    pub uncompressed_size: u64,    // Size of decompressed image
+    pub created_at: String,        // When metadata was calculated
 }
 
 #[derive(Debug, Clone)]
 pub struct OsImage {
-    pub name: String,         // Channel name
-    pub version: String,      // Version id
-    pub description: String,  // Human-readable description
-    pub downloaded: bool,     // Whether the image is already downloaded
-    pub path: Option<String>, // Path to the image file if downloaded
-    pub created: String,      // Creation date from metadata
-    pub sha256: String,       // SHA256 hash for verification
-    pub is_latest: bool,      // Whether this is the latest version in the channel
+    pub name: String,                    // Channel name
+    pub version: String,                 // Version id
+    pub description: String,             // Human-readable description
+    pub downloaded: bool,                // Whether the image is already downloaded
+    pub path: Option<String>,            // Path to the image file if downloaded
+    pub created: String,                 // Creation date from metadata
+    pub sha256: String,                  // SHA256 hash for verification
+    pub is_latest: bool,                 // Whether this is the latest version in the channel
     pub metadata: Option<ImageMetadata>, // Uncompressed image metadata
 }
 
@@ -93,18 +93,15 @@ pub enum AppMode {
 
 pub enum FlashState {
     SelectOsImage,
-    DownloadingImage {
+    ProcessingImage {
         version_id: String,
-        progress: f32,
+        download_progress: f32,
+        metadata_progress: f32,
+        overall_progress: f32,
         channel: String,
         created_date: String,
-    },
-    CalculatingMetadata {
-        version_id: String,
-        progress: f32,
-        channel: String,
-        created_date: String,
-        uncompressed_size: Option<u64>, // Available after calculation
+        phase: crate::utils::streaming_hash_calculator::ProcessingPhase,
+        uncompressed_size: Option<u64>,
     },
     SelectTargetDevice,
     ConfigureSettings {
@@ -114,11 +111,12 @@ pub enum FlashState {
         wallet_address: String,
         is_wallet_valid: bool,
     },
-    WritingImage(f32),   // Progress 0.0 - 1.0 for image writing
-    VerifyingImage(f32), // Progress 0.0 - 1.0 for image verification
-    WritingConfig(f32),  // Progress 0.0 - 1.0 for config writing
-    WritingProcess(f32), // Legacy - for backward compatibility
-    Completion(bool),    // Success or failure
+    ClearingPartitions(f32), // Progress 0.0 - 1.0 for partition clearing
+    WritingImage(f32),       // Progress 0.0 - 1.0 for image writing
+    VerifyingImage(f32),     // Progress 0.0 - 1.0 for image verification
+    WritingConfig(f32),      // Progress 0.0 - 1.0 for config writing
+    WritingProcess(f32),     // Legacy - for backward compatibility
+    Completion(bool),        // Success or failure
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -171,16 +169,16 @@ pub enum Message {
     EditExistingDisk,
     SelectOsImage(usize),
     DownloadOsImage(usize),
+    AnalyzeOsImage(usize),                 // Analyze metadata for downloaded image
     SelectOsImageFromGroup(usize, usize), // Group index, version index (0 = latest, 1+ = older)
     DownloadOsImageFromGroup(usize, usize), // Group index, version index
+    AnalyzeOsImageFromGroup(usize, usize), // Group index, version index - analyze downloaded image
     ToggleVersionHistory(usize),          // Toggle expanded state for a group
-    DownloadProgress(String, f32),        // Version ID and progress (0.0-1.0)
-    DownloadCompleted(String),            // Version ID of completed download
-    DownloadFailed(String, String),       // Version ID and error message
-    MetadataProgress(String, f32, u64, u64), // version_id, progress, bytes_processed, estimated_total
-    MetadataCompleted(String, ImageMetadata), // version_id, metadata
-    MetadataFailed(String, String),          // version_id, error
-    GotoConfigureSettings,                // Go to image configuration screen
+    ProcessingProgress(String, crate::utils::streaming_hash_calculator::ProcessingProgress), // Version ID and unified progress
+    ProcessingCompleted(String, ImageMetadata), // Version ID and final metadata
+    ProcessingFailed(String, String),           // Version ID and error message
+    GotoConfigureSettings,                   // Go to image configuration screen
+    GotoSelectTargetDevice,                  // Go to storage device selection screen
     SetPaymentNetwork(PaymentNetwork),
     SetSubnet(String),
     SetNetworkType(NetworkType),
@@ -215,6 +213,9 @@ pub enum Message {
     ConfigurationSaveFailed,       // Failed to save configuration to device
     ShowError(String),             // Show an error message to the user
     DeviceLockedForWriting(crate::disk::Disk, String), // Device locked for writing with image path
+    ClearPartitionsProgress(f32),  // Update partition clearing progress
+    ClearPartitionsCompleted,      // Partition clearing completed successfully
+    ClearPartitionsFailed(String), // Partition clearing failed with error message
     WriteImageProgress(f32),       // Update the image writing progress
     VerificationProgress(f32),     // Update the verification progress
     WriteImageCompleted,           // Image write completed successfully

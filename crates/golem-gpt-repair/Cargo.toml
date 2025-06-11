@@ -1,0 +1,21 @@
+[package]
+name = "golem-gpt-repair"
+version = "0.1.6"
+edition = "2024"
+
+[[bin]]
+name = "golem-gpt-repair"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.98"
+clap = { version = "4.5.1", features = ["derive"] }
+crc32fast = "1.3.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.52.0", features = [
+    "Win32_Foundation", 
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_Ioctl"
+]}

@@ -1,0 +1,32 @@
+[package]
+name = "golem-config-reader"
+version = "0.1.6"
+edition = "2024"
+
+[[bin]]
+name = "golem-config-reader"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.98"
+clap = { version = "4.5.1", features = ["derive"] }
+fatfs = "0.3.6"
+gpt = "3.1.0"
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter", "registry"] }
+uuid = "1.8.0"
+tokio = { version = "1.44.2", features = ["full"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.52.0", features = [
+    "Win32_Foundation", 
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_Ioctl",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_System_Threading",
+    "Win32_System_Console",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_System_WindowsProgramming"
+]}

@@ -1735,12 +1735,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "golem-config-reader"
+version = "0.1.6"
+dependencies = [
+ "anyhow",
+ "clap",
+ "fatfs",
+ "gpt",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+ "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "golem-gpt-repair"
+version = "0.1.6"
+dependencies = [
+ "anyhow",
+ "clap",
+ "crc32fast",
+ "windows-sys 0.52.0",
+]
+
+[[package]]
 name = "golem-gpu-imager"
 version = "0.1.6"
 dependencies = [
  "anyhow",
  "chrono",
- "clap",
  "crc32fast",
  "crunchy",
  "directories",
@@ -1769,6 +1793,19 @@ dependencies = [
  "windows-sys 0.52.0",
  "windows_exe_info",
  "xz4rust",
+]
+
+[[package]]
+name = "golem-partition-lister"
+version = "0.1.6"
+dependencies = [
+ "anyhow",
+ "clap",
+ "golem-gpu-imager",
+ "gpt",
+ "tracing",
+ "tracing-subscriber",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]

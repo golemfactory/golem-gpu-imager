@@ -180,25 +180,52 @@ jobs:
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "Building MSI for version: $VERSION"
           
+          # Debug: List downloaded artifacts
+          echo "Downloaded artifacts:"
+          find artifacts -type f -ls
+          
           # Create target directory structure expected by installer
           mkdir -p target/x86_64-pc-windows-gnu/release
           cp artifacts/golem-gpu-imager-windows.exe target/x86_64-pc-windows-gnu/release/golem-gpu-imager.exe
           
+          # Verify the binary was copied
+          echo "Target binary:"
+          ls -la target/x86_64-pc-windows-gnu/release/
+          
           # Update version in installer.wxs
           sed -i "s/Version=\"[0-9]*\.[0-9]*\.[0-9]*\.[0-9]*\"/Version=\"$VERSION.0\"/" installers/windows/installer.wxs
+          
+          # Show updated installer.wxs version
+          echo "Updated installer.wxs version:"
+          grep 'Version=' installers/windows/installer.wxs
 
       - name: Build MSI with Docker
         run: |
           # Create output directory
           mkdir -p dist
           
+          # Verify installer.wxs exists and is readable
+          echo "Installer WXS file:"
+          ls -la installers/windows/installer.wxs
+          
           # Build MSI using Docker with WiX Toolset v4
           MSI_NAME="GolemGpuImager-${{ env.VERSION }}-x64.msi"
+          echo "Building MSI: $MSI_NAME"
+          
+          # Set proper permissions for Docker
+          chmod -R 755 .
+          
+          # Build with more verbose output and error handling
           docker run --rm \
             -v "$(pwd):/work" \
             -w /work \
+            --user "$(id -u):$(id -g)" \
             jkroepke/wixtoolset:latest \
-            build installers/windows/installer.wxs -arch x64 -out "dist/$MSI_NAME"
+            build installers/windows/installer.wxs -arch x64 -out "dist/$MSI_NAME" -v
+          
+          # Verify MSI was created
+          echo "Generated MSI:"
+          ls -la dist/
           
           echo "MSI_NAME=$MSI_NAME" >> $GITHUB_ENV
 

@@ -18,9 +18,9 @@ jobs:
     strategy:
       matrix:
         include:
-          - target: x86_64-unknown-linux-gnu
+          - target: x86_64-unknown-linux-gnu.2.31
             artifact_name: golem-gpu-imager-linux-x64
-          - target: aarch64-unknown-linux-gnu
+          - target: aarch64-unknown-linux-gnu.2.31
             artifact_name: golem-gpu-imager-linux-arm64
           - target: x86_64-pc-windows-gnu
             artifact_name: golem-gpu-imager-windows
@@ -119,12 +119,7 @@ jobs:
             ${{ runner.os }}-cargo-build-${{ matrix.target }}-
 
       - name: Build for ${{ matrix.target }}
-        run: |
-          if [[ "${{ matrix.target }}" == "x86_64-unknown-linux-gnu" ]]; then
-            cargo build --target ${{ matrix.target }} --release
-          else
-            cargo zigbuild --target ${{ matrix.target }} --release
-          fi
+        run: cargo zigbuild --target ${{ matrix.target }} --release
 
       - name: Prepare artifacts
         run: |

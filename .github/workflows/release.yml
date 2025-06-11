@@ -219,9 +219,11 @@ jobs:
           docker run --rm \
             -v "$(pwd):/work" \
             -w /work \
-            --user "$(id -u):$(id -g)" \
             jkroepke/wixtoolset:latest \
             build installers/windows/installer.wxs -arch x64 -out "dist/$MSI_NAME" -v
+          
+          # Fix permissions on generated files
+          sudo chown -R runner:docker dist/
           
           # Verify MSI was created
           echo "Generated MSI:"

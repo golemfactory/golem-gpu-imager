@@ -18,11 +18,14 @@ jobs:
     strategy:
       matrix:
         include:
-          - target: x86_64-unknown-linux-gnu.2.31
+          - rust_target: x86_64-unknown-linux-gnu
+            zigbuild_target: x86_64-unknown-linux-gnu.2.31
             artifact_name: golem-gpu-imager-linux-x64
-          - target: aarch64-unknown-linux-gnu.2.31
+          - rust_target: aarch64-unknown-linux-gnu
+            zigbuild_target: aarch64-unknown-linux-gnu.2.31
             artifact_name: golem-gpu-imager-linux-arm64
-          - target: x86_64-pc-windows-gnu
+          - rust_target: x86_64-pc-windows-gnu
+            zigbuild_target: x86_64-pc-windows-gnu
             artifact_name: golem-gpu-imager-windows
     
     steps:
@@ -32,7 +35,7 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: ${{ matrix.rust_target }}
 
       # Cache system packages for cross-compilation
       - name: Cache cross-compilation packages
@@ -46,9 +49,9 @@ jobs:
         if: steps.cache-cross-deps.outputs.cache-hit != 'true'
         run: |
           sudo apt-get update
-          if [[ "${{ matrix.target }}" == "x86_64-pc-windows-gnu" ]]; then
+          if [[ "${{ matrix.rust_target }}" == "x86_64-pc-windows-gnu" ]]; then
             sudo apt-get install -y gcc-mingw-w64-x86-64
-          elif [[ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ]]; then
+          elif [[ "${{ matrix.rust_target }}" == "aarch64-unknown-linux-gnu" ]]; then
             sudo apt-get install -y gcc-aarch64-linux-gnu
           fi
 
@@ -113,20 +116,20 @@ jobs:
         uses: actions/cache@v4
         with:
           path: target
-          key: ${{ runner.os }}-cargo-build-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}-${{ hashFiles('src/**') }}
+          key: ${{ runner.os }}-cargo-build-${{ matrix.rust_target }}-${{ hashFiles('**/Cargo.lock') }}-${{ hashFiles('src/**') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-build-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}-
-            ${{ runner.os }}-cargo-build-${{ matrix.target }}-
+            ${{ runner.os }}-cargo-build-${{ matrix.rust_target }}-${{ hashFiles('**/Cargo.lock') }}-
+            ${{ runner.os }}-cargo-build-${{ matrix.rust_target }}-
 
-      - name: Build for ${{ matrix.target }}
-        run: cargo zigbuild --target ${{ matrix.target }} --release
+      - name: Build for ${{ matrix.zigbuild_target }}
+        run: cargo zigbuild --target ${{ matrix.zigbuild_target }} --release
 
       - name: Prepare artifacts
         run: |
           mkdir -p artifacts
           
           # Determine binary name and extension
-          if [[ "${{ matrix.target }}" == *"windows"* ]]; then
+          if [[ "${{ matrix.rust_target }}" == *"windows"* ]]; then
             BINARY_NAME="golem-gpu-imager.exe"
             ARTIFACT_NAME="${{ matrix.artifact_name }}.exe"
           else
@@ -135,11 +138,11 @@ jobs:
           fi
           
           # Copy binary
-          cp "target/${{ matrix.target }}/release/${BINARY_NAME}" "artifacts/${ARTIFACT_NAME}"
+          cp "target/${{ matrix.rust_target }}/release/${BINARY_NAME}" "artifacts/${ARTIFACT_NAME}"
           
           # Create appropriate archives based on platform
           cd artifacts
-          if [[ "${{ matrix.target }}" == *"windows"* ]]; then
+          if [[ "${{ matrix.rust_target }}" == *"windows"* ]]; then
             # Windows: create ZIP only
             zip "${{ matrix.artifact_name }}.zip" "${ARTIFACT_NAME}"
           else
@@ -150,7 +153,7 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: golem-gpu-imager-${{ matrix.target }}
+          name: golem-gpu-imager-${{ matrix.rust_target }}
           path: artifacts/*
           compression-level: 0  # Files are already compressed
 

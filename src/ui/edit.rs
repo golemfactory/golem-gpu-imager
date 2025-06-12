@@ -49,7 +49,7 @@ pub fn view_select_existing_device<'a>(
         .width(Length::Fill)
         .padding(15)
         .style(if is_selected {
-            container::success
+            crate::style::selected_container
         } else {
             crate::style::bordered_box
         })

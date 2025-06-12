@@ -163,6 +163,27 @@ pub fn selected_container(theme: &Theme) -> container::Style {
     }
 }
 
+// Enhanced container style for selected OS images with better readability
+pub fn selected_os_image_container(theme: &Theme) -> container::Style {
+    let palette = theme.extended_palette();
+
+    container::Style {
+        background: Some(palette.background.weak.color.into()),
+        border: Border {
+            width: 3.0,
+            radius: 8.0.into(),
+            color: PRIMARY, // Use the custom PRIMARY color for strong visual feedback
+        },
+        text_color: Some(TEXT), // Ensure high contrast text
+        shadow: iced::Shadow {
+            color: PRIMARY.scale_alpha(0.3),
+            offset: iced::Vector::new(0.0, 2.0),
+            blur_radius: 4.0,
+        },
+        ..container::Style::default()
+    }
+}
+
 // Style for pick lists
 pub fn pick_list_style(
     theme: &Theme,

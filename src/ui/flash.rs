@@ -83,14 +83,33 @@ pub fn view_select_os_image<'a>(
         } else {
             // State 3: Ready to select
             button(
-                row![icons::check(), text("Select")]
+                row![
+                    if is_selected { icons::check_circle() } else { icons::check() },
+                    text(if is_selected { "Selected" } else { "Select" })
+                ]
                     .spacing(5)
                     .align_y(Alignment::Center),
             )
             .on_press(Message::SelectOsImage(i))
             .padding(10)
             .style(if is_selected {
-                button::success
+                |_theme: &Theme, _status| {
+                    button::Style {
+                        background: Some(crate::style::PRIMARY.into()),
+                        text_color: Color::WHITE,
+                        border: Border {
+                            color: crate::style::PRIMARY,
+                            width: 2.0,
+                            radius: 5.0.into(),
+                        },
+                        shadow: iced::Shadow {
+                            color: crate::style::PRIMARY.scale_alpha(0.3),
+                            offset: iced::Vector::new(0.0, 2.0),
+                            blur_radius: 4.0,
+                        },
+                        ..button::Style::default()
+                    }
+                }
             } else {
                 button::primary
             })
@@ -105,14 +124,15 @@ pub fn view_select_os_image<'a>(
         .width(Length::Fill)
         .padding(15)
         .style(if is_selected {
-            container::success
+            crate::style::selected_os_image_container
         } else {
             crate::style::bordered_box
         })
         .into()
     }))
     .spacing(15)
-    .width(Length::Fill);
+    .width(Length::Fill)
+    .padding(iced::Padding::new(0.0).right(10.0)); // Add right padding to prevent scrollbar collision
 
     // Make scrollable in case we have many images
     let scrollable_content = scrollable(os_image_list).height(Length::Fill);
@@ -253,14 +273,33 @@ pub fn view_select_os_image_groups<'a>(
                 } else {
                     // State 3: Ready to select
                     button(
-                        row![icons::check(), text("Select")]
+                        row![
+                            if latest_is_selected { icons::check_circle() } else { icons::check() },
+                            text(if latest_is_selected { "Selected" } else { "Select" })
+                        ]
                             .spacing(5)
                             .align_y(Alignment::Center),
                     )
                     .on_press(Message::SelectOsImageFromGroup(group_idx, 0))
                     .padding(10)
                     .style(if latest_is_selected {
-                        button::success
+                        |_theme: &Theme, _status| {
+                            button::Style {
+                                background: Some(crate::style::PRIMARY.into()),
+                                text_color: Color::WHITE,
+                                border: Border {
+                                    color: crate::style::PRIMARY,
+                                    width: 2.0,
+                                    radius: 5.0.into(),
+                                },
+                                shadow: iced::Shadow {
+                                    color: crate::style::PRIMARY.scale_alpha(0.3),
+                                    offset: iced::Vector::new(0.0, 2.0),
+                                    blur_radius: 4.0,
+                                },
+                                ..button::Style::default()
+                            }
+                        }
                     } else {
                         button::primary
                     })
@@ -275,7 +314,7 @@ pub fn view_select_os_image_groups<'a>(
                 .width(Length::Fill)
                 .padding(15)
                 .style(if latest_is_selected {
-                    container::success
+                    crate::style::selected_os_image_container
                 } else {
                     crate::style::bordered_box
                 });
@@ -391,7 +430,10 @@ pub fn view_select_os_image_groups<'a>(
                                     } else {
                                         // State 3: Ready to select
                                         button(
-                                            row![icons::check(), text("Select")]
+                                            row![
+                                                if is_selected { icons::check_circle() } else { icons::check() },
+                                                text(if is_selected { "Selected" } else { "Select" })
+                                            ]
                                                 .spacing(5)
                                                 .align_y(Alignment::Center),
                                         )
@@ -402,7 +444,23 @@ pub fn view_select_os_image_groups<'a>(
                                         .padding(8)
                                         .style(
                                             if is_selected {
-                                                button::success
+                                                |_theme: &Theme, _status| {
+                                                    button::Style {
+                                                        background: Some(crate::style::PRIMARY.into()),
+                                                        text_color: Color::WHITE,
+                                                        border: Border {
+                                                            color: crate::style::PRIMARY,
+                                                            width: 2.0,
+                                                            radius: 5.0.into(),
+                                                        },
+                                                        shadow: iced::Shadow {
+                                                            color: crate::style::PRIMARY.scale_alpha(0.3),
+                                                            offset: iced::Vector::new(0.0, 2.0),
+                                                            blur_radius: 4.0,
+                                                        },
+                                                        ..button::Style::default()
+                                                    }
+                                                }
                                             } else {
                                                 button::secondary
                                             },
@@ -417,7 +475,7 @@ pub fn view_select_os_image_groups<'a>(
                                     .width(Length::Fill)
                                     .padding(10)
                                     .style(if is_selected {
-                                        container::success
+                                        crate::style::selected_os_image_container
                                     } else {
                                         |theme: &Theme| {
                                             let palette = theme.extended_palette();
@@ -457,7 +515,8 @@ pub fn view_select_os_image_groups<'a>(
             }),
     )
     .spacing(15)
-    .width(Length::Fill);
+    .width(Length::Fill)
+    .padding(iced::Padding::new(0.0).right(10.0)); // Add right padding to prevent scrollbar collision
 
     // Make scrollable in case we have many images
     let scrollable_content = scrollable(os_image_list).height(Length::Fill);
@@ -1169,7 +1228,7 @@ pub fn view_select_target_device<'a>(
                     .align_y(Alignment::Center),
             )
             .style(if is_selected {
-                container::success
+                crate::style::selected_container
             } else {
                 crate::style::bordered_box
             })

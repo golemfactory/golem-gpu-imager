@@ -153,5 +153,5 @@ pub fn analytics() -> iced::widget::Text<'static> {
 }
 
 pub fn verified() -> iced::widget::Text<'static> {
-    icon('\u{E8E8}') // Material Icons verified
+    icon('\u{E86C}') // Material Icons check_circle (verified)
 }

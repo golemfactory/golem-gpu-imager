@@ -1,4 +1,3 @@
-pub mod disks;
 pub mod elevation;
 pub mod eth;
 pub mod image_metadata;

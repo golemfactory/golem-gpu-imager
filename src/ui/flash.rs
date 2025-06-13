@@ -1246,11 +1246,11 @@ pub fn view_select_target_device<'a>(
         .width(Length::Fill);
 
     let back_button = button(
-        row![icons::navigate_before(), "Back to Configure Settings"]
+        row![icons::navigate_before(), "Back to OS Images"]
             .spacing(5)
             .align_y(Alignment::Center),
     )
-    .on_press(Message::GotoConfigureSettings)
+    .on_press(Message::BackToSelectOsImage)
     .padding(10)
     .style(button::secondary);
 
@@ -1312,7 +1312,7 @@ pub fn view_writing_process(progress: f32, title: &'static str) -> Element<'stat
         container(
             text(title)
                 .size(28)
-                .style(|theme: &iced::Theme| iced::widget::text::Style {
+                .style(|_theme: &iced::Theme| iced::widget::text::Style {
                     color: Some(iced::Color::WHITE), // Full white for maximum contrast
                     ..iced::widget::text::Style::default()
                 }),

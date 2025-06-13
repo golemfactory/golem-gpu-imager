@@ -13,12 +13,13 @@ use iced::Element;
 /// Module-level view function that delegates to appropriate UI functions based on workflow state
 pub fn view<'a>(
     edit_state: &'a EditState, 
+    device_selection: &'a crate::ui::device_selection::DeviceSelectionState,
     preset_manager: &'a crate::ui::preset_manager::PresetManagerState
 ) -> Element<'a, crate::ui::messages::Message> {
     match &edit_state.workflow_state {
         EditWorkflowState::SelectDevice => {
             ui::view_select_existing_device(
-                &edit_state.storage_devices,
+                &device_selection.devices,
                 edit_state.selected_device,
             ).map(crate::ui::messages::Message::Edit)
         }

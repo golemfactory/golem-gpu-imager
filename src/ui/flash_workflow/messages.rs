@@ -19,6 +19,7 @@ pub enum FlashMessage {
     SetNetworkType(NetworkType),
     SetWalletAddress(String),
     SelectTargetDevice(usize),
+    RefreshTargetDevices,                // Delegate device refresh to DeviceSelection module
     WriteImage,
     CancelWrite,
     FlashAnother,

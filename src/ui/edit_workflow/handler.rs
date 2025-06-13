@@ -8,10 +8,9 @@ pub fn handle_message(
 ) -> Task<crate::ui::messages::Message> {
     match message {
         EditMessage::SelectExistingDevice(index) => {
-            if index < state.storage_devices.len() {
-                state.selected_device = Some(index);
-                debug!("Selected device for editing: {}", index);
-            }
+            // Note: Device bounds checking is now handled by the UI layer using shared device state
+            state.selected_device = Some(index);
+            debug!("Selected device for editing: {}", index);
             Task::none()
         }
         
@@ -58,8 +57,22 @@ pub fn handle_message(
         }
         
         EditMessage::RefreshDevices => {
-            // This would typically trigger a device enumeration
-            debug!("Refreshing device list");
+            debug!("Delegating device refresh to DeviceSelection module");
+            Task::done(crate::ui::messages::Message::DeviceSelection(
+                crate::ui::device_selection::DeviceMessage::RefreshDevices
+            ))
+        }
+        
+        EditMessage::DevicesLoaded(_devices) => {
+            // This message is no longer used - devices are handled by DeviceSelection module
+            debug!("DevicesLoaded message deprecated - using shared device selection state");
+            Task::none()
+        }
+        
+        EditMessage::DeviceLoadFailed(error) => {
+            // Set error message in edit state for display
+            state.error_message = Some(error.clone());
+            error!("Device loading failed: {}", error);
             Task::none()
         }
         

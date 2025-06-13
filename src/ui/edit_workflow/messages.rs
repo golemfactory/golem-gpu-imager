@@ -10,6 +10,8 @@ pub enum EditMessage {
     SetNetworkType(NetworkType),
     SetWalletAddress(String),
     RefreshDevices,
+    DevicesLoaded(Vec<crate::ui::device_selection::StorageDevice>),
+    DeviceLoadFailed(String),
     DeviceLocked(Option<crate::disk::Disk>),
     ConfigurationSaved,
     ConfigurationSaveFailed,

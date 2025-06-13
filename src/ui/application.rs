@@ -105,13 +105,26 @@ impl GolemGpuImager {
             Message::FlashNewImage => {
                 self.mode = AppMode::FlashNewImage;
                 self.flash_workflow = Some(FlashState::new());
-                self.load_repo_data()
+                
+                // Load repository data and refresh devices for flash workflow
+                Task::batch([
+                    self.load_repo_data(),
+                    Task::done(Message::DeviceSelection(
+                        crate::ui::device_selection::DeviceMessage::RefreshDevices
+                    ))
+                ])
             }
             
             Message::EditExistingDisk => {
                 self.mode = AppMode::EditExistingDisk;
                 self.edit_workflow = Some(EditState::new());
-                Task::none()
+                
+                debug!("Entering edit existing disk mode - delegating device enumeration to DeviceSelection module");
+                
+                // Delegate device enumeration to the shared DeviceSelection module
+                Task::done(Message::DeviceSelection(
+                    crate::ui::device_selection::DeviceMessage::RefreshDevices
+                ))
             }
             
             Message::ManagePresets => {
@@ -248,7 +261,7 @@ impl GolemGpuImager {
             }
             AppMode::EditExistingDisk => {
                 if let Some(edit_state) = &self.edit_workflow {
-                    crate::ui::edit_workflow::view(edit_state, &self.preset_manager)
+                    crate::ui::edit_workflow::view(edit_state, &self.device_selection, &self.preset_manager)
                 } else {
                     crate::ui::start_screen::view_start_screen(
                         self.error_message.as_deref(),
@@ -281,8 +294,24 @@ impl GolemGpuImager {
                         // Helper function to load metadata for downloaded images only
                         let load_metadata_for_image = |sha256: &str| -> Option<crate::models::ImageMetadata> {
                             if let Some(ref manager) = metadata_manager {
-                                manager.load_metadata(sha256).ok().flatten()
+                                debug!("Attempting to load metadata for SHA256: {}", sha256);
+                                match manager.load_metadata(sha256) {
+                                    Ok(Some(metadata)) => {
+                                        info!("Successfully loaded metadata for SHA256: {} (uncompressed size: {} bytes)", 
+                                            sha256, metadata.uncompressed_size);
+                                        Some(metadata)
+                                    },
+                                    Ok(None) => {
+                                        debug!("No metadata found for SHA256: {}", sha256);
+                                        None
+                                    },
+                                    Err(e) => {
+                                        error!("Failed to load metadata for SHA256 {}: {}", sha256, e);
+                                        None
+                                    }
+                                }
                             } else {
+                                error!("MetadataManager not available");
                                 None
                             }
                         };
@@ -297,10 +326,17 @@ impl GolemGpuImager {
                             }
                             
                             // Create OsImageGroup for this channel
-                            let latest_version = &channel.versions[0]; // First version is typically latest
+                            // Find the actual latest version by creation date (most recent)
+                            let latest_version = channel.versions.iter()
+                                .max_by(|a, b| a.created.cmp(&b.created))
+                                .unwrap_or(&channel.versions[0]);
                             let is_downloaded = repo.is_image_downloaded(latest_version);
+                            debug!("Channel '{}' latest version '{}': downloaded={}, path={}", 
+                                channel.name, latest_version.id, is_downloaded, latest_version.path);
                             let image_path = if is_downloaded {
-                                Some(repo.get_image_path(latest_version).to_string_lossy().to_string())
+                                let path = repo.get_image_path(latest_version).to_string_lossy().to_string();
+                                debug!("Image path for downloaded version '{}': {}", latest_version.id, path);
+                                Some(path)
                             } else {
                                 None
                             };
@@ -314,11 +350,16 @@ impl GolemGpuImager {
                                 created: latest_version.created.clone(),
                                 sha256: latest_version.sha256.clone(),
                                 is_latest: true,
-                                metadata: if is_downloaded { load_metadata_for_image(&latest_version.sha256) } else { None }
+                                metadata: load_metadata_for_image(&latest_version.sha256)
                             };
                             
-                            // Create older versions
-                            let older_versions: Vec<crate::ui::flash_workflow::OsImage> = channel.versions.iter().skip(1).map(|version| {
+                            // Create older versions (exclude the latest and sort by creation date, newest first)
+                            let mut older_versions_sorted = channel.versions.iter()
+                                .filter(|v| v.id != latest_version.id)
+                                .collect::<Vec<_>>();
+                            older_versions_sorted.sort_by(|a, b| b.created.cmp(&a.created));
+                            
+                            let older_versions: Vec<crate::ui::flash_workflow::OsImage> = older_versions_sorted.iter().map(|version| {
                                 let is_downloaded = repo.is_image_downloaded(version);
                                 let image_path = if is_downloaded {
                                     Some(repo.get_image_path(version).to_string_lossy().to_string())
@@ -335,7 +376,7 @@ impl GolemGpuImager {
                                     created: version.created.clone(),
                                     sha256: version.sha256.clone(),
                                     is_latest: false,
-                                    metadata: if is_downloaded { load_metadata_for_image(&version.sha256) } else { None }
+                                    metadata: load_metadata_for_image(&version.sha256)
                                 }
                             }).collect();
                             
@@ -349,8 +390,11 @@ impl GolemGpuImager {
                             
                             os_image_groups.push(group);
                             
-                            // Also add individual images for flat list view
-                            for version in &channel.versions {
+                            // Also add individual images for flat list view (sorted by creation date, newest first)
+                            let mut sorted_versions = channel.versions.clone();
+                            sorted_versions.sort_by(|a, b| b.created.cmp(&a.created));
+                            
+                            for version in &sorted_versions {
                                 let is_downloaded = repo.is_image_downloaded(version);
                                 let image_path = if is_downloaded {
                                     Some(repo.get_image_path(version).to_string_lossy().to_string())
@@ -366,8 +410,8 @@ impl GolemGpuImager {
                                     path: image_path,
                                     created: version.created.clone(),
                                     sha256: version.sha256.clone(),
-                                    is_latest: version == &channel.versions[0],
-                                    metadata: if is_downloaded { load_metadata_for_image(&version.sha256) } else { None }
+                                    is_latest: version == latest_version,
+                                    metadata: load_metadata_for_image(&version.sha256)
                                 });
                             }
                         }

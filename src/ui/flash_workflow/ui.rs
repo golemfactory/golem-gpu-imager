@@ -858,7 +858,7 @@ pub fn view_select_target_device<'a>(
                         .spacing(8)
                         .align_y(Alignment::Center)
                 )
-                .on_press(FlashMessage::RefreshRepoData) // Reuse this message to trigger a refresh
+                .on_press(FlashMessage::RefreshTargetDevices) // Proper device refresh message
                 .padding(12)
                 .style(button::primary)
             ]

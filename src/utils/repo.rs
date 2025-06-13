@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use tokio::io::AsyncWriteExt;
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct Version {
     pub id: String,
     pub path: String,
@@ -89,7 +89,7 @@ pub struct DownloadImage {
 
 pub struct ImageRepo {
     project_dirs: ProjectDirs,
-    metadata: Option<RepoMetadata>,
+    metadata: Arc<Mutex<Option<RepoMetadata>>>,
     repo_url: String,
     downloads: Arc<Mutex<HashMap<String, DownloadStatus>>>,
 }
@@ -109,13 +109,13 @@ impl ImageRepo {
 
         Self {
             project_dirs,
-            metadata: None,
+            metadata: Arc::new(Mutex::new(None)),
             repo_url,
             downloads: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
-    pub async fn fetch_metadata(&mut self) -> Result<&RepoMetadata, String> {
+    pub async fn fetch_metadata(&self) -> Result<RepoMetadata, String> {
         let metadata_url = format!("{}/meta.json", self.repo_url);
 
         let response = reqwest::get(&metadata_url)
@@ -134,14 +134,19 @@ impl ImageRepo {
             .await
             .map_err(|e| format!("Failed to parse metadata: {}", e))?;
 
-        self.metadata = Some(metadata);
+        // Cache the metadata
+        if let Ok(mut cached_metadata) = self.metadata.lock() {
+            *cached_metadata = Some(metadata.clone());
+        }
 
-        Ok(self.metadata.as_ref().unwrap())
+        Ok(metadata)
     }
+
 
     #[allow(dead_code)]
     pub fn get_newest_version_for_channel(&self, channel_name: &str) -> Option<Version> {
-        self.metadata
+        let metadata = self.metadata.lock().ok()?;
+        metadata
             .as_ref()?
             .channels
             .iter()
@@ -154,8 +159,9 @@ impl ImageRepo {
 
     #[allow(dead_code)]
     pub fn get_all_versions_for_channel(&self, channel_name: &str) -> Option<Vec<Version>> {
-        self.metadata
-            .as_ref()?
+        let metadata = self.metadata.lock().ok()?;
+        let metadata_ref = metadata.as_ref()?;
+        metadata_ref
             .channels
             .iter()
             .find(|c| c.name == channel_name)
@@ -164,10 +170,12 @@ impl ImageRepo {
 
     #[allow(dead_code)]
     pub fn get_available_channels(&self) -> Vec<String> {
-        match &self.metadata {
-            Some(metadata) => metadata.channels.iter().map(|c| c.name.clone()).collect(),
-            None => vec![],
+        if let Ok(metadata) = self.metadata.lock() {
+            if let Some(metadata_ref) = metadata.as_ref() {
+                return metadata_ref.channels.iter().map(|c| c.name.clone()).collect();
+            }
         }
+        vec![]
     }
 
     #[allow(dead_code)]
@@ -465,5 +473,13 @@ mod tests {
                 }
             }
         });
+    }
+    
+    #[test]
+    fn test_path() {
+        let project_dirs = ProjectDirs::from("network", "Golem Factory", "GPU Imager").unwrap();
+        eprintln!("Data dir: {:?}", project_dirs.data_dir());
+        eprintln!("Cache dir: {:?}", project_dirs.cache_dir());
+        eprintln!("Config dir: {:?}", project_dirs.config_dir());
     }
 }

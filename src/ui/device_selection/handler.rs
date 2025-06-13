@@ -12,29 +12,43 @@ pub fn handle_message(
             state.error_message = None;
             debug!("Starting device refresh");
             
-            // This would typically enumerate devices
-            // For now, simulate with a task
             Task::perform(
                 async {
-                    // Simulate device enumeration
-                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                    
-                    // Return mock devices for now
-                    vec![
-                        StorageDevice {
-                            name: "USB Drive".to_string(),
-                            path: "/dev/sdb".to_string(),
-                            size: "32 GB".to_string(),
-                        },
-                        StorageDevice {
-                            name: "SD Card".to_string(),
-                            path: "/dev/sdc".to_string(),
-                            size: "16 GB".to_string(),
-                        },
-                    ]
+                    // Run the blocking rs_drivelist call in a blocking task
+                    tokio::task::spawn_blocking(|| {
+                        info!("Getting available storage devices");
+                        match rs_drivelist::drive_list() {
+                            Ok(devices) => {
+                                // Filter to only include removable, non-virtual devices
+                                let storage_devices: Vec<StorageDevice> = devices
+                                    .into_iter()
+                                    .filter(|d| d.isRemovable && !d.isVirtual)
+                                    .map(|d| StorageDevice {
+                                        name: d.description,
+                                        path: d.device,
+                                        size: format!("{:.2} GB", d.size as f64 / 1000.0 / 1000.0 / 1000.0),
+                                    })
+                                    .collect();
+
+                                debug!("Found {} available devices", storage_devices.len());
+                                Ok(storage_devices)
+                            }
+                            Err(e) => {
+                                error!("Failed to get drive list: {}", e);
+                                Err(format!("Failed to detect storage devices: {}", e))
+                            }
+                        }
+                    })
+                    .await
+                    .unwrap_or_else(|e| Err(format!("Task failed: {}", e)))
                 },
-                |devices| {
-                    crate::ui::messages::Message::DeviceSelection(DeviceMessage::DevicesLoaded(devices))
+                |result| match result {
+                    Ok(devices) => {
+                        crate::ui::messages::Message::DeviceSelection(DeviceMessage::DevicesLoaded(devices))
+                    }
+                    Err(error) => {
+                        crate::ui::messages::Message::DeviceSelection(DeviceMessage::DeviceLoadFailed(error))
+                    }
                 }
             )
         }

@@ -24,6 +24,8 @@ impl MetadataManager {
             info!("Created metadata data directory: {:?}", data_dir);
         }
 
+        debug!("MetadataManager using data directory: {:?}", data_dir);
+
         Ok(Self { project_dirs })
     }
 

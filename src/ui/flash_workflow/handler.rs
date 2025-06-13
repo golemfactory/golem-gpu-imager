@@ -46,7 +46,10 @@ pub fn handle_message(
         
         FlashMessage::GotoSelectTargetDevice => {
             state.workflow_state = FlashWorkflowState::SelectTargetDevice;
-            Task::none()
+            debug!("Entering target device selection - delegating device refresh to DeviceSelection module");
+            Task::done(crate::ui::messages::Message::DeviceSelection(
+                crate::ui::device_selection::DeviceMessage::RefreshDevices
+            ))
         }
         
         FlashMessage::GotoConfigureSettings => {
@@ -93,6 +96,13 @@ pub fn handle_message(
             state.selected_device = Some(index);
             debug!("Selected target device: {}", index);
             Task::none()
+        }
+        
+        FlashMessage::RefreshTargetDevices => {
+            debug!("Delegating target device refresh to DeviceSelection module");
+            Task::done(crate::ui::messages::Message::DeviceSelection(
+                crate::ui::device_selection::DeviceMessage::RefreshDevices
+            ))
         }
         
         FlashMessage::ProcessingProgress(version_id, progress) => {

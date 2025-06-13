@@ -5,6 +5,13 @@ mod icons;
 pub mod preset_editor;
 pub mod start_screen;
 
+// New modular workflow modules
+pub mod flash_workflow;
+pub mod edit_workflow;
+pub mod preset_manager;
+pub mod device_selection;
+pub mod configuration;
+
 #[allow(unused_imports)]
 pub use application::GolemGpuImager;
 pub use edit::{view_edit_completion, view_edit_configuration, view_select_existing_device};

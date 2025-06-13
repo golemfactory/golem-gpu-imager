@@ -4,9 +4,9 @@ use tracing::debug;
 
 pub fn handle_message(
     state: &mut ConfigurationState,
-    presets: &[crate::ui::preset_manager::ConfigurationPreset],
+    presets: &[crate::models::ConfigurationPreset],
     message: ConfigurationMessage,
-) -> Task<crate::models::Message> {
+) -> Task<crate::ui::messages::Message> {
     match message {
         ConfigurationMessage::SetPaymentNetwork(network) => {
             state.payment_network = network;

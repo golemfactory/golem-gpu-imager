@@ -1,32 +1,4 @@
-#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
-pub enum PaymentNetwork {
-    Testnet,
-    Mainnet,
-}
-
-impl std::fmt::Display for PaymentNetwork {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            PaymentNetwork::Testnet => write!(f, "Testnet"),
-            PaymentNetwork::Mainnet => write!(f, "Mainnet"),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
-pub enum NetworkType {
-    Hybrid,
-    Central,
-}
-
-impl std::fmt::Display for NetworkType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            NetworkType::Hybrid => write!(f, "Hybrid"),
-            NetworkType::Central => write!(f, "Central"),
-        }
-    }
-}
+pub use crate::models::{PaymentNetwork, NetworkType};
 
 #[derive(Debug, Clone)]
 pub struct OsImage {

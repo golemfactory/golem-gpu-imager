@@ -1,4 +1,4 @@
-use super::{NetworkType, PaymentNetwork, ImageMetadata};
+use crate::models::{NetworkType, PaymentNetwork, ImageMetadata};
 
 #[derive(Debug, Clone)]
 pub enum FlashMessage {

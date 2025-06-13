@@ -5,7 +5,7 @@ use tracing::{debug, error, info};
 pub fn handle_message(
     state: &mut EditState,
     message: EditMessage,
-) -> Task<crate::models::Message> {
+) -> Task<crate::ui::messages::Message> {
     match message {
         EditMessage::SelectExistingDevice(index) => {
             if index < state.storage_devices.len() {
@@ -18,9 +18,9 @@ pub fn handle_message(
         EditMessage::GotoEditConfiguration => {
             if state.selected_device.is_some() {
                 state.workflow_state = EditWorkflowState::EditConfiguration {
-                    payment_network: crate::ui::flash_workflow::PaymentNetwork::Testnet,
+                    payment_network: crate::models::PaymentNetwork::Testnet,
                     subnet: "public".to_string(),
-                    network_type: crate::ui::flash_workflow::NetworkType::Central,
+                    network_type: crate::models::NetworkType::Central,
                     wallet_address: String::new(),
                     is_wallet_valid: true,
                 };

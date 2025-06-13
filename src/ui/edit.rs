@@ -2,7 +2,11 @@ use iced::alignment::Horizontal;
 use iced::widget::{Column, Container, button, column, container, row, text};
 use iced::{Alignment, Color, Element, Length};
 
-use crate::models::{Message, NetworkType, PaymentNetwork, StorageDevice};
+use crate::models::{NetworkType, PaymentNetwork};
+use crate::ui::{
+    messages::Message,
+    device_selection::StorageDevice,
+};
 use crate::ui::icons;
 
 pub fn view_select_existing_device<'a>(
@@ -147,7 +151,7 @@ pub fn view_edit_configuration<'a>(
     selected_preset: Option<usize>,
     new_preset_name: &'a str,
     show_preset_manager: bool,
-    preset_editor: Option<&'a crate::models::PresetEditor>,
+    preset_editor: Option<&'a crate::ui::preset_manager::PresetEditor>,
 ) -> Element<'a, Message> {
     crate::ui::flash::view_configuration_editor(
         payment_network,

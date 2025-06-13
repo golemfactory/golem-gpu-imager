@@ -5,7 +5,7 @@ use tracing::{debug, error, info};
 pub fn handle_message(
     state: &mut DeviceSelectionState,
     message: DeviceMessage,
-) -> Task<crate::models::Message> {
+) -> Task<crate::ui::messages::Message> {
     match message {
         DeviceMessage::RefreshDevices => {
             state.is_refreshing = true;
@@ -34,7 +34,7 @@ pub fn handle_message(
                     ]
                 },
                 |devices| {
-                    crate::models::Message::DeviceSelection(DeviceMessage::DevicesLoaded(devices))
+                    crate::ui::messages::Message::DeviceSelection(DeviceMessage::DevicesLoaded(devices))
                 }
             )
         }

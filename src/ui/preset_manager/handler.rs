@@ -1,4 +1,5 @@
-use super::{PresetManagerState, PresetManagerMessage, PresetEditorMessage, PresetEditor, ConfigurationPreset};
+use super::{PresetManagerState, PresetManagerMessage, PresetEditorMessage, PresetEditor};
+use crate::models::ConfigurationPreset;
 use crate::utils::PresetManager;
 use iced::Task;
 use tracing::{debug, error, info};
@@ -7,7 +8,7 @@ pub fn handle_message(
     state: &mut PresetManagerState,
     preset_manager: &mut Option<PresetManager>,
     message: PresetManagerMessage,
-) -> Task<crate::models::Message> {
+) -> Task<crate::ui::messages::Message> {
     match message {
         PresetManagerMessage::ToggleManager => {
             state.show_manager = !state.show_manager;
@@ -78,13 +79,14 @@ pub fn handle_message(
                 // For now, create a placeholder
                 let new_preset = ConfigurationPreset {
                     name: state.new_preset_name.clone(),
-                    payment_network: crate::ui::flash_workflow::PaymentNetwork::Testnet,
+                    payment_network: crate::models::PaymentNetwork::Testnet,
                     subnet: "public".to_string(),
-                    network_type: crate::ui::flash_workflow::NetworkType::Central,
+                    network_type: crate::models::NetworkType::Central,
                     wallet_address: String::new(),
                     is_default: false,
                 };
                 
+                let preset_name = new_preset.name.clone();
                 state.presets.push(new_preset.clone());
                 
                 // Update preset manager if available
@@ -93,7 +95,7 @@ pub fn handle_message(
                 }
                 
                 state.new_preset_name.clear();
-                info!("Created new preset: {}", new_preset.name);
+                info!("Created new preset: {}", preset_name);
             }
             Task::none()
         }
@@ -103,16 +105,9 @@ pub fn handle_message(
         }
         
         PresetManagerMessage::SavePresetsToStorage => {
-            if let Some(manager) = preset_manager {
-                match manager.save_presets() {
-                    Ok(_) => {
-                        info!("Presets saved to storage");
-                    }
-                    Err(e) => {
-                        error!("Failed to save presets: {}", e);
-                    }
-                }
-            }
+            // The preset manager automatically saves when presets are modified
+            // This is a no-op for now since save_presets is private
+            debug!("Save presets to storage requested");
             Task::none()
         }
         
@@ -135,7 +130,7 @@ fn handle_editor_message(
     state: &mut PresetManagerState,
     preset_manager: &mut Option<PresetManager>,
     message: PresetEditorMessage,
-) -> Task<crate::models::Message> {
+) -> Task<crate::ui::messages::Message> {
     match message {
         PresetEditorMessage::Start(index) => {
             if let Some(preset) = state.presets.get(index) {

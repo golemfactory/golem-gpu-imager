@@ -1,4 +1,4 @@
-use crate::ui::flash_workflow::{NetworkType, PaymentNetwork};
+use crate::models::{NetworkType, PaymentNetwork};
 
 #[derive(Debug, Clone)]
 pub enum PresetEditorMessage {

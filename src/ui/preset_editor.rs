@@ -1,4 +1,5 @@
-use crate::models::{ConfigurationPreset, PresetEditor, PresetEditorMessage};
+use crate::models::ConfigurationPreset;
+use crate::ui::preset_manager::{PresetEditor, PresetEditorMessage};
 use crate::utils::PresetManager;
 
 pub struct PresetEditorHandler;

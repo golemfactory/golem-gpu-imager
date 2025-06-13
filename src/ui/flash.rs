@@ -6,7 +6,13 @@ use iced::widget::{
 use iced::{Alignment, Color, Element, Length};
 use iced::{Border, Theme};
 
-use crate::models::{Message, NetworkType, OsImage, OsImageGroup, PaymentNetwork, StorageDevice};
+use crate::models::{NetworkType, PaymentNetwork};
+use crate::ui::{
+    messages::Message,
+    flash_workflow::{OsImage, OsImageGroup},
+    device_selection::StorageDevice,
+    preset_manager::PresetEditorMessage,
+};
 use crate::style;
 use crate::ui::{LOGO_SVG, icons};
 
@@ -760,7 +766,7 @@ pub fn view_configuration_editor<'a>(
     selected_preset: Option<usize>,
     new_preset_name: &'a str,
     show_preset_manager: bool,
-    preset_editor: Option<&'a crate::models::PresetEditor>,
+    preset_editor: Option<&'a crate::ui::preset_manager::PresetEditor>,
     preset_back_action: Message,
 ) -> Element<'a, Message> {
     // Create the title - simple text by default
@@ -948,7 +954,7 @@ pub fn view_configuration_editor<'a>(
                                 .spacing(5)
                                 .align_y(Alignment::Center)
                         )
-                        .on_press(Message::PresetEditor(crate::models::PresetEditorMessage::Start(idx)))
+                        .on_press(Message::PresetManager(crate::ui::preset_manager::PresetManagerMessage::Editor(PresetEditorMessage::Start(idx))))
                         .style(button::secondary)
                         .padding(8),
                         button(
@@ -1147,7 +1153,7 @@ pub fn view_configure_settings<'a>(
     selected_preset: Option<usize>,
     new_preset_name: &'a str,
     show_preset_manager: bool,
-    preset_editor: Option<&'a crate::models::PresetEditor>,
+    preset_editor: Option<&'a crate::ui::preset_manager::PresetEditor>,
 ) -> Element<'a, Message> {
     view_configuration_editor(
         payment_network,
@@ -1171,9 +1177,10 @@ pub fn view_configure_settings<'a>(
 }
 
 pub fn view_preset_editor<'a>(
-    editor: &'a crate::models::PresetEditor,
+    editor: &'a crate::ui::preset_manager::PresetEditor,
 ) -> Element<'a, Message> {
-    use crate::models::{NetworkType, PaymentNetwork, PresetEditorMessage};
+    use crate::models::{NetworkType, PaymentNetwork};
+    use crate::ui::preset_manager::PresetEditorMessage;
     use crate::ui::icons;
     use iced::widget::{button, column, container, pick_list, row, text, text_input};
     use iced::{Alignment, Length};
@@ -1188,7 +1195,7 @@ pub fn view_preset_editor<'a>(
         column![
             text("Preset Name").size(16),
             text_input("Enter preset name", &editor.name)
-                .on_input(|name| Message::PresetEditor(PresetEditorMessage::UpdateName(name)))
+                .on_input(|name| Message::PresetManager(crate::ui::preset_manager::PresetManagerMessage::Editor(PresetEditorMessage::UpdateName(name))))
                 .padding(10)
                 .width(Length::Fill)
         ]
@@ -1202,7 +1209,7 @@ pub fn view_preset_editor<'a>(
             pick_list(
                 &[PaymentNetwork::Testnet, PaymentNetwork::Mainnet][..],
                 Some(editor.payment_network),
-                |network| Message::PresetEditor(PresetEditorMessage::UpdatePaymentNetwork(network)),
+                |network| Message::PresetManager(crate::ui::preset_manager::PresetManagerMessage::Editor(PresetEditorMessage::UpdatePaymentNetwork(network))),
             )
             .style(crate::style::pick_list_style)
         ]
@@ -1214,7 +1221,7 @@ pub fn view_preset_editor<'a>(
         column![
             text("Subnet").size(16),
             text_input("Enter subnet", &editor.subnet)
-                .on_input(|subnet| Message::PresetEditor(PresetEditorMessage::UpdateSubnet(subnet)))
+                .on_input(|subnet| Message::PresetManager(crate::ui::preset_manager::PresetManagerMessage::Editor(PresetEditorMessage::UpdateSubnet(subnet))))
                 .padding(10)
                 .width(Length::Fill)
         ]
@@ -1228,7 +1235,7 @@ pub fn view_preset_editor<'a>(
             pick_list(
                 &[NetworkType::Central, NetworkType::Hybrid][..],
                 Some(editor.network_type),
-                |network_type| Message::PresetEditor(PresetEditorMessage::UpdateNetworkType(network_type)),
+                |network_type| Message::PresetManager(crate::ui::preset_manager::PresetManagerMessage::Editor(PresetEditorMessage::UpdateNetworkType(network_type))),
             )
             .style(crate::style::pick_list_style)
         ]
@@ -1242,18 +1249,18 @@ pub fn view_preset_editor<'a>(
             if !editor.wallet_address.is_empty() {
                 if is_wallet_valid {
                     text_input("Enter ETH wallet address", &editor.wallet_address)
-                        .on_input(|addr| Message::PresetEditor(PresetEditorMessage::UpdateWalletAddress(addr)))
+                        .on_input(|addr| Message::PresetManager(crate::ui::preset_manager::PresetManagerMessage::Editor(PresetEditorMessage::UpdateWalletAddress(addr))))
                         .padding(10)
                         .style(crate::style::valid_wallet_input)
                 } else {
                     text_input("Enter ETH wallet address", &editor.wallet_address)
-                        .on_input(|addr| Message::PresetEditor(PresetEditorMessage::UpdateWalletAddress(addr)))
+                        .on_input(|addr| Message::PresetManager(crate::ui::preset_manager::PresetManagerMessage::Editor(PresetEditorMessage::UpdateWalletAddress(addr))))
                         .padding(10)
                         .style(crate::style::invalid_wallet_input)
                 }
             } else {
                 text_input("Enter ETH wallet address", &editor.wallet_address)
-                    .on_input(|addr| Message::PresetEditor(PresetEditorMessage::UpdateWalletAddress(addr)))
+                    .on_input(|addr| Message::PresetManager(crate::ui::preset_manager::PresetManagerMessage::Editor(PresetEditorMessage::UpdateWalletAddress(addr))))
                     .padding(10)
             }
         ]
@@ -1281,7 +1288,7 @@ pub fn view_preset_editor<'a>(
                 .spacing(8)
                 .align_y(Alignment::Center)
         )
-        .on_press(Message::PresetEditor(PresetEditorMessage::Cancel))
+        .on_press(Message::PresetManager(crate::ui::preset_manager::PresetManagerMessage::Editor(PresetEditorMessage::Cancel)))
         .style(button::secondary)
         .padding(10),
         
@@ -1291,7 +1298,7 @@ pub fn view_preset_editor<'a>(
                 .align_y(Alignment::Center)
         )
         .on_press_maybe(if editor.is_valid() {
-            Some(Message::PresetEditor(PresetEditorMessage::Save))
+            Some(Message::PresetManager(crate::ui::preset_manager::PresetManagerMessage::Editor(PresetEditorMessage::Save)))
         } else {
             None
         })

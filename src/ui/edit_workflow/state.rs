@@ -1,11 +1,5 @@
-use crate::ui::flash_workflow::{NetworkType, PaymentNetwork};
-
-#[derive(Debug, Clone)]
-pub struct StorageDevice {
-    pub name: String,
-    pub path: String,
-    pub size: String,
-}
+use crate::models::{NetworkType, PaymentNetwork};
+use crate::ui::device_selection::StorageDevice;
 
 #[derive(Debug, Clone)]
 pub enum EditWorkflowState {

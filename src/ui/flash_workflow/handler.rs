@@ -10,7 +10,7 @@ pub fn handle_message(
     image_repo: &Arc<ImageRepo>,
     cancel_token: &CancelToken,
     message: FlashMessage,
-) -> Task<crate::models::Message> {
+) -> Task<crate::ui::messages::Message> {
     match message {
         FlashMessage::SelectOsImage(index) => {
             if let Some(image) = state.os_images.get(index) {
@@ -51,9 +51,9 @@ pub fn handle_message(
         
         FlashMessage::GotoConfigureSettings => {
             state.workflow_state = FlashWorkflowState::ConfigureSettings {
-                payment_network: super::PaymentNetwork::Testnet,
+                payment_network: crate::models::PaymentNetwork::Testnet,
                 subnet: "public".to_string(),
-                network_type: super::NetworkType::Central,
+                network_type: crate::models::NetworkType::Central,
                 wallet_address: String::new(),
                 is_wallet_valid: true,
             };
@@ -98,7 +98,7 @@ pub fn handle_message(
         FlashMessage::ProcessingProgress(version_id, progress) => {
             // Update download progress for specific version
             if let Some(download) = state.downloads_in_progress.iter_mut().find(|(id, _)| id == &version_id) {
-                download.1 = progress.overall_progress();
+                download.1 = progress.overall_progress;
             }
             
             // Update state if this is the currently processing image
@@ -114,11 +114,11 @@ pub fn handle_message(
                         uncompressed_size,
                         .. 
                     } = &mut state.workflow_state {
-                        *download_progress = progress.download_progress();
-                        *metadata_progress = progress.metadata_progress();
-                        *overall_progress = progress.overall_progress();
-                        *phase = progress.phase();
-                        if let Some(size) = progress.uncompressed_size() {
+                        *download_progress = progress.download_progress;
+                        *metadata_progress = progress.metadata_progress;
+                        *overall_progress = progress.overall_progress;
+                        *phase = progress.phase.clone();
+                        if let Some(size) = progress.uncompressed_size {
                             *uncompressed_size = Some(size);
                         }
                     }
@@ -161,7 +161,7 @@ pub fn handle_message(
             // Go back to image selection
             state.workflow_state = FlashWorkflowState::SelectOsImage;
             error!("Processing failed for version {}: {}", version_id, error);
-            Task::done(crate::models::Message::ShowError(format!("Failed to process image: {}", error)))
+            Task::done(crate::ui::messages::Message::ShowError(format!("Failed to process image: {}", error)))
         }
         
         FlashMessage::BackToSelectOsImage => {

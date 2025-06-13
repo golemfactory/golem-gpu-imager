@@ -1,5 +1,4 @@
-use crate::ui::flash_workflow::StorageDevice as FlashStorageDevice;
-use crate::ui::edit_workflow::StorageDevice as EditStorageDevice;
+// We'll use a single StorageDevice type for all modules
 
 // Shared storage device representation
 #[derive(Debug, Clone)]
@@ -9,26 +8,7 @@ pub struct StorageDevice {
     pub size: String,
 }
 
-// Convert between different storage device types
-impl From<StorageDevice> for FlashStorageDevice {
-    fn from(device: StorageDevice) -> Self {
-        FlashStorageDevice {
-            name: device.name,
-            path: device.path,
-            size: device.size,
-        }
-    }
-}
-
-impl From<StorageDevice> for EditStorageDevice {
-    fn from(device: StorageDevice) -> Self {
-        EditStorageDevice {
-            name: device.name,
-            path: device.path,
-            size: device.size,
-        }
-    }
-}
+// StorageDevice is now shared across all modules
 
 #[derive(Debug, Clone)]
 pub struct DeviceSelectionState {

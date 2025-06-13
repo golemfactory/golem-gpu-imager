@@ -1,25 +1,4 @@
-use crate::ui::flash_workflow::{NetworkType, PaymentNetwork};
-
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct ConfigurationPreset {
-    pub name: String,
-    pub payment_network: PaymentNetwork,
-    pub subnet: String,
-    pub network_type: NetworkType,
-    pub wallet_address: String,
-    pub is_default: bool,
-}
-
-// Implement Display trait so pick_list can properly show the preset
-impl std::fmt::Display for ConfigurationPreset {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.is_default {
-            write!(f, "{} (Default)", self.name)
-        } else {
-            write!(f, "{}", self.name)
-        }
-    }
-}
+use crate::models::{NetworkType, PaymentNetwork, ConfigurationPreset};
 
 #[derive(Debug, Clone)]
 pub struct PresetEditor {

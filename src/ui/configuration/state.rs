@@ -1,4 +1,4 @@
-use crate::ui::flash_workflow::{NetworkType, PaymentNetwork};
+use crate::models::{NetworkType, PaymentNetwork, ConfigurationPreset};
 
 #[derive(Debug, Clone)]
 pub struct ConfigurationState {
@@ -20,7 +20,7 @@ impl ConfigurationState {
         }
     }
     
-    pub fn from_preset(preset: &crate::ui::preset_manager::ConfigurationPreset) -> Self {
+    pub fn from_preset(preset: &ConfigurationPreset) -> Self {
         Self {
             payment_network: preset.payment_network,
             subnet: preset.subnet.clone(),
@@ -31,8 +31,8 @@ impl ConfigurationState {
         }
     }
     
-    pub fn to_preset(&self, name: String, is_default: bool) -> crate::ui::preset_manager::ConfigurationPreset {
-        crate::ui::preset_manager::ConfigurationPreset {
+    pub fn to_preset(&self, name: String, is_default: bool) -> ConfigurationPreset {
+        ConfigurationPreset {
             name,
             payment_network: self.payment_network,
             subnet: self.subnet.clone(),

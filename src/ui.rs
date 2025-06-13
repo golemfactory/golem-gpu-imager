@@ -12,6 +12,9 @@ pub mod preset_manager;
 pub mod device_selection;
 pub mod configuration;
 
+// Unified message system
+pub mod messages;
+
 #[allow(unused_imports)]
 pub use application::GolemGpuImager;
 pub use edit::{view_edit_completion, view_edit_configuration, view_select_existing_device};

@@ -271,18 +271,116 @@ impl GolemGpuImager {
     pub fn load_repo_data(&mut self) -> Task<Message> {
         self.is_loading_repo = true;
         
-        let _repo = Arc::clone(&self.image_repo);
+        let repo = Arc::clone(&self.image_repo);
         let metadata_manager = self.metadata_manager.clone();
 
         Task::perform(
             async move {
-                // Simulate repository loading
-                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                
-                // Return mock data for now
-                vec![]
+                match repo.fetch_metadata().await {
+                    Ok(metadata) => {
+                        // Helper function to load metadata for downloaded images only
+                        let load_metadata_for_image = |sha256: &str| -> Option<crate::models::ImageMetadata> {
+                            if let Some(ref manager) = metadata_manager {
+                                manager.load_metadata(sha256).ok().flatten()
+                            } else {
+                                None
+                            }
+                        };
+                        
+                        // Convert repository metadata to UI structures
+                        let mut os_images = Vec::new();
+                        let mut os_image_groups = Vec::new();
+                        
+                        for channel in &metadata.channels {
+                            if channel.versions.is_empty() {
+                                continue;
+                            }
+                            
+                            // Create OsImageGroup for this channel
+                            let latest_version = &channel.versions[0]; // First version is typically latest
+                            let is_downloaded = repo.is_image_downloaded(latest_version);
+                            let image_path = if is_downloaded {
+                                Some(repo.get_image_path(latest_version).to_string_lossy().to_string())
+                            } else {
+                                None
+                            };
+                            
+                            let latest_os_image = crate::ui::flash_workflow::OsImage {
+                                name: channel.name.clone(),
+                                version: latest_version.id.clone(),
+                                description: format!("Latest {} release", channel.name),
+                                downloaded: is_downloaded,
+                                path: image_path,
+                                created: latest_version.created.clone(),
+                                sha256: latest_version.sha256.clone(),
+                                is_latest: true,
+                                metadata: if is_downloaded { load_metadata_for_image(&latest_version.sha256) } else { None }
+                            };
+                            
+                            // Create older versions
+                            let older_versions: Vec<crate::ui::flash_workflow::OsImage> = channel.versions.iter().skip(1).map(|version| {
+                                let is_downloaded = repo.is_image_downloaded(version);
+                                let image_path = if is_downloaded {
+                                    Some(repo.get_image_path(version).to_string_lossy().to_string())
+                                } else {
+                                    None
+                                };
+                                
+                                crate::ui::flash_workflow::OsImage {
+                                    name: channel.name.clone(),
+                                    version: version.id.clone(),
+                                    description: format!("{} version {}", channel.name, version.id),
+                                    downloaded: is_downloaded,
+                                    path: image_path,
+                                    created: version.created.clone(),
+                                    sha256: version.sha256.clone(),
+                                    is_latest: false,
+                                    metadata: if is_downloaded { load_metadata_for_image(&version.sha256) } else { None }
+                                }
+                            }).collect();
+                            
+                            let group = crate::ui::flash_workflow::OsImageGroup {
+                                channel_name: channel.name.clone(),
+                                description: format!("{} channel images", channel.name),
+                                latest_version: latest_os_image.clone(),
+                                older_versions,
+                                expanded: false,
+                            };
+                            
+                            os_image_groups.push(group);
+                            
+                            // Also add individual images for flat list view
+                            for version in &channel.versions {
+                                let is_downloaded = repo.is_image_downloaded(version);
+                                let image_path = if is_downloaded {
+                                    Some(repo.get_image_path(version).to_string_lossy().to_string())
+                                } else {
+                                    None
+                                };
+                                
+                                os_images.push(crate::ui::flash_workflow::OsImage {
+                                    name: format!("{} {}", channel.name, version.id),
+                                    version: version.id.clone(),
+                                    description: format!("{} version {}", channel.name, version.id),
+                                    downloaded: is_downloaded,
+                                    path: image_path,
+                                    created: version.created.clone(),
+                                    sha256: version.sha256.clone(),
+                                    is_latest: version == &channel.versions[0],
+                                    metadata: if is_downloaded { load_metadata_for_image(&version.sha256) } else { None }
+                                });
+                            }
+                        }
+                        
+                        (os_images, os_image_groups)
+                    }
+                    Err(_) => {
+                        // Return empty data on error
+                        (vec![], vec![])
+                    }
+                }
             },
-            Message::RepoDataLoaded
+            |(images, groups)| Message::RepoGroupDataLoaded(images, groups)
         )
     }
 }

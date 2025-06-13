@@ -19,6 +19,7 @@ use udisks2::{Client, zbus};
 #[derive(Debug, Clone)]
 pub struct LinuxDiskAccess {
     // Original path used to open the disk
+    #[allow(dead_code)]
     path: String,
 }
 
@@ -275,9 +276,9 @@ impl LinuxDiskAccess {
             .await?;
 
         // Return the first object path found or an error if none were found
-        Ok(obj
+        obj
             .pop()
-            .ok_or(anyhow!("No device found for path: {}", path))?)
+            .ok_or(anyhow!("No device found for path: {}", path))
     }
 
     /// Unmount all mounted filesystems on or below the given object path
@@ -316,6 +317,7 @@ impl LinuxDiskAccess {
     }
 
     /// List available disks on Linux
+    #[allow(dead_code)]
     pub async fn list_available_disks() -> Result<Vec<DiskDevice>> {
         debug!("Listing available disks on Linux");
         let mut devices = Vec::new();
@@ -367,8 +369,8 @@ impl LinuxDiskAccess {
             for i in 0..8 {
                 // Try common block device patterns
                 let device_paths = vec![
-                    format!("/dev/sd{}", ('a' as u8 + i) as char),
-                    format!("/dev/hd{}", ('a' as u8 + i) as char),
+                    format!("/dev/sd{}", (b'a' + i) as char),
+                    format!("/dev/hd{}", (b'a' + i) as char),
                     format!("/dev/nvme{}n1", i),
                     format!("/dev/mmcblk{}", i),
                 ];

@@ -40,7 +40,6 @@ pub use common::{DiskDevice, WriteProgress};
 #[cfg(target_os = "linux")]
 use linux::LinuxDiskAccess as PlatformDiskAccess;
 
-use crate::disk::common::bytes_to_mb;
 #[cfg(windows)]
 use windows::WindowsDiskAccess as PlatformDiskAccess;
 
@@ -115,43 +114,6 @@ impl Clone for Disk {
     }
 }
 
-#[cfg(windows)]
-fn path_str_from_file(file: &File) -> Option<String> {
-    use std::os::windows::io::AsRawHandle;
-    use windows_sys::Win32::Foundation::HANDLE;
-    use windows_sys::Win32::Storage::FileSystem::GetFinalPathNameByHandleW;
-
-    match file.try_clone() {
-        Ok(f) => {
-            // Try to get path from file using Windows-specific API
-            let handle = f.as_raw_handle() as HANDLE;
-            let mut name_buf = [0u16; 260]; // MAX_PATH
-            let len = unsafe {
-                GetFinalPathNameByHandleW(handle, name_buf.as_mut_ptr(), name_buf.len() as u32, 0)
-            };
-            if len > 0 {
-                match String::from_utf16(&name_buf[0..len as usize]) {
-                    Ok(s) => {
-                        // For Windows, this will likely be a path like \\?\GLOBALROOT\Device\HarddiskVolume1
-                        // or \\?\PhysicalDrive0 - we need to check for PhysicalDrive pattern
-                        Some(s)
-                    }
-                    Err(_) => None,
-                }
-            } else {
-                // If we can't get the path, use the disk_number from platform data if available
-                None
-            }
-        }
-        Err(_) => None,
-    }
-}
-
-#[cfg(not(windows))]
-fn path_str_from_file(_file: &File) -> Option<String> {
-    // On non-Windows platforms, this is less critical since we don't use diskpart
-    None
-}
 
 impl Disk {
     /// Open and lock a disk by its path
@@ -211,7 +173,6 @@ impl Disk {
 
         const LOGICAL_SECTOR_SIZE: u64 = 512;
         const PHYSICAL_SECTOR_SIZE: u64 = 4096; // Windows direct I/O alignment requirement
-        const GPT_HEADER_LBA: u64 = 1;
         const GPT_SIGNATURE: [u8; 8] = [0x45, 0x46, 0x49, 0x20, 0x50, 0x41, 0x52, 0x54]; // "EFI PART"
 
         // For Windows direct I/O, we need to read aligned blocks
@@ -276,7 +237,7 @@ impl Disk {
         let offset_within_read = (partition_entries_offset - aligned_offset) as usize;
         // Need to account for the offset when calculating aligned size
         let total_needed = offset_within_read as u64 + partition_table_logical_size;
-        let aligned_size = ((total_needed + PHYSICAL_SECTOR_SIZE - 1) / PHYSICAL_SECTOR_SIZE)
+        let aligned_size = total_needed.div_ceil(PHYSICAL_SECTOR_SIZE)
             * PHYSICAL_SECTOR_SIZE;
 
         info!(
@@ -438,7 +399,7 @@ impl Disk {
         let offset_within_aligned = (start_offset - aligned_start) as usize;
         // Need to account for the offset when calculating aligned size
         let total_needed = offset_within_aligned as u64 + partition_size;
-        let aligned_size = ((total_needed + PHYSICAL_SECTOR_SIZE - 1) / PHYSICAL_SECTOR_SIZE)
+        let aligned_size = total_needed.div_ceil(PHYSICAL_SECTOR_SIZE)
             * PHYSICAL_SECTOR_SIZE;
 
         info!(
@@ -572,7 +533,7 @@ impl Disk {
             sipper.send(WriteProgress::Start).await;
 
             // Use blocking task for I/O operations to avoid blocking the async runtime
-            let r = tokio::task::spawn_blocking(move || {
+            tokio::task::spawn_blocking(move || {
                 // Platform-specific pre-write checks
                 // Note: Disk cleaning is now done during lock_path, before we have an exclusive lock
                 // We still pass the original path for verification purposes
@@ -635,7 +596,6 @@ impl Disk {
                 {
                     // Use aligned buffer copies instead of direct copy
                     const ALIGNED_BUFFER_SIZE: usize = 4 * 1024 * 1024; // 4MB buffer aligned to 4K
-                    const SECTOR_SIZE: usize = 4096;
 
                     // Create a buffer that's a multiple of sector size for alignment
                     let mut buffer = vec![0u8; ALIGNED_BUFFER_SIZE];
@@ -666,14 +626,14 @@ impl Disk {
 
                         {
                             let mut sipper = sipper.clone();
-                            let _ = tokio::spawn(async move {
+                            std::mem::drop(tokio::spawn(async move {
                                 sipper
                                     .send(WriteProgress::Write {
                                         total_written,
                                         total_size,
                                     })
                                     .await
-                            });
+                            }));
                         }
                     }
 
@@ -822,7 +782,7 @@ impl Disk {
                                 // Not aligned, so we need to read a sector-aligned amount
                                 // But limit it to avoid reading beyond device boundaries
                                 let aligned_size =
-                                    ((remaining + SECTOR_SIZE - 1) / SECTOR_SIZE) * SECTOR_SIZE;
+                                    remaining.div_ceil(SECTOR_SIZE) * SECTOR_SIZE;
                                 // Only use aligned size if it's within reasonable bounds (not more than one extra sector)
                                 if aligned_size - remaining <= SECTOR_SIZE {
                                     aligned_size
@@ -858,14 +818,14 @@ impl Disk {
                                 // Send verification progress
                                 let mut sipper_clone = sipper.clone();
                                 let total_size_copy = total_size;
-                                let _ = tokio::spawn(async move {
+                                std::mem::drop(tokio::spawn(async move {
                                     sipper_clone
                                         .send(WriteProgress::Verifying {
                                             verified_bytes,
                                             total_size: total_size_copy,
                                         })
                                         .await
-                                });
+                                }));
 
                                 // Log progress every 100MB
                                 if verified_bytes % (100 * 1024 * 1024) == 0
@@ -972,7 +932,7 @@ impl Disk {
                     error!("Failed to write image to disk: {}", e);
 
                     // Platform-specific error handling
-                    if let Some(error_context) = PlatformDiskAccess::handle_write_error(&e) {
+                    if let Some(error_context) = PlatformDiskAccess::handle_write_error(e) {
                         return Err(error_context);
                     }
 
@@ -1047,9 +1007,7 @@ impl Disk {
 
                 anyhow::Ok(WriteProgress::Finish)
             })
-            .await?;
-
-            r
+            .await?
         })
     }
 
@@ -1061,6 +1019,7 @@ impl Disk {
     ///
     /// # Returns
     /// * Result indicating success or failure
+    #[allow(dead_code)]
     pub async fn write_configuration_to_disk(
         disk_path: &str,
         config: ImageConfiguration,
@@ -1760,7 +1719,6 @@ fn get_disk_size_windows(disk_file: &mut File) -> Result<u64> {
 fn fix_gpt_backup_header(disk_file: &mut File) -> Result<()> {
     // GPT uses 512-byte logical sectors, but Windows I/O requires 4KB physical alignment
     const LOGICAL_SECTOR_SIZE: u64 = 512;
-    const GPT_HEADER_SECTOR: u64 = 1;
     const GPT_SIGNATURE: [u8; 8] = [0x45, 0x46, 0x49, 0x20, 0x50, 0x41, 0x52, 0x54]; // "EFI PART"
 
     // Physical sector size for I/O alignment (Windows needs 4KB, Linux can use 512B)
@@ -2032,11 +1990,8 @@ fn fix_gpt_backup_header(disk_file: &mut File) -> Result<()> {
             * PHYSICAL_SECTOR_SIZE;
         let entries_offset_within_read =
             (primary_partition_entries_logical_offset - entries_aligned_start) as usize;
-        let entries_aligned_size = ((partition_entries_logical_size
-            + entries_offset_within_read
-            + PHYSICAL_SECTOR_SIZE as usize
-            - 1)
-            / PHYSICAL_SECTOR_SIZE as usize)
+        let entries_aligned_size = (partition_entries_logical_size
+            + entries_offset_within_read).div_ceil(PHYSICAL_SECTOR_SIZE as usize)
             * PHYSICAL_SECTOR_SIZE as usize;
 
         info!(
@@ -2148,6 +2103,7 @@ fn fix_gpt_backup_header(disk_file: &mut File) -> Result<()> {
 ///
 /// # Returns
 /// * `Result<Vec<DiskDevice>>` - A list of available disk devices
+#[allow(dead_code)]
 pub async fn list_available_disks() -> Result<Vec<DiskDevice>> {
     PlatformDiskAccess::list_available_disks().await
 }

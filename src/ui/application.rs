@@ -1467,7 +1467,7 @@ impl GolemGpuImager {
                                                 // Format configuration partition if needed before writing
                                                 info!("Preparing to find or create partition");
                                                 let partition_start = std::time::Instant::now();
-                                                let format_result = {
+                                                let _format_result = {
                                                     let result = disk.find_or_create_partition(
                                                         config_partition_uuid,
                                                         true,
@@ -1622,7 +1622,7 @@ impl GolemGpuImager {
                 // Release any disk resources
                 self.locked_disk = None;
             }
-            Message::DeviceLockedForWriting(disk, image_path) => {
+            Message::DeviceLockedForWriting(_disk, image_path) => {
                 // We've locked the device and are ready to write the image
                 info!("Device locked for writing image: {}", image_path);
 
@@ -1642,7 +1642,7 @@ impl GolemGpuImager {
                 WRITE_PROGRESS.store(0, Ordering::SeqCst);
 
                 // Create a task to perform the actual write
-                let image_path_clone = image_path.clone();
+                let _image_path_clone = image_path.clone();
 
                 todo!()
             }
@@ -1919,7 +1919,7 @@ impl GolemGpuImager {
 
                     // Create a handle to the locked disk that can be sent to the async task
                     // We need to do this because we can't send the locked_disk directly (it doesn't implement Clone)
-                    let mut locked_disk = self.locked_disk.take();
+                    let locked_disk = self.locked_disk.take();
 
                     // Use the config partition UUID
                     // In a real application, this UUID would be a constant or configuration value
@@ -2340,6 +2340,7 @@ impl GolemGpuImager {
     }
 
     // Required to implement Application trait in main.rs
+    #[allow(dead_code)]
     pub fn subscription(&self) -> iced::Subscription<Message> {
         // If we're in any writing mode, periodically send progress updates
         match &self.mode {

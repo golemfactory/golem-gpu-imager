@@ -22,6 +22,7 @@ pub fn is_valid_eth_address(address: &str) -> bool {
 /// The address must be a valid Ethereum address starting with "0x"
 ///
 /// Returns None if the address is invalid
+#[allow(dead_code)]
 pub fn format_eth_address(address: &str) -> Option<String> {
     match Address::from_str(address) {
         Ok(eth_address) => Some(format!("{:?}", eth_address)),

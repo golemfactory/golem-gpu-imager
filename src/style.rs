@@ -1,11 +1,9 @@
-use iced::widget::{container, text, text_input};
+use iced::widget::{container, text_input};
 use iced::{Border, Color, Theme};
 use std::sync::Arc;
 
 // Main theme colors
 pub const PRIMARY: Color = Color::from_rgb(0.0, 0.4, 0.8);
-pub const SECONDARY: Color = Color::from_rgb(0.1, 0.2, 0.3);
-pub const ACCENT: Color = Color::from_rgb(0.0, 0.7, 0.4);
 pub const BACKGROUND: Color = Color::from_rgb(0.05, 0.05, 0.1);
 pub const TEXT: Color = Color::from_rgb(0.9, 0.9, 0.9);
 pub const ERROR: Color = Color::from_rgb(0.9, 0.2, 0.2);
@@ -94,21 +92,6 @@ pub fn invalid_wallet_input(
     }
 }
 
-// Style function for validation success text
-pub fn valid_text_style(_theme: &Theme) -> text::Style {
-    text::Style {
-        color: Some(SUCCESS),
-        ..text::Style::default()
-    }
-}
-
-// Style function for validation error text
-pub fn invalid_text_style(_theme: &Theme) -> text::Style {
-    text::Style {
-        color: Some(ERROR),
-        ..text::Style::default()
-    }
-}
 
 // Container style for validation success message
 pub fn valid_message_container(_theme: &Theme) -> container::Style {

@@ -32,13 +32,14 @@ impl<T: Read + Seek> AlignedReader<T> {
     ///
     /// # Returns
     /// * A new AlignedReader instance
+    #[allow(dead_code)]
     pub fn new(inner: T, sector_size: usize, buffer_size: Option<usize>) -> Self {
         // Default buffer size is 8 sectors or 4KB, whichever is larger
         let default_buffer_size = cmp::max(sector_size * 8, 4096);
         let buffer_size = buffer_size.unwrap_or(default_buffer_size);
 
         // Ensure buffer size is a multiple of sector size
-        let aligned_buffer_size = ((buffer_size + sector_size - 1) / sector_size) * sector_size;
+        let aligned_buffer_size = buffer_size.div_ceil(sector_size) * sector_size;
 
         debug!(
             "Creating AlignedReader with sector_size={}, buffer_size={}",
@@ -55,16 +56,19 @@ impl<T: Read + Seek> AlignedReader<T> {
     }
 
     /// Get a reference to the inner reader
+    #[allow(dead_code)]
     pub fn get_ref(&self) -> &T {
         &self.inner
     }
 
     /// Get a mutable reference to the inner reader
+    #[allow(dead_code)]
     pub fn get_mut(&mut self) -> &mut T {
         &mut self.inner
     }
 
     /// Unwrap this reader, returning the inner reader
+    #[allow(dead_code)]
     pub fn into_inner(self) -> T {
         self.inner
     }
@@ -81,7 +85,7 @@ impl<T: Read + Seek> AlignedReader<T> {
         self.buffer_len = 0;
 
         // Get current position in inner stream for alignment calculations
-        let current_pos = match self.inner.seek(SeekFrom::Current(0)) {
+        let current_pos = match self.inner.stream_position() {
             Ok(pos) => pos,
             Err(e) => {
                 error!("Failed to get current position in AlignedReader: {}", e);

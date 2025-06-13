@@ -192,7 +192,6 @@ fn enable_ansi_support() {
 mod test {
     use std::collections::HashMap;
     use std::io::Read;
-    use std::os::fd::FromRawFd;
     use udisks2::Client;
     use udisks2::zbus::zvariant::OwnedObjectPath;
 

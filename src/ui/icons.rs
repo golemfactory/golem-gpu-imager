@@ -24,6 +24,7 @@ pub fn navigate_next() -> iced::widget::Text<'static> {
     icon('\u{E409}')
 }
 
+#[allow(dead_code)]
 pub fn download() -> iced::widget::Text<'static> {
     icon('\u{F090}')
 }
@@ -36,10 +37,12 @@ pub fn storage() -> iced::widget::Text<'static> {
     icon('\u{e1dB}')
 }
 
+#[allow(dead_code)]
 pub fn sd_storage() -> iced::widget::Text<'static> {
     icon('\u{E1C2}')
 }
 
+#[allow(dead_code)]
 pub fn usb() -> iced::widget::Text<'static> {
     icon('\u{E1E0}')
 }
@@ -110,18 +113,22 @@ pub fn check_circle() -> iced::widget::Text<'static> {
     icon('\u{E86C}')
 }
 
+#[allow(dead_code)]
 pub fn help() -> iced::widget::Text<'static> {
     icon('\u{E887}')
 }
 
+#[allow(dead_code)]
 pub fn warning_amber() -> iced::widget::Text<'static> {
     icon('\u{E002}')
 }
 
+#[allow(dead_code)]
 pub fn downloading() -> iced::widget::Text<'static> {
     icon('\u{F090}')
 }
 
+#[allow(dead_code)]
 pub fn device_hub() -> iced::widget::Text<'static> {
     icon('\u{E335}')
 }

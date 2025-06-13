@@ -8,7 +8,7 @@ use crate::ui::{LOGO_SVG, icons};
 pub fn view_start_screen<'a>(
     error_message: Option<&'a str>,
     is_elevated: bool,
-    elevation_status: &'a str,
+    _elevation_status: &'a str,
 ) -> Element<'a, Message> {
     // Create the logo widget from the included SVG data
     let logo = svg::Svg::new(svg::Handle::from_memory(LOGO_SVG))
@@ -98,7 +98,7 @@ pub fn view_start_screen<'a>(
 
     // Error message container (only shown if error_message is Some)
     let error_container = if let Some(error) = error_message {
-        let mut error_column = column![
+        let error_column = column![
             row![
                 if error.contains("Error") || error.contains("Failed") {
                     icons::error().color(Color::from_rgb(0.8, 0.0, 0.0))
@@ -166,7 +166,7 @@ pub fn view_start_screen<'a>(
                 )
                 .width(Length::Shrink)
                 .padding(12)
-                .style(|theme: &Theme, state| {
+                .style(|_theme: &Theme, state| {
                     let is_hover = matches!(state, button::Status::Hovered);
                     button::Style {
                         background: Some(

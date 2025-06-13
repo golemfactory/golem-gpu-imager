@@ -180,17 +180,20 @@ pub fn is_elevated() -> bool {
 }
 
 #[cfg(not(windows))]
+#[allow(dead_code)]
 pub fn is_admin_user() -> bool {
     // On Unix-like systems, always return true as sudo can provide elevation
     true
 }
 
 #[cfg(not(windows))]
+#[allow(dead_code)]
 pub fn request_elevation() -> Result<(), String> {
     Err("Elevation request not supported on this platform. Use sudo to run as root.".to_string())
 }
 
 #[cfg(not(windows))]
+#[allow(dead_code)]
 pub fn ensure_elevation(_force_request: bool) -> Result<bool, String> {
     Ok(is_elevated())
 }

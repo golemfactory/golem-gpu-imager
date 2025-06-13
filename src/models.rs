@@ -63,6 +63,12 @@ pub struct CancelToken {
     cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
+impl Default for CancelToken {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CancelToken {
     pub fn new() -> Self {
         Self {

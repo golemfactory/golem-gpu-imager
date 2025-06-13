@@ -78,12 +78,14 @@ impl MetadataManager {
     }
 
     /// Check if metadata exists for a given compressed hash
+    #[allow(dead_code)]
     pub fn has_metadata(&self, compressed_hash: &str) -> bool {
         let metadata_path = self.get_metadata_path(compressed_hash);
         metadata_path.exists()
     }
 
     /// Delete metadata for an image
+    #[allow(dead_code)]
     pub fn delete_metadata(&self, compressed_hash: &str) -> Result<()> {
         let metadata_path = self.get_metadata_path(compressed_hash);
 
@@ -98,6 +100,7 @@ impl MetadataManager {
     }
 
     /// List all images that have metadata stored
+    #[allow(dead_code)]
     pub fn list_images_with_metadata(&self) -> Result<Vec<String>> {
         let data_dir = self.project_dirs.data_dir();
         let mut hashes = Vec::new();
@@ -124,6 +127,7 @@ impl MetadataManager {
     }
 
     /// Clean up orphaned metadata files (for images that no longer exist)
+    #[allow(dead_code)]
     pub fn cleanup_orphaned_metadata<F>(&self, image_exists_fn: F) -> Result<usize>
     where
         F: Fn(&str) -> bool,
@@ -170,7 +174,7 @@ mod tests {
     #[test]
     fn test_metadata_storage_and_retrieval() {
         let temp_dir = TempDir::new().unwrap();
-        let mut project_dirs = ProjectDirs::from("test", "test", "test").unwrap();
+        let _project_dirs = ProjectDirs::from("test", "test", "test").unwrap();
 
         // Override data directory for testing
         // Note: This is a simplified test - in real usage we'd need to properly mock ProjectDirs

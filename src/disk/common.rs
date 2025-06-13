@@ -26,28 +26,6 @@ pub struct DiskDevice {
     pub system: bool,
 }
 
-/// Status of a disk write operation, used for progress updates
-#[derive(Debug, Clone)]
-pub enum WriteStatus {
-    /// Write operation has not started yet
-    NotStarted,
-    /// Write operation is in progress
-    InProgress {
-        /// Progress from 0.0 to 1.0
-        progress: f32,
-        /// Bytes written so far
-        bytes_written: u64,
-        /// Total bytes to write
-        total_bytes: u64,
-    },
-    /// Write operation has completed successfully
-    Completed,
-    /// Write operation has failed
-    Failed {
-        /// Error message
-        error: String,
-    },
-}
 
 /// Progress message for disk write operations
 #[derive(Debug)]
@@ -242,11 +220,6 @@ impl<T: Read + Write + Seek> PartitionFileProxy<T> {
 
 // Note: Using tracker from utils/tracker.rs instead of duplicating implementation here
 
-const MB: f64 = 1f64 / 1024f64 / 1024f64;
-
-pub fn bytes_to_mb(bytes: u64) -> f64 {
-    bytes as f64 * MB
-}
 
 // Implement Read for PartitionFileProxy
 impl<T: Read + Write + Seek> Read for PartitionFileProxy<T> {
@@ -496,7 +469,7 @@ impl<T: Read + Write + Seek> Seek for PartitionFileProxy<T> {
             SeekFrom::Current(offset) => {
                 if offset < 0 {
                     self.current_position
-                        .checked_sub(offset.abs() as u64)
+                        .checked_sub(offset.unsigned_abs())
                         .ok_or_else(|| {
                             io::Error::new(
                                 io::ErrorKind::InvalidInput,

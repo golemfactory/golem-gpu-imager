@@ -94,6 +94,12 @@ pub struct ImageRepo {
     downloads: Arc<Mutex<HashMap<String, DownloadStatus>>>,
 }
 
+impl Default for ImageRepo {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ImageRepo {
     pub fn new() -> Self {
         let project_dirs =
@@ -133,6 +139,7 @@ impl ImageRepo {
         Ok(self.metadata.as_ref().unwrap())
     }
 
+    #[allow(dead_code)]
     pub fn get_newest_version_for_channel(&self, channel_name: &str) -> Option<Version> {
         self.metadata
             .as_ref()?
@@ -145,6 +152,7 @@ impl ImageRepo {
             .cloned()
     }
 
+    #[allow(dead_code)]
     pub fn get_all_versions_for_channel(&self, channel_name: &str) -> Option<Vec<Version>> {
         self.metadata
             .as_ref()?
@@ -154,6 +162,7 @@ impl ImageRepo {
             .map(|c| c.versions.clone())
     }
 
+    #[allow(dead_code)]
     pub fn get_available_channels(&self) -> Vec<String> {
         match &self.metadata {
             Some(metadata) => metadata.channels.iter().map(|c| c.name.clone()).collect(),
@@ -161,6 +170,7 @@ impl ImageRepo {
         }
     }
 
+    #[allow(dead_code)]
     pub fn get_download_status(&self, version_id: &str) -> DownloadStatus {
         self.downloads
             .lock()
@@ -245,7 +255,7 @@ impl ImageRepo {
                 
                 if let Ok(Some(metadata)) = metadata_manager.load_metadata(&expected_hash) {
                     // Verify hash quickly
-                    if let Ok(_) = this.verify_hash(&final_path, &expected_hash) {
+                    if this.verify_hash(&final_path, &expected_hash).is_ok() {
                         let status = DownloadStatus::Completed {
                             path: final_path.clone(),
                             metadata,
@@ -401,6 +411,7 @@ impl ImageRepo {
         })
     }
 
+    #[allow(dead_code)]
     pub fn clean_cache(&self) -> Result<(), String> {
         let cache_dir = self.project_dirs.cache_dir();
 

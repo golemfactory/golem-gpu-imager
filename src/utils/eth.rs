@@ -50,6 +50,11 @@ mod tests {
         assert!(is_valid_eth_address(
             "0x7da82C7AB4771ff031b66538D2fB9b0B047f6CF9"
         ));
+
+        // User's address that was incorrectly marked as invalid
+        assert!(is_valid_eth_address(
+            "0xDB0b086993383636c03e663C23f5790275961e77"
+        ));
     }
 
     #[test]

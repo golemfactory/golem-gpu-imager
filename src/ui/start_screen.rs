@@ -96,6 +96,32 @@ pub fn view_start_screen<'a>(
         });
     }
 
+    let mut presets_button = button(
+        container(iced::widget::row![icons::settings(), "Manage Presets"]).center_x(Length::Fill),
+    )
+    .width(250)
+    .padding(14);
+
+    if buttons_enabled {
+        presets_button = presets_button
+            .style(button::secondary)
+            .on_press(Message::ManagePresets);
+    } else {
+        presets_button = presets_button.style(|theme: &Theme, _state| {
+            let palette = theme.extended_palette();
+            button::Style {
+                background: Some(palette.background.weak.color.into()),
+                text_color: palette.background.strong.color,
+                border: iced::Border {
+                    color: palette.background.strong.color,
+                    width: 1.0,
+                    radius: 4.0.into(),
+                },
+                shadow: Shadow::default(),
+            }
+        });
+    }
+
     // Error message container (only shown if error_message is Some)
     let error_container = if let Some(error) = error_message {
         let error_column = column![
@@ -240,6 +266,7 @@ pub fn view_start_screen<'a>(
         container(iced::widget::row![]).height(Length::Fill).into(),
         flash_button.into(),
         edit_button.into(),
+        presets_button.into(),
         container(column![]).height(Length::Fill).into(),
         version_text.into(),
     ]);

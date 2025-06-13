@@ -2,6 +2,7 @@ pub mod application;
 pub mod edit;
 pub mod flash;
 mod icons;
+pub mod preset_editor;
 pub mod start_screen;
 
 #[allow(unused_imports)]
@@ -9,7 +10,7 @@ pub use application::GolemGpuImager;
 pub use edit::{view_edit_completion, view_edit_configuration, view_select_existing_device};
 #[allow(unused_imports)]
 pub use flash::{
-    view_configure_settings, view_flash_completion, view_select_os_image,
+    view_configure_settings, view_flash_completion, view_preset_editor, view_select_os_image,
     view_select_target_device, view_writing_process,
 };
 #[allow(unused_imports)]

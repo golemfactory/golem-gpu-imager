@@ -760,6 +760,8 @@ pub fn view_configuration_editor<'a>(
     selected_preset: Option<usize>,
     new_preset_name: &'a str,
     show_preset_manager: bool,
+    preset_editor: Option<&'a crate::models::PresetEditor>,
+    preset_back_action: Message,
 ) -> Element<'a, Message> {
     // Create the title - simple text by default
     let title = text(title_text).size(30);
@@ -884,8 +886,11 @@ pub fn view_configuration_editor<'a>(
     .spacing(10)
     .width(Length::Fill);
 
-    // Either show the normal configuration UI or the preset manager UI
-    if show_preset_manager {
+    // Check if we should show preset editor, preset manager, or normal configuration UI
+    if let Some(editor) = preset_editor {
+        // Show preset editor
+        return view_preset_editor(editor);
+    } else if show_preset_manager {
         // Create a preset management UI that allows detailed management of presets
         let preset_list = if configuration_presets.is_empty() {
             container(text("No presets defined. Create your first preset.").size(16))
@@ -937,6 +942,14 @@ pub fn view_configuration_editor<'a>(
                         } else {
                             button::secondary
                         })
+                        .padding(8),
+                        button(
+                            row![icons::edit(), text("Edit")]
+                                .spacing(5)
+                                .align_y(Alignment::Center)
+                        )
+                        .on_press(Message::PresetEditor(crate::models::PresetEditorMessage::Start(idx)))
+                        .style(button::secondary)
                         .padding(8),
                         button(
                             row![icons::tune(), text("Load")]
@@ -1014,7 +1027,7 @@ pub fn view_configuration_editor<'a>(
                 .spacing(8)
                 .align_y(Alignment::Center),
         )
-        .on_press(Message::TogglePresetManager)
+        .on_press(preset_back_action)
         .padding(10)
         .style(button::secondary);
 
@@ -1134,6 +1147,7 @@ pub fn view_configure_settings<'a>(
     selected_preset: Option<usize>,
     new_preset_name: &'a str,
     show_preset_manager: bool,
+    preset_editor: Option<&'a crate::models::PresetEditor>,
 ) -> Element<'a, Message> {
     view_configuration_editor(
         payment_network,
@@ -1151,7 +1165,150 @@ pub fn view_configure_settings<'a>(
         selected_preset,
         new_preset_name,
         show_preset_manager,
+        preset_editor,
+        Message::TogglePresetManager,
     )
+}
+
+pub fn view_preset_editor<'a>(
+    editor: &'a crate::models::PresetEditor,
+) -> Element<'a, Message> {
+    use crate::models::{NetworkType, PaymentNetwork, PresetEditorMessage};
+    use crate::ui::icons;
+    use iced::widget::{button, column, container, pick_list, row, text, text_input};
+    use iced::{Alignment, Length};
+
+    // Calculate wallet validation based on the current editor state
+    let is_wallet_valid = editor.wallet_address.is_empty() || 
+        crate::utils::eth::is_valid_eth_address(&editor.wallet_address);
+
+    let title = text(format!("Edit Preset: {}", editor.name)).size(24);
+
+    let name_input = container(
+        column![
+            text("Preset Name").size(16),
+            text_input("Enter preset name", &editor.name)
+                .on_input(|name| Message::PresetEditor(PresetEditorMessage::UpdateName(name)))
+                .padding(10)
+                .width(Length::Fill)
+        ]
+        .spacing(5)
+    )
+    .width(Length::Fill);
+
+    let network_selection = container(
+        column![
+            text("Payment Network").size(16),
+            pick_list(
+                &[PaymentNetwork::Testnet, PaymentNetwork::Mainnet][..],
+                Some(editor.payment_network),
+                |network| Message::PresetEditor(PresetEditorMessage::UpdatePaymentNetwork(network)),
+            )
+            .style(crate::style::pick_list_style)
+        ]
+        .spacing(5)
+    )
+    .width(Length::Fill);
+
+    let subnet_input = container(
+        column![
+            text("Subnet").size(16),
+            text_input("Enter subnet", &editor.subnet)
+                .on_input(|subnet| Message::PresetEditor(PresetEditorMessage::UpdateSubnet(subnet)))
+                .padding(10)
+                .width(Length::Fill)
+        ]
+        .spacing(5)
+    )
+    .width(Length::Fill);
+
+    let network_type_selection = container(
+        column![
+            text("Network Type").size(16),
+            pick_list(
+                &[NetworkType::Central, NetworkType::Hybrid][..],
+                Some(editor.network_type),
+                |network_type| Message::PresetEditor(PresetEditorMessage::UpdateNetworkType(network_type)),
+            )
+            .style(crate::style::pick_list_style)
+        ]
+        .spacing(5)
+    )
+    .width(Length::Fill);
+
+    let wallet_input = container(
+        column![
+            text("Ethereum Wallet Address").size(16),
+            if !editor.wallet_address.is_empty() {
+                if is_wallet_valid {
+                    text_input("Enter ETH wallet address", &editor.wallet_address)
+                        .on_input(|addr| Message::PresetEditor(PresetEditorMessage::UpdateWalletAddress(addr)))
+                        .padding(10)
+                        .style(crate::style::valid_wallet_input)
+                } else {
+                    text_input("Enter ETH wallet address", &editor.wallet_address)
+                        .on_input(|addr| Message::PresetEditor(PresetEditorMessage::UpdateWalletAddress(addr)))
+                        .padding(10)
+                        .style(crate::style::invalid_wallet_input)
+                }
+            } else {
+                text_input("Enter ETH wallet address", &editor.wallet_address)
+                    .on_input(|addr| Message::PresetEditor(PresetEditorMessage::UpdateWalletAddress(addr)))
+                    .padding(10)
+            }
+        ]
+        .spacing(5)
+    )
+    .width(Length::Fill);
+
+    let form = container(
+        column![
+            name_input,
+            network_selection,
+            subnet_input,
+            network_type_selection,
+            wallet_input,
+        ]
+        .spacing(15)
+    )
+    .padding(20)
+    .style(crate::style::bordered_box)
+    .width(Length::Fill);
+
+    let actions = row![
+        button(
+            row![icons::navigate_before(), text("Cancel")]
+                .spacing(8)
+                .align_y(Alignment::Center)
+        )
+        .on_press(Message::PresetEditor(PresetEditorMessage::Cancel))
+        .style(button::secondary)
+        .padding(10),
+        
+        button(
+            row![icons::save(), text("Save Changes")]
+                .spacing(8)
+                .align_y(Alignment::Center)
+        )
+        .on_press_maybe(if editor.is_valid() {
+            Some(Message::PresetEditor(PresetEditorMessage::Save))
+        } else {
+            None
+        })
+        .style(if editor.is_valid() {
+            button::primary
+        } else {
+            button::secondary
+        })
+        .padding(10)
+    ]
+    .spacing(10)
+    .width(Length::Fill);
+
+    column![title, form, actions]
+        .spacing(20)
+        .padding(20)
+        .into()
 }
 
 pub fn view_select_target_device<'a>(

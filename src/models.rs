@@ -50,6 +50,58 @@ impl std::fmt::Display for ConfigurationPreset {
 }
 
 #[derive(Debug, Clone)]
+pub struct PresetEditor {
+    pub preset_index: usize,
+    pub name: String,
+    pub payment_network: PaymentNetwork,
+    pub subnet: String,
+    pub network_type: NetworkType,
+    pub wallet_address: String,
+    pub is_default: bool,
+}
+
+impl PresetEditor {
+    pub fn new(preset_index: usize, preset: &ConfigurationPreset) -> Self {
+        Self {
+            preset_index,
+            name: preset.name.clone(),
+            payment_network: preset.payment_network,
+            subnet: preset.subnet.clone(),
+            network_type: preset.network_type,
+            wallet_address: preset.wallet_address.clone(),
+            is_default: preset.is_default,
+        }
+    }
+
+    pub fn to_preset(&self) -> ConfigurationPreset {
+        ConfigurationPreset {
+            name: self.name.clone(),
+            payment_network: self.payment_network,
+            subnet: self.subnet.clone(),
+            network_type: self.network_type,
+            wallet_address: self.wallet_address.clone(),
+            is_default: self.is_default,
+        }
+    }
+
+    pub fn is_valid(&self) -> bool {
+        !self.name.trim().is_empty() && !self.subnet.trim().is_empty()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum PresetEditorMessage {
+    Start(usize),
+    Cancel,
+    Save,
+    UpdateName(String),
+    UpdatePaymentNetwork(PaymentNetwork),
+    UpdateSubnet(String),
+    UpdateNetworkType(NetworkType),
+    UpdateWalletAddress(String),
+}
+
+#[derive(Debug, Clone)]
 pub struct StorageDevice {
     pub name: String,
     pub path: String,
@@ -95,6 +147,7 @@ pub enum AppMode {
     StartScreen,
     FlashNewImage(FlashState),
     EditExistingDisk(EditState),
+    ManagePresets,
 }
 
 pub enum FlashState {
@@ -173,6 +226,7 @@ pub enum EditState {
 pub enum Message {
     FlashNewImage,
     EditExistingDisk,
+    ManagePresets,
     SelectOsImage(usize),
     DownloadOsImage(usize),
     AnalyzeOsImage(usize),                 // Analyze metadata for downloaded image
@@ -209,6 +263,7 @@ pub enum Message {
     DeletePreset(usize),           // Delete a preset by index
     SetDefaultPreset(usize),       // Set a preset as default
     EditPresetName(usize, String), // Edit a preset name
+    PresetEditor(PresetEditorMessage), // All preset editor operations
     SavePresetsToStorage,          // Save presets to persistent storage
     LoadPresetsFromStorage,        // Load presets from persistent storage
     SetPresetName(String),         // Set name for new preset

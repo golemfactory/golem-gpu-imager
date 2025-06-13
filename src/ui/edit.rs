@@ -147,6 +147,7 @@ pub fn view_edit_configuration<'a>(
     selected_preset: Option<usize>,
     new_preset_name: &'a str,
     show_preset_manager: bool,
+    preset_editor: Option<&'a crate::models::PresetEditor>,
 ) -> Element<'a, Message> {
     crate::ui::flash::view_configuration_editor(
         payment_network,
@@ -164,6 +165,8 @@ pub fn view_edit_configuration<'a>(
         selected_preset,
         new_preset_name,
         show_preset_manager,
+        preset_editor,
+        Message::TogglePresetManager,
     )
 }
 

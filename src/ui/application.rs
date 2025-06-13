@@ -1,7 +1,7 @@
 use crate::disk::{Disk, WriteProgress};
 use crate::models::{
     AppMode, CancelToken, ConfigurationPreset, EditState, FlashState, Message,
-    NetworkType, OsImage, PaymentNetwork, StorageDevice,
+    NetworkType, OsImage, PaymentNetwork, PresetEditor, StorageDevice,
 };
 use crate::ui;
 use crate::utils::repo::{DownloadStatus, ImageRepo, Version};
@@ -28,6 +28,7 @@ pub struct GolemGpuImager {
     pub new_preset_name: String,
     pub show_preset_manager: bool,
     pub preset_manager: Option<PresetManager>,
+    pub preset_editor: Option<PresetEditor>,
     pub locked_disk: Option<Disk>,
     pub error_message: Option<String>,
     pub cancel_token: CancelToken, // For canceling operations
@@ -114,6 +115,7 @@ impl GolemGpuImager {
             new_preset_name: String::new(),
             show_preset_manager: false,
             preset_manager,
+            preset_editor: None,
             locked_disk: None,
             error_message,
             cancel_token: CancelToken::new(),
@@ -445,6 +447,13 @@ impl GolemGpuImager {
                             Some(format!("Failed to detect storage devices: {}", e));
                     }
                 }
+            }
+            Message::ManagePresets => {
+                self.mode = AppMode::ManagePresets;
+                // Clear any previous error messages
+                self.error_message = None;
+                // Start in preset manager view
+                self.show_preset_manager = true;
             }
             Message::SelectOsImage(index) => {
                 self.selected_os_image = Some(index);
@@ -2136,6 +2145,14 @@ impl GolemGpuImager {
                 // Toggle preset management UI visibility
                 self.show_preset_manager = !self.show_preset_manager;
             }
+            Message::PresetEditor(editor_msg) => {
+                crate::ui::preset_editor::PresetEditorHandler::handle_message(
+                    &mut self.preset_editor,
+                    &mut self.configuration_presets,
+                    &mut self.preset_manager,
+                    editor_msg,
+                );
+            }
             Message::BackToSelectOsImage => {
                 if let AppMode::FlashNewImage(_) = &self.mode {
                     self.mode = AppMode::FlashNewImage(FlashState::SelectOsImage);
@@ -2229,6 +2246,7 @@ impl GolemGpuImager {
                     self.selected_preset,
                     &self.new_preset_name,
                     self.show_preset_manager,
+                    self.preset_editor.as_ref(),
                 ),
                 FlashState::ClearingPartitions(progress) => ui::flash::view_writing_process(
                     *progress,
@@ -2280,8 +2298,31 @@ impl GolemGpuImager {
                     self.selected_preset,
                     &self.new_preset_name,
                     self.show_preset_manager,
+                    self.preset_editor.as_ref(),
                 ),
                 EditState::Completion(success) => ui::view_edit_completion(*success),
+            },
+            AppMode::ManagePresets => {
+                // Show the preset manager view that includes preset editor
+                ui::flash::view_configuration_editor(
+                    crate::models::PaymentNetwork::Testnet, // Dummy values since we're in preset-only mode
+                    "public".to_string(),
+                    crate::models::NetworkType::Central,
+                    "".to_string(),
+                    false,
+                    "Manage Configuration Presets",
+                    "Create, edit, and manage your configuration presets",
+                    Message::BackToMainMenu,
+                    Message::BackToMainMenu, // No next action in this mode
+                    "Back to Main Menu",
+                    "",
+                    &self.configuration_presets,
+                    self.selected_preset,
+                    &self.new_preset_name,
+                    self.show_preset_manager,
+                    self.preset_editor.as_ref(),
+                    Message::BackToMainMenu, // Back button in preset manager goes to main menu
+                )
             },
         }
     }

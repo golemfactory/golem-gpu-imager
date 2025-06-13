@@ -13,4 +13,6 @@ pub enum EditMessage {
     DeviceLocked(Option<crate::disk::Disk>),
     ConfigurationSaved,
     ConfigurationSaveFailed,
+    BackToMainMenu,
+    EditAnother,
 }

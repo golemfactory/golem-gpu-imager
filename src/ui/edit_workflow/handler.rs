@@ -88,5 +88,15 @@ pub fn handle_message(
             error!("Failed to save configuration");
             Task::none()
         }
+        
+        // App-level navigation messages that need to be forwarded
+        EditMessage::BackToMainMenu => {
+            Task::done(crate::ui::messages::Message::BackToMainMenu)
+        }
+        
+        EditMessage::EditAnother => {
+            *state = EditState::new();
+            Task::none()
+        }
     }
 }

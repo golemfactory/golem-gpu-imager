@@ -9,17 +9,17 @@ use iced::{Border, Theme};
 use crate::models::{NetworkType, PaymentNetwork};
 use crate::ui::{
     messages::Message,
-    flash_workflow::{OsImage, OsImageGroup},
     device_selection::StorageDevice,
     preset_manager::PresetEditorMessage,
 };
+use super::{FlashMessage, OsImage, OsImageGroup};
 use crate::style;
 use crate::ui::{LOGO_SVG, icons};
 
 pub fn view_select_os_image<'a>(
     os_images: &'a [OsImage],
     selected_os_image: Option<usize>,
-) -> Element<'a, Message> {
+) -> Element<'a, FlashMessage> {
     // Page header
     let header = container(text("Select OS Image").size(28))
         .width(Length::Fill)
@@ -73,7 +73,7 @@ pub fn view_select_os_image<'a>(
                     .spacing(5)
                     .align_y(Alignment::Center),
             )
-            .on_press(Message::DownloadOsImage(i))
+            .on_press(FlashMessage::DownloadOsImage(i))
             .padding(10)
             .style(button::secondary)
         } else if image.metadata.is_none() {
@@ -83,7 +83,7 @@ pub fn view_select_os_image<'a>(
                     .spacing(5)
                     .align_y(Alignment::Center),
             )
-            .on_press(Message::AnalyzeOsImage(i))
+            .on_press(FlashMessage::AnalyzeOsImage(i))
             .padding(10)
             .style(button::secondary)
         } else {
@@ -96,7 +96,7 @@ pub fn view_select_os_image<'a>(
                     .spacing(5)
                     .align_y(Alignment::Center),
             )
-            .on_press(Message::SelectOsImage(i))
+            .on_press(FlashMessage::SelectOsImage(i))
             .padding(10)
             .style(if is_selected {
                 |_theme: &Theme, _status| {
@@ -148,7 +148,7 @@ pub fn view_select_os_image<'a>(
         button(
             container(row!["Select Target Device", icons::navigate_next()]).center_x(Length::Fill),
         )
-        .on_press(Message::GotoSelectTargetDevice)
+        .on_press(FlashMessage::GotoSelectTargetDevice)
         .padding(12)
         .width(220)
         .style(button::primary)
@@ -160,7 +160,7 @@ pub fn view_select_os_image<'a>(
     };
 
     let back_button = button(iced::widget::row![icons::navigate_before(), "Back"])
-        .on_press(Message::BackToMainMenu)
+        .on_press(FlashMessage::BackToMainMenu)
         .padding(12)
         .width(100)
         .style(button::secondary);
@@ -188,7 +188,7 @@ pub fn view_select_os_image<'a>(
 pub fn view_select_os_image_groups<'a>(
     os_image_groups: &'a [OsImageGroup],
     selected_os_image_group: Option<(usize, usize)>,
-) -> Element<'a, Message> {
+) -> Element<'a, FlashMessage> {
     // Page header
     let header = container(text("Select OS Image").size(28))
         .width(Length::Fill)
@@ -263,7 +263,7 @@ pub fn view_select_os_image_groups<'a>(
                             .spacing(5)
                             .align_y(Alignment::Center),
                     )
-                    .on_press(Message::DownloadOsImageFromGroup(group_idx, 0))
+                    .on_press(FlashMessage::DownloadOsImageFromGroup(group_idx, 0))
                     .padding(10)
                     .style(button::secondary)
                 } else if group.latest_version.metadata.is_none() {
@@ -273,7 +273,7 @@ pub fn view_select_os_image_groups<'a>(
                             .spacing(5)
                             .align_y(Alignment::Center),
                     )
-                    .on_press(Message::AnalyzeOsImageFromGroup(group_idx, 0))
+                    .on_press(FlashMessage::AnalyzeOsImageFromGroup(group_idx, 0))
                     .padding(10)
                     .style(button::secondary)
                 } else {
@@ -286,7 +286,7 @@ pub fn view_select_os_image_groups<'a>(
                             .spacing(5)
                             .align_y(Alignment::Center),
                     )
-                    .on_press(Message::SelectOsImageFromGroup(group_idx, 0))
+                    .on_press(FlashMessage::SelectOsImageFromGroup(group_idx, 0))
                     .padding(10)
                     .style(if latest_is_selected {
                         |_theme: &Theme, _status| {
@@ -347,7 +347,7 @@ pub fn view_select_os_image_groups<'a>(
                             .spacing(5)
                             .align_y(Alignment::Center),
                     )
-                    .on_press(Message::ToggleVersionHistory(group_idx))
+                    .on_press(FlashMessage::ToggleVersionHistory(group_idx))
                     .padding(8)
                     .style(button::text);
 
@@ -414,7 +414,7 @@ pub fn view_select_os_image_groups<'a>(
                                                 .spacing(5)
                                                 .align_y(Alignment::Center),
                                         )
-                                        .on_press(Message::DownloadOsImageFromGroup(
+                                        .on_press(FlashMessage::DownloadOsImageFromGroup(
                                             group_idx,
                                             actual_version_idx,
                                         ))
@@ -427,7 +427,7 @@ pub fn view_select_os_image_groups<'a>(
                                                 .spacing(5)
                                                 .align_y(Alignment::Center),
                                         )
-                                        .on_press(Message::AnalyzeOsImageFromGroup(
+                                        .on_press(FlashMessage::AnalyzeOsImageFromGroup(
                                             group_idx,
                                             actual_version_idx,
                                         ))
@@ -443,7 +443,7 @@ pub fn view_select_os_image_groups<'a>(
                                                 .spacing(5)
                                                 .align_y(Alignment::Center),
                                         )
-                                        .on_press(Message::SelectOsImageFromGroup(
+                                        .on_press(FlashMessage::SelectOsImageFromGroup(
                                             group_idx,
                                             actual_version_idx,
                                         ))
@@ -533,7 +533,7 @@ pub fn view_select_os_image_groups<'a>(
         button(
             container(row!["Select Target Device", icons::navigate_next()]).center_x(Length::Fill),
         )
-        .on_press(Message::GotoSelectTargetDevice)
+        .on_press(FlashMessage::GotoSelectTargetDevice)
         .padding(12)
         .width(220)
         .style(button::primary)
@@ -545,7 +545,7 @@ pub fn view_select_os_image_groups<'a>(
     };
 
     let back_button = button(iced::widget::row![icons::navigate_before(), "Back"])
-        .on_press(Message::BackToMainMenu)
+        .on_press(FlashMessage::BackToMainMenu)
         .padding(12)
         .width(100)
         .style(button::secondary);
@@ -579,7 +579,7 @@ pub fn view_processing_image(
     created_date: &str,
     phase: &crate::utils::streaming_hash_calculator::ProcessingPhase,
     uncompressed_size: Option<u64>,
-) -> Element<'static, Message> {
+) -> Element<'static, FlashMessage> {
     use crate::utils::streaming_hash_calculator::ProcessingPhase;
     
     let title = match phase {
@@ -718,7 +718,7 @@ pub fn view_processing_image(
         .spacing(5)
         .align_y(Alignment::Center),
     )
-    .on_press(Message::CancelWrite)
+    .on_press(FlashMessage::CancelWrite)
     .padding(10);
 
     let content = column![
@@ -781,14 +781,14 @@ pub fn view_configuration_editor<'a>(
     let network_pl = pick_list(
         &[PaymentNetwork::Testnet, PaymentNetwork::Mainnet][..],
         Some(payment_network),
-        Message::SetPaymentNetwork,
+        FlashMessage::SetPaymentNetwork,
     )
     .style(crate::style::pick_list_style);
 
     // Subnet field with text input
     let subnet_label = text("Subnet").size(18);
     let subnet_input = iced::widget::text_input("Enter subnet", &subnet)
-        .on_input(Message::SetSubnet)
+        .on_input(FlashMessage::SetSubnet)
         .padding(10);
 
     // Wallet address field with text input and validation indicator
@@ -798,19 +798,19 @@ pub fn view_configuration_editor<'a>(
     let wallet_input = if !wallet_address.is_empty() {
         if is_wallet_valid {
             iced::widget::text_input("Enter ETH wallet address", &wallet_address)
-                .on_input(Message::SetWalletAddress)
+                .on_input(FlashMessage::SetWalletAddress)
                 .padding(10)
                 .style(crate::style::valid_wallet_input)
         } else {
             iced::widget::text_input("Enter ETH wallet address", &wallet_address)
-                .on_input(Message::SetWalletAddress)
+                .on_input(FlashMessage::SetWalletAddress)
                 .padding(10)
                 .style(crate::style::invalid_wallet_input)
         }
     } else {
         // Default styling for empty input
         iced::widget::text_input("Enter ETH wallet address", &wallet_address)
-            .on_input(Message::SetWalletAddress)
+            .on_input(FlashMessage::SetWalletAddress)
             .padding(10)
             .style(crate::style::default_text_input)
     };
@@ -840,7 +840,7 @@ pub fn view_configuration_editor<'a>(
     let type_pl = pick_list(
         &[NetworkType::Hybrid, NetworkType::Central][..],
         Some(network_type),
-        Message::SetNetworkType,
+        FlashMessage::SetNetworkType,
     )
     .style(crate::style::pick_list_style);
 
@@ -1321,7 +1321,7 @@ pub fn view_preset_editor<'a>(
 pub fn view_select_target_device<'a>(
     storage_devices: &'a [StorageDevice],
     selected_device: Option<usize>,
-) -> Element<'a, Message> {
+) -> Element<'a, FlashMessage> {
     let title = text("Select Target Device")
         .size(30)
         .width(Length::Fill)
@@ -1332,7 +1332,7 @@ pub fn view_select_target_device<'a>(
         .color(Color::from_rgb(1.0, 0.0, 0.0));
 
     // Device list or message if no devices found
-    let device_list: Element<'a, Message> = if storage_devices.is_empty() {
+    let device_list: Element<'a, FlashMessage> = if storage_devices.is_empty() {
         // Show message when no devices are available
         container(
             column![
@@ -1343,7 +1343,7 @@ pub fn view_select_target_device<'a>(
                         .spacing(8)
                         .align_y(Alignment::Center)
                 )
-                .on_press(Message::RefreshRepoData) // Reuse this message to trigger a refresh
+                .on_press(FlashMessage::RefreshRepoData) // Reuse this message to trigger a refresh
                 .padding(12)
                 .style(button::primary)
             ]
@@ -1376,7 +1376,7 @@ pub fn view_select_target_device<'a>(
                     .spacing(5)
                     .align_y(Alignment::Center)
             })
-            .on_press(Message::SelectTargetDevice(i))
+            .on_press(FlashMessage::SelectTargetDevice(i))
             .padding(10)
             .style(if is_selected {
                 button::success
@@ -1414,7 +1414,7 @@ pub fn view_select_target_device<'a>(
             .spacing(5)
             .align_y(Alignment::Center),
     )
-    .on_press(Message::BackToSelectOsImage)
+    .on_press(FlashMessage::BackToSelectOsImage)
     .padding(10)
     .style(button::secondary);
 
@@ -1425,7 +1425,7 @@ pub fn view_select_target_device<'a>(
                 .spacing(5)
                 .align_y(Alignment::Center),
         )
-        .on_press(Message::GotoConfigureSettings)
+        .on_press(FlashMessage::GotoConfigureSettings)
         .padding(10)
         .style(button::primary)
     } else {
@@ -1470,7 +1470,7 @@ pub fn view_select_target_device<'a>(
         .into()
 }
 
-pub fn view_writing_process(progress: f32, title: &'static str) -> Element<'static, Message> {
+pub fn view_writing_process(progress: f32, title: &'static str) -> Element<'static, FlashMessage> {
     // Page header with a more welcoming title with improved contrast
     let header =
         container(
@@ -1618,7 +1618,7 @@ pub fn view_writing_process(progress: f32, title: &'static str) -> Element<'stat
             .spacing(8)
             .align_y(Alignment::Center),
     )
-    .on_press(Message::CancelWrite)
+    .on_press(FlashMessage::CancelWrite)
     .padding(8)
     .width(180)
     .style(button::danger);
@@ -1654,7 +1654,7 @@ pub fn view_writing_process(progress: f32, title: &'static str) -> Element<'stat
         .into()
 }
 
-pub fn view_flash_completion(success: bool, error_message: Option<&str>) -> Element<'_, Message> {
+pub fn view_flash_completion(success: bool, error_message: Option<&str>) -> Element<'_, FlashMessage> {
     // Page header with success/error status with improved styling
     let header_text = if success {
         "Installation Successful"
@@ -1861,7 +1861,7 @@ pub fn view_flash_completion(success: bool, error_message: Option<&str>) -> Elem
             .spacing(8)
             .align_y(Alignment::Center),
     )
-    .on_press(Message::FlashAnother)
+    .on_press(FlashMessage::FlashAnother)
     .padding(12)
     .width(220)
     .style(button::primary);
@@ -1871,7 +1871,7 @@ pub fn view_flash_completion(success: bool, error_message: Option<&str>) -> Elem
             .spacing(8)
             .align_y(Alignment::Center),
     )
-    .on_press(Message::Exit)
+    .on_press(FlashMessage::Exit)
     .padding(12)
     .width(180)
     .style(button::secondary);

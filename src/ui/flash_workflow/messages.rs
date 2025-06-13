@@ -35,4 +35,7 @@ pub enum FlashMessage {
     WriteConfigFailed(String),     // Config write failed with error message
     PollWriteProgress,             // Poll for progress updates from the subscription
     BackToSelectOsImage,           // Go back to the OS image selection screen
+    BackToMainMenu,                // Navigation: go back to main menu
+    Exit,                          // App action: exit application
+    RefreshRepoData,               // App action: refresh repository data
 }

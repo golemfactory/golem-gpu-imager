@@ -174,6 +174,19 @@ pub fn handle_message(
             Task::none()
         }
         
+        // App-level navigation messages that need to be forwarded
+        FlashMessage::BackToMainMenu => {
+            Task::done(crate::ui::messages::Message::BackToMainMenu)
+        }
+        
+        FlashMessage::Exit => {
+            Task::done(crate::ui::messages::Message::Exit)
+        }
+        
+        FlashMessage::RefreshRepoData => {
+            Task::done(crate::ui::messages::Message::RefreshRepoData)
+        }
+        
         // Add more message handlers as needed
         _ => {
             debug!("Unhandled flash message: {:?}", message);

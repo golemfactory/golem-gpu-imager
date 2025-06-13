@@ -153,7 +153,7 @@ pub fn view_edit_configuration<'a>(
     show_preset_manager: bool,
     preset_editor: Option<&'a crate::ui::preset_manager::PresetEditor>,
 ) -> Element<'a, Message> {
-    crate::ui::flash::view_configuration_editor(
+    crate::ui::flash_workflow::view_configuration_editor(
         payment_network,
         subnet,
         network_type,

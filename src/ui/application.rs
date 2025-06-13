@@ -105,7 +105,7 @@ impl GolemGpuImager {
             Message::FlashNewImage => {
                 self.mode = AppMode::FlashNewImage;
                 self.flash_workflow = Some(FlashState::new());
-                Task::none()
+                self.load_repo_data()
             }
             
             Message::EditExistingDisk => {
@@ -233,40 +233,28 @@ impl GolemGpuImager {
                     self.error_message.as_deref(),
                     self.is_elevated,
                     &self.elevation_status,
-                ).map(Message::from)
+                )
             }
             AppMode::FlashNewImage => {
-                if let Some(_flash_state) = &self.flash_workflow {
-                    // Return appropriate view based on flash workflow state
-                    // This would need to be implemented with proper view delegation
-                    crate::ui::start_screen::view_start_screen(
-                        self.error_message.as_deref(),
-                        self.is_elevated,
-                        &self.elevation_status,
-                    ).map(Message::from) // Placeholder
+                if let Some(flash_state) = &self.flash_workflow {
+                    crate::ui::flash_workflow::view(flash_state, &self.device_selection, self.is_loading_repo).map(Message::Flash)
                 } else {
                     crate::ui::start_screen::view_start_screen(
                         self.error_message.as_deref(),
                         self.is_elevated,
                         &self.elevation_status,
-                    ).map(Message::from)
+                    )
                 }
             }
             AppMode::EditExistingDisk => {
-                if let Some(_edit_state) = &self.edit_workflow {
-                    // Return appropriate view based on edit workflow state
-                    // This would need to be implemented with proper view delegation
-                    crate::ui::start_screen::view_start_screen(
-                        self.error_message.as_deref(),
-                        self.is_elevated,
-                        &self.elevation_status,
-                    ).map(Message::from) // Placeholder
+                if let Some(edit_state) = &self.edit_workflow {
+                    crate::ui::edit_workflow::view(edit_state, &self.preset_manager)
                 } else {
                     crate::ui::start_screen::view_start_screen(
                         self.error_message.as_deref(),
                         self.is_elevated,
                         &self.elevation_status,
-                    ).map(Message::from)
+                    )
                 }
             }
             AppMode::ManagePresets => {
@@ -275,7 +263,7 @@ impl GolemGpuImager {
                     self.error_message.as_deref(),
                     self.is_elevated,
                     &self.elevation_status,
-                ).map(Message::from) // Placeholder
+                ) // Placeholder
             }
         }
     }

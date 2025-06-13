@@ -2,7 +2,7 @@ use iced::alignment::Horizontal;
 use iced::widget::{button, column, container, row, svg, text};
 use iced::{Alignment, Color, Element, Length, Shadow, Theme, Vector};
 
-use crate::models::Message;
+use crate::ui::messages::Message;
 use crate::ui::{LOGO_SVG, icons};
 
 pub fn view_start_screen<'a>(

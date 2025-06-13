@@ -15,6 +15,7 @@ use crate::ui::{LOGO_SVG, icons};
 pub fn view_select_os_image<'a>(
     os_images: &'a [OsImage],
     selected_os_image: Option<usize>,
+    is_loading: bool,
 ) -> Element<'a, FlashMessage> {
     // Page header
     let header = container(text("Select OS Image").size(28))
@@ -22,122 +23,165 @@ pub fn view_select_os_image<'a>(
         .padding(15)
         .style(crate::style::bordered_box);
 
-    // Create OS image cards
-    let os_image_list = column(os_images.iter().enumerate().map(|(i, image)| {
-        let is_selected = selected_os_image == Some(i);
-
-        let mut image_info_items = vec![
-            text(&image.name).size(20).into(),
-            text(format!("Version: {}", image.version)).size(15).into(),
-            text(&image.description).size(14).into(),
-        ];
-
-        // Add metadata information if available
-        if let Some(metadata) = &image.metadata {
-            let uncompressed_size_gb =
-                metadata.uncompressed_size as f64 / (1024.0 * 1024.0 * 1024.0);
-            image_info_items.push(
-                row![
-                    icons::analytics(),
-                    text(format!("Uncompressed: {:.2} GB", uncompressed_size_gb))
-                        .size(12)
-                        .color(Color::from_rgb(0.0, 0.5, 0.8)),
-                    icons::verified(),
-                    text("Verified")
-                        .size(12)
-                        .color(Color::from_rgb(0.0, 0.6, 0.0))
-                ]
-                .spacing(5)
-                .align_y(Alignment::Center)
-                .into(),
-            );
-        }
-
-        image_info_items.push(
-            text(format!("Created: {}", image.created))
-                .size(12)
-                .color(Color::from_rgb(0.5, 0.5, 0.5))
-                .into(),
-        );
-
-        let image_info = column(image_info_items).spacing(8).width(Length::Fill);
-
-        let action_button = if !image.downloaded {
-            // State 1: Not downloaded
-            button(
-                row![icons::get_app(), text("Download")]
-                    .spacing(5)
-                    .align_y(Alignment::Center),
-            )
-            .on_press(FlashMessage::DownloadOsImage(i))
-            .padding(10)
-            .style(button::secondary)
-        } else if image.metadata.is_none() {
-            // State 2: Downloaded but needs analysis
-            button(
-                row![icons::analytics(), text("Analyze")]
-                    .spacing(5)
-                    .align_y(Alignment::Center),
-            )
-            .on_press(FlashMessage::AnalyzeOsImage(i))
-            .padding(10)
-            .style(button::secondary)
-        } else {
-            // State 3: Ready to select
-            button(
-                row![
-                    if is_selected { icons::check_circle() } else { icons::check() },
-                    text(if is_selected { "Selected" } else { "Select" })
-                ]
-                    .spacing(5)
-                    .align_y(Alignment::Center),
-            )
-            .on_press(FlashMessage::SelectOsImage(i))
-            .padding(10)
-            .style(if is_selected {
-                |_theme: &Theme, _status| {
-                    button::Style {
-                        background: Some(crate::style::PRIMARY.into()),
-                        text_color: Color::WHITE,
-                        border: Border {
-                            color: crate::style::PRIMARY,
-                            width: 2.0,
-                            radius: 5.0.into(),
-                        },
-                        shadow: iced::Shadow {
-                            color: crate::style::PRIMARY.scale_alpha(0.3),
-                            offset: iced::Vector::new(0.0, 2.0),
-                            blur_radius: 4.0,
-                        },
-                        ..button::Style::default()
-                    }
-                }
-            } else {
-                button::primary
-            })
-        };
-
-        // Create a container for each OS image item
-        container(
-            row![image_info, action_button]
-                .spacing(15)
-                .align_y(Alignment::Center),
+    // Create OS image cards or loading/empty state
+    let scrollable_content = if is_loading {
+        // Show loading indicator
+        let loading_content = container(
+            column![
+                icons::timer(),
+                text("Loading OS Images...").size(20),
+                text("Please wait while we fetch available images").size(16),
+                progress_bar(0.0..=1.0, 0.5).style(progress_bar::primary)
+            ]
+            .spacing(20)
+            .align_x(Alignment::Center),
         )
         .width(Length::Fill)
-        .padding(15)
-        .style(if is_selected {
-            crate::style::selected_os_image_container
-        } else {
-            crate::style::bordered_box
-        })
-        .into()
-    }))
-    .spacing(15)
-    .width(Length::Fill)
-    .padding(iced::Padding::new(0.0).right(10.0)); // Add right padding to prevent scrollbar collision
+        .padding(50)
+        .style(crate::style::bordered_box);
+        
+        scrollable(loading_content).height(Length::Fill)
+    } else if os_images.is_empty() {
+        // Show empty state with refresh option
+        let empty_content = container(
+            column![
+                text("No OS Images Found").size(20),
+                text("No images are currently available in the repository").size(16),
+                button(
+                    row![icons::refresh(), text("Refresh Repository").size(16)]
+                        .spacing(8)
+                        .align_y(Alignment::Center)
+                )
+                .on_press(FlashMessage::RefreshRepoData)
+                .padding(12)
+                .style(button::primary)
+            ]
+            .spacing(20)
+            .align_x(Alignment::Center),
+        )
+        .width(Length::Fill)
+        .padding(50)
+        .style(crate::style::bordered_box);
+        
+        scrollable(empty_content).height(Length::Fill)
+    } else {
+        // Show actual OS image list
+        let os_image_list = column(os_images.iter().enumerate().map(|(i, image)| {
+            let is_selected = selected_os_image == Some(i);
 
-    // Make scrollable in case we have many images
-    let scrollable_content = scrollable(os_image_list).height(Length::Fill);
+            let mut image_info_items = vec![
+                text(&image.name).size(20).into(),
+                text(format!("Version: {}", image.version)).size(15).into(),
+                text(&image.description).size(14).into(),
+            ];
+
+            // Add metadata information if available
+            if let Some(metadata) = &image.metadata {
+                let uncompressed_size_gb =
+                    metadata.uncompressed_size as f64 / (1024.0 * 1024.0 * 1024.0);
+                image_info_items.push(
+                    row![
+                        icons::analytics(),
+                        text(format!("Uncompressed: {:.2} GB", uncompressed_size_gb))
+                            .size(12)
+                            .color(Color::from_rgb(0.0, 0.5, 0.8)),
+                        icons::verified(),
+                        text("Verified")
+                            .size(12)
+                            .color(Color::from_rgb(0.0, 0.6, 0.0))
+                    ]
+                    .spacing(5)
+                    .align_y(Alignment::Center)
+                    .into(),
+                );
+            }
+
+            image_info_items.push(
+                text(format!("Created: {}", image.created))
+                    .size(12)
+                    .color(Color::from_rgb(0.5, 0.5, 0.5))
+                    .into(),
+            );
+
+            let image_info = column(image_info_items).spacing(8).width(Length::Fill);
+
+            let action_button = if !image.downloaded {
+                // State 1: Not downloaded
+                button(
+                    row![icons::get_app(), text("Download")]
+                        .spacing(5)
+                        .align_y(Alignment::Center),
+                )
+                .on_press(FlashMessage::DownloadOsImage(i))
+                .padding(10)
+                .style(button::secondary)
+            } else if image.metadata.is_none() {
+                // State 2: Downloaded but needs analysis
+                button(
+                    row![icons::analytics(), text("Analyze")]
+                        .spacing(5)
+                        .align_y(Alignment::Center),
+                )
+                .on_press(FlashMessage::AnalyzeOsImage(i))
+                .padding(10)
+                .style(button::secondary)
+            } else {
+                // State 3: Ready to select
+                button(
+                    row![
+                        if is_selected { icons::check_circle() } else { icons::check() },
+                        text(if is_selected { "Selected" } else { "Select" })
+                    ]
+                        .spacing(5)
+                        .align_y(Alignment::Center),
+                )
+                .on_press(FlashMessage::SelectOsImage(i))
+                .padding(10)
+                .style(if is_selected {
+                    |_theme: &Theme, _status| {
+                        button::Style {
+                            background: Some(crate::style::PRIMARY.into()),
+                            text_color: Color::WHITE,
+                            border: Border {
+                                color: crate::style::PRIMARY,
+                                width: 2.0,
+                                radius: 5.0.into(),
+                            },
+                            shadow: iced::Shadow {
+                                color: crate::style::PRIMARY.scale_alpha(0.3),
+                                offset: iced::Vector::new(0.0, 2.0),
+                                blur_radius: 4.0,
+                            },
+                            ..button::Style::default()
+                        }
+                    }
+                } else {
+                    button::primary
+                })
+            };
+
+            // Create a container for each OS image item
+            container(
+                row![image_info, action_button]
+                    .spacing(15)
+                    .align_y(Alignment::Center),
+            )
+            .width(Length::Fill)
+            .padding(15)
+            .style(if is_selected {
+                crate::style::selected_os_image_container
+            } else {
+                crate::style::bordered_box
+            })
+            .into()
+        }))
+        .spacing(15)
+        .width(Length::Fill)
+        .padding(iced::Padding::new(0.0).right(10.0)); // Add right padding to prevent scrollbar collision
+
+        // Make scrollable in case we have many images
+        scrollable(os_image_list).height(Length::Fill)
+    };
 
     // Navigation buttons
     let next_button = if selected_os_image.is_some() {
@@ -184,6 +228,7 @@ pub fn view_select_os_image<'a>(
 pub fn view_select_os_image_groups<'a>(
     os_image_groups: &'a [OsImageGroup],
     selected_os_image_group: Option<(usize, usize)>,
+    is_loading: bool,
 ) -> Element<'a, FlashMessage> {
     // Page header
     let header = container(text("Select OS Image").size(28))
@@ -191,12 +236,54 @@ pub fn view_select_os_image_groups<'a>(
         .padding(15)
         .style(crate::style::bordered_box);
 
-    // Create OS image group cards
-    let os_image_list = column(
-        os_image_groups
-            .iter()
-            .enumerate()
-            .map(|(group_idx, group)| {
+    // Create OS image group cards or loading/empty state
+    let scrollable_content = if is_loading {
+        // Show loading indicator
+        let loading_content = container(
+            column![
+                icons::timer(),
+                text("Loading OS Images...").size(20),
+                text("Please wait while we fetch available images").size(16),
+                progress_bar(0.0..=1.0, 0.5).style(progress_bar::primary)
+            ]
+            .spacing(20)
+            .align_x(Alignment::Center),
+        )
+        .width(Length::Fill)
+        .padding(50)
+        .style(crate::style::bordered_box);
+        
+        scrollable(loading_content).height(Length::Fill)
+    } else if os_image_groups.is_empty() {
+        // Show empty state with refresh option
+        let empty_content = container(
+            column![
+                text("No OS Images Found").size(20),
+                text("No images are currently available in the repository").size(16),
+                button(
+                    row![icons::refresh(), text("Refresh Repository").size(16)]
+                        .spacing(8)
+                        .align_y(Alignment::Center)
+                )
+                .on_press(FlashMessage::RefreshRepoData)
+                .padding(12)
+                .style(button::primary)
+            ]
+            .spacing(20)
+            .align_x(Alignment::Center),
+        )
+        .width(Length::Fill)
+        .padding(50)
+        .style(crate::style::bordered_box);
+        
+        scrollable(empty_content).height(Length::Fill)
+    } else {
+        // Show actual OS image group list
+        let os_image_list = column(
+            os_image_groups
+                .iter()
+                .enumerate()
+                .map(|(group_idx, group)| {
                 let is_selected_group = selected_os_image_group.map(|(g, _)| g) == Some(group_idx);
                 let selected_version_idx = if is_selected_group {
                     selected_os_image_group.map(|(_, v)| v)
@@ -516,12 +603,13 @@ pub fn view_select_os_image_groups<'a>(
                     .into()
             }),
     )
-    .spacing(15)
-    .width(Length::Fill)
-    .padding(iced::Padding::new(0.0).right(10.0)); // Add right padding to prevent scrollbar collision
+        .spacing(15)
+        .width(Length::Fill)
+        .padding(iced::Padding::new(0.0).right(10.0)); // Add right padding to prevent scrollbar collision
 
-    // Make scrollable in case we have many images
-    let scrollable_content = scrollable(os_image_list).height(Length::Fill);
+        // Make scrollable in case we have many images
+        scrollable(os_image_list).height(Length::Fill)
+    };
 
     // Navigation buttons
     let has_selection = selected_os_image_group.is_some();

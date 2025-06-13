@@ -18,7 +18,7 @@ pub fn view_select_existing_device<'a>(
         .size(28)
         .width(Length::Fill);
 
-    let device_list = if storage_devices.is_empty() {
+    let device_list: Element<'a, EditMessage> = if storage_devices.is_empty() {
         container(
             column![
                 text("No devices found").size(18),
@@ -36,6 +36,7 @@ pub fn view_select_existing_device<'a>(
         )
         .padding(20)
         .style(crate::style::bordered_box)
+        .into()
     } else {
         column(storage_devices.iter().enumerate().map(|(i, device)| {
             let device_info = column![

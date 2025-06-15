@@ -1169,6 +1169,199 @@ pub fn view_writing_process(progress: f32, title: &'static str) -> Element<'stat
         .into()
 }
 
+pub fn view_flash_configure_settings<'a>(
+    payment_network: crate::models::PaymentNetwork,
+    subnet: String,
+    network_type: crate::models::NetworkType,
+    wallet_address: String,
+    is_wallet_valid: bool,
+) -> Element<'a, FlashMessage> {
+    use iced::widget::{button, column, container, pick_list, row, scrollable, text, text_input};
+    use iced::{Alignment, Color, Length};
+    
+    // Page header
+    let header = container(
+        column![
+            text("Configure Settings").size(28),
+            text("Configure your Golem Network settings before flashing:").size(16),
+        ]
+        .spacing(5)
+    )
+    .width(Length::Fill)
+    .padding(15)
+    .style(crate::style::bordered_box);
+
+    // Configuration form section
+    let form_section = container(
+        column![
+            // Payment Network selection
+            column![
+                text("Payment Network").size(16),
+                pick_list(
+                    &[crate::models::PaymentNetwork::Testnet, crate::models::PaymentNetwork::Mainnet][..],
+                    Some(payment_network),
+                    FlashMessage::SetPaymentNetwork
+                )
+                .width(Length::Fill)
+                .style(crate::style::pick_list_style),
+                text(match payment_network {
+                    crate::models::PaymentNetwork::Testnet => "Use testnet GLM tokens for development and testing",
+                    crate::models::PaymentNetwork::Mainnet => "Use real GLM tokens for production workloads",
+                })
+                .size(12)
+                .color(Color::from_rgb(0.6, 0.6, 0.6)),
+            ]
+            .spacing(5),
+
+            // Network Type selection
+            column![
+                text("Network Type").size(16),
+                pick_list(
+                    &[crate::models::NetworkType::Central, crate::models::NetworkType::Hybrid][..],
+                    Some(network_type),
+                    FlashMessage::SetNetworkType
+                )
+                .width(Length::Fill)
+                .style(crate::style::pick_list_style),
+                text(match network_type {
+                    crate::models::NetworkType::Central => "Connect through central network infrastructure",
+                    crate::models::NetworkType::Hybrid => "Mix of central and peer-to-peer connections",
+                })
+                .size(12)
+                .color(Color::from_rgb(0.6, 0.6, 0.6)),
+            ]
+            .spacing(5),
+
+            // Subnet configuration
+            column![
+                text("Subnet").size(16),
+                text_input("Enter subnet name (e.g., 'public')", &subnet)
+                    .on_input(FlashMessage::SetSubnet)
+                    .width(Length::Fill)
+                    .style(crate::style::default_text_input),
+                text("Specify which subnet to connect to on the Golem Network")
+                    .size(12)
+                    .color(Color::from_rgb(0.6, 0.6, 0.6)),
+            ]
+            .spacing(5),
+
+            // Wallet address input with validation
+            column![
+                text("Wallet Address (Optional)").size(16),
+                text_input("Enter Ethereum wallet address (0x...)", &wallet_address)
+                    .on_input(FlashMessage::SetWalletAddress)
+                    .width(Length::Fill)
+                    .style(if wallet_address.is_empty() {
+                        crate::style::default_text_input
+                    } else if is_wallet_valid {
+                        crate::style::valid_wallet_input
+                    } else {
+                        crate::style::invalid_wallet_input
+                    }),
+                // Validation message
+                if !wallet_address.is_empty() {
+                    if is_wallet_valid {
+                        container(
+                            row![
+                                crate::ui::icons::check_circle().color(crate::style::SUCCESS),
+                                text("Valid Ethereum address").color(crate::style::SUCCESS)
+                            ]
+                            .spacing(5)
+                            .align_y(Alignment::Center)
+                        )
+                        .style(crate::style::valid_message_container)
+                    } else {
+                        container(
+                            row![
+                                crate::ui::icons::error().color(crate::style::ERROR),
+                                text("Invalid Ethereum address format").color(crate::style::ERROR)
+                            ]
+                            .spacing(5)
+                            .align_y(Alignment::Center)
+                        )
+                        .style(crate::style::invalid_message_container)
+                    }
+                } else {
+                    container(
+                        text("Leave empty to use the node's default wallet")
+                            .size(12)
+                            .color(Color::from_rgb(0.6, 0.6, 0.6))
+                    )
+                }
+            ]
+            .spacing(5),
+        ]
+        .spacing(20)
+    )
+    .width(Length::Fill)
+    .padding(15)
+    .style(crate::style::bordered_box);
+
+    // Navigation buttons
+    let can_proceed = !subnet.trim().is_empty() && (wallet_address.is_empty() || is_wallet_valid);
+    
+    let next_button = if can_proceed {
+        button(
+            container(
+                row![text("Start Flashing"), crate::ui::icons::navigate_next()]
+                    .spacing(5)
+                    .align_y(Alignment::Center)
+            )
+            .center_x(Length::Fill)
+        )
+        .on_press(FlashMessage::WriteImage)
+        .padding(12)
+        .width(220)
+        .style(button::primary)
+    } else {
+        button(
+            container(
+                row![text("Complete configuration to continue"), crate::ui::icons::navigate_next()]
+                    .spacing(5)
+                    .align_y(Alignment::Center)
+            )
+            .center_x(Length::Fill)
+        )
+        .padding(12)
+        .width(220)
+        .style(button::secondary)
+    };
+
+    let back_button = button(
+        row![crate::ui::icons::navigate_before(), text("Back to Device Selection")]
+            .spacing(5)
+            .align_y(Alignment::Center)
+    )
+    .on_press(FlashMessage::BackToSelectTargetDevice)
+    .padding(12)
+    .width(200)
+    .style(button::secondary);
+
+    let navigation = container(
+        row![back_button, next_button]
+            .spacing(15)
+            .width(Length::Fill)
+            .align_y(Alignment::Center)
+    )
+    .width(Length::Fill)
+    .padding(15)
+    .style(crate::style::bordered_box);
+
+    // Main content
+    let content = column![
+        header,
+        scrollable(form_section).height(Length::Fill),
+        navigation,
+    ]
+    .width(Length::Fill);
+
+    container(content)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .style(crate::style::main_box)
+        .into()
+}
+
 pub fn view_flash_completion(success: bool, error_message: Option<&str>) -> Element<'_, FlashMessage> {
     // Page header with success/error status with improved styling
     let header_text = if success {

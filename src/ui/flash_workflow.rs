@@ -53,10 +53,21 @@ pub fn view<'a>(
                 flash_state.selected_device,
             )
         }
-        FlashWorkflowState::ConfigureSettings { .. } => {
-            // TODO: Implement configuration view for flash workflow
-            // For now, fallback to a simple message
-            iced::widget::text("Configuration view not yet implemented").into()
+        FlashWorkflowState::ConfigureSettings { 
+            payment_network, 
+            subnet, 
+            network_type, 
+            wallet_address, 
+            is_wallet_valid 
+        } => {
+            // For now, create a simple flash-specific configuration view
+            ui::view_flash_configure_settings(
+                *payment_network,
+                subnet.clone(),
+                *network_type,
+                wallet_address.clone(),
+                *is_wallet_valid,
+            )
         }
         FlashWorkflowState::ClearingPartitions(progress) => {
             ui::view_writing_process(*progress, "Clearing Partitions")

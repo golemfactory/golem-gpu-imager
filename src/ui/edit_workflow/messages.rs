@@ -9,6 +9,7 @@ pub enum EditMessage {
     SetSubnet(String),
     SetNetworkType(NetworkType),
     SetWalletAddress(String),
+    SelectPreset(usize),
     RefreshDevices,
     DevicesLoaded(Vec<crate::ui::device_selection::StorageDevice>),
     DeviceLoadFailed(String),
@@ -16,5 +17,6 @@ pub enum EditMessage {
     ConfigurationSaved,
     ConfigurationSaveFailed,
     BackToMainMenu,
+    BackToDeviceSelection,
     EditAnother,
 }

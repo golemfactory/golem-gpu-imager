@@ -29,7 +29,7 @@ pub fn view_select_existing_device<'a>(
                         .align_y(Alignment::Center),
                 )
                 .on_press(EditMessage::RefreshDevices)
-                .padding(10)
+                .padding(8)
                 .style(button::primary)
             ]
             .spacing(15)
@@ -53,14 +53,14 @@ pub fn view_select_existing_device<'a>(
                     .align_y(Alignment::Center),
             )
             .on_press(EditMessage::SelectExistingDevice(i))
-            .padding(10);
+            .padding(8);
 
             let is_selected = Some(i) == selected_device;
 
             container(
                 row![device_info, select_button,]
                     .spacing(20)
-                    .padding(10)
+                    .padding(8)
                     .width(Length::Fill)
                     .align_y(Alignment::Center),
             )
@@ -80,11 +80,11 @@ pub fn view_select_existing_device<'a>(
     let next_button = if selected_device.is_some() {
         button("Next: Edit Configuration")
             .on_press(EditMessage::GotoEditConfiguration)
-            .padding(12)
+            .padding(8)
             .style(button::primary)
     } else {
         button("Select a device to continue")
-            .padding(12)
+            .padding(8)
             .style(button::secondary)
     };
 
@@ -94,7 +94,7 @@ pub fn view_select_existing_device<'a>(
             .align_y(Alignment::Center),
     )
     .on_press(EditMessage::BackToMainMenu)
-    .padding(12)
+    .padding(8)
     .style(button::secondary);
 
     let buttons = row![back_button, next_button]
@@ -134,12 +134,12 @@ pub fn view_edit_completion(success: bool) -> Element<'static, EditMessage> {
 
     let edit_another_button = button("Edit Another Device")
         .on_press(EditMessage::EditAnother)
-        .padding(12)
+        .padding(8)
         .style(button::primary);
 
     let back_button = button("Back to Main Menu")
         .on_press(EditMessage::BackToMainMenu)
-        .padding(12)
+        .padding(8)
         .style(button::secondary);
 
     let buttons = row![edit_another_button, back_button]
@@ -183,9 +183,9 @@ pub fn view_edit_configuration<'a>(
         is_wallet_valid,
         "Edit Configuration",
         "Edit the configuration settings for your device:",
-        Message::Edit(EditMessage::SelectExistingDevice(0)), // Placeholder - should be proper back action
+        Message::Edit(EditMessage::BackToDeviceSelection), // Back to device selection
         Message::Edit(EditMessage::SaveConfiguration),
-        "Back to Device Selection",
+        "Back to Devices",
         "Save Changes",
         configuration_presets,
         selected_preset,
@@ -193,5 +193,15 @@ pub fn view_edit_configuration<'a>(
         show_preset_manager,
         preset_editor,
         Message::PresetManager(crate::ui::preset_manager::PresetManagerMessage::ToggleManager),
+        |config_msg| {
+            use crate::ui::shared::configuration::ConfigMessage;
+            match config_msg {
+                ConfigMessage::SetPaymentNetwork(network) => Message::Edit(EditMessage::SetPaymentNetwork(network)),
+                ConfigMessage::SetNetworkType(network_type) => Message::Edit(EditMessage::SetNetworkType(network_type)),
+                ConfigMessage::SetSubnet(subnet) => Message::Edit(EditMessage::SetSubnet(subnet)),
+                ConfigMessage::SetWalletAddress(address) => Message::Edit(EditMessage::SetWalletAddress(address)),
+                ConfigMessage::SelectPreset(index) => Message::Edit(EditMessage::SelectPreset(index)),
+            }
+        },
     )
 }

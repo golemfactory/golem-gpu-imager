@@ -26,6 +26,19 @@ pub enum Message {
     RequestElevation,
     CheckElevationStatus,
     
+    // Preset management
+    SaveAsPreset,
+    SelectPreset(usize),
+    DeletePreset(usize),
+    SetDefaultPreset(usize),
+    SetPresetName(String),
+    
+    // Configuration settings
+    SetPaymentNetwork(crate::models::PaymentNetwork),
+    SetNetworkType(crate::models::NetworkType),
+    SetSubnet(String),
+    SetWalletAddress(String),
+    
     // Module-specific message variants
     Flash(FlashMessage),
     Edit(EditMessage),

@@ -4,6 +4,7 @@ use tracing::{debug, error, info};
 
 pub fn handle_message(
     state: &mut EditState,
+    device_selection: &crate::ui::device_selection::DeviceSelectionState,
     message: EditMessage,
 ) -> Task<crate::ui::messages::Message> {
     match message {
@@ -56,6 +57,11 @@ pub fn handle_message(
             Task::none()
         }
         
+        EditMessage::SelectPreset(index) => {
+            // Forward to the application level to handle preset selection
+            Task::done(crate::ui::messages::Message::SelectPreset(index))
+        }
+        
         EditMessage::RefreshDevices => {
             debug!("Delegating device refresh to DeviceSelection module");
             Task::done(crate::ui::messages::Message::DeviceSelection(
@@ -85,9 +91,67 @@ pub fn handle_message(
         }
         
         EditMessage::SaveConfiguration => {
-            // This would trigger saving configuration to the device
-            debug!("Saving configuration to device");
-            Task::none()
+            // Save configuration to the selected device
+            if let (Some(device_index), EditWorkflowState::EditConfiguration { 
+                payment_network, subnet, network_type, wallet_address, .. 
+            }) = (state.selected_device, &state.workflow_state) {
+                
+                // Get the device path from the device selection state
+                if let Some(device) = device_selection.devices.get(device_index) {
+                    debug!("Saving configuration to device: {} ({})", device.name, device.path);
+                    
+                    let device_path = device.path.clone();
+                    let payment_network = *payment_network;
+                    let subnet = subnet.clone();
+                    let network_type = *network_type;
+                    let wallet_address = wallet_address.clone();
+                    
+                    Task::perform(
+                        async move {
+                            use crate::disk::Disk;
+                            use crate::disk::ImageConfiguration;
+                            
+                            info!("Starting configuration save to device: {}", device_path);
+                            
+                            // Create configuration from current settings
+                            let config = ImageConfiguration {
+                                payment_network,
+                                network_type,
+                                subnet,
+                                wallet_address,
+                                glm_per_hour: "0.25".to_string(), // Default value
+                            };
+                            
+                            // Attempt to write configuration to the device
+                            match Disk::write_configuration_to_disk(&device_path, config).await {
+                                Ok(()) => {
+                                    info!("Configuration successfully saved to device: {}", device_path);
+                                    Ok(())
+                                }
+                                Err(e) => {
+                                    error!("Failed to save configuration to device {}: {}", device_path, e);
+                                    Err(format!("Failed to save configuration: {}", e))
+                                }
+                            }
+                        },
+                        |result: Result<(), String>| {
+                            match result {
+                                Ok(()) => crate::ui::messages::Message::Edit(EditMessage::ConfigurationSaved),
+                                Err(err) => {
+                                    error!("Configuration save failed: {}", err);
+                                    crate::ui::messages::Message::Edit(EditMessage::ConfigurationSaveFailed)
+                                }
+                            }
+                        }
+                    )
+                } else {
+                    error!("Cannot save configuration: device index {} not found", device_index);
+                    Task::done(crate::ui::messages::Message::Edit(EditMessage::ConfigurationSaveFailed))
+                }
+            } else {
+                error!("Cannot save configuration: no device selected or not in edit configuration state");
+                Task::done(crate::ui::messages::Message::Edit(EditMessage::ConfigurationSaveFailed))
+            }
         }
         
         EditMessage::ConfigurationSaved => {
@@ -105,6 +169,12 @@ pub fn handle_message(
         // App-level navigation messages that need to be forwarded
         EditMessage::BackToMainMenu => {
             Task::done(crate::ui::messages::Message::BackToMainMenu)
+        }
+        
+        EditMessage::BackToDeviceSelection => {
+            // Reset to device selection state
+            state.workflow_state = EditWorkflowState::SelectDevice;
+            Task::none()
         }
         
         EditMessage::EditAnother => {

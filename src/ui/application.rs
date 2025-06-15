@@ -1,7 +1,7 @@
 use crate::models::{AppMode, CancelToken};
 use crate::ui::{
     messages::Message,
-    flash_workflow::FlashState,
+    flash_workflow::{FlashState, FlashMessage},
     edit_workflow::EditState,
     preset_manager::PresetManagerState,
     device_selection::DeviceSelectionState,
@@ -186,6 +186,7 @@ impl GolemGpuImager {
                         flash_state,
                         &self.image_repo,
                         &self.cancel_token,
+                        &self.device_selection,
                         flash_msg,
                     )
                 } else {
@@ -195,7 +196,7 @@ impl GolemGpuImager {
             
             Message::Edit(edit_msg) => {
                 if let Some(edit_state) = &mut self.edit_workflow {
-                    crate::ui::edit_workflow::handler::handle_message(edit_state, edit_msg)
+                    crate::ui::edit_workflow::handler::handle_message(edit_state, &self.device_selection, edit_msg)
                 } else {
                     Task::none()
                 }
@@ -235,6 +236,93 @@ impl GolemGpuImager {
                 self.elevation_status = crate::utils::get_elevation_status();
                 self.is_elevated = crate::utils::is_elevated();
                 Task::none()
+            }
+            
+            // Preset management messages - TODO: Implement properly
+            Message::SaveAsPreset => {
+                // TODO: Save current configuration as preset
+                Task::none()
+            }
+            
+            Message::SelectPreset(index) => {
+                // TODO: Apply preset configuration to current workflow
+                Task::none()
+            }
+            
+            Message::DeletePreset(index) => {
+                // TODO: Delete preset by index
+                Task::none()
+            }
+            
+            Message::SetDefaultPreset(index) => {
+                // TODO: Set preset as default
+                Task::none()
+            }
+            
+            Message::SetPresetName(name) => {
+                // TODO: Set new preset name
+                Task::none()
+            }
+            
+            // Configuration settings - delegate to current workflow
+            Message::SetPaymentNetwork(network) => {
+                match &mut self.flash_workflow {
+                    Some(flash_state) => {
+                        crate::ui::flash_workflow::handler::handle_message(
+                            flash_state,
+                            &self.image_repo,
+                            &self.cancel_token,
+                            &self.device_selection,
+                            FlashMessage::SetPaymentNetwork(network),
+                        )
+                    }
+                    None => Task::none()
+                }
+            }
+            
+            Message::SetNetworkType(network_type) => {
+                match &mut self.flash_workflow {
+                    Some(flash_state) => {
+                        crate::ui::flash_workflow::handler::handle_message(
+                            flash_state,
+                            &self.image_repo,
+                            &self.cancel_token,
+                            &self.device_selection,
+                            FlashMessage::SetNetworkType(network_type),
+                        )
+                    }
+                    None => Task::none()
+                }
+            }
+            
+            Message::SetSubnet(subnet) => {
+                match &mut self.flash_workflow {
+                    Some(flash_state) => {
+                        crate::ui::flash_workflow::handler::handle_message(
+                            flash_state,
+                            &self.image_repo,
+                            &self.cancel_token,
+                            &self.device_selection,
+                            FlashMessage::SetSubnet(subnet),
+                        )
+                    }
+                    None => Task::none()
+                }
+            }
+            
+            Message::SetWalletAddress(address) => {
+                match &mut self.flash_workflow {
+                    Some(flash_state) => {
+                        crate::ui::flash_workflow::handler::handle_message(
+                            flash_state,
+                            &self.image_repo,
+                            &self.cancel_token,
+                            &self.device_selection,
+                            FlashMessage::SetWalletAddress(address),
+                        )
+                    }
+                    None => Task::none()
+                }
             }
         }
     }

@@ -1,58 +1,159 @@
 use iced::alignment::Horizontal;
 use iced::widget::{button, column, container, row, svg, text};
-use iced::{Alignment, Color, Element, Length, Shadow, Theme, Vector};
+use iced::{Alignment, Background, Border, Color, Element, Length, Shadow, Theme, Vector};
+use iced::gradient;
 
 use crate::ui::messages::Message;
 use crate::ui::{LOGO_SVG, icons};
+
+// Elegant gradient background styling
+fn elegant_gradient_background() -> impl Fn(&Theme) -> container::Style {
+    |theme: &Theme| {
+        let palette = theme.extended_palette();
+        let gradient = gradient::Linear::new(45.0)
+            .add_stop(0.0, Color::from_rgb(0.03, 0.03, 0.08))
+            .add_stop(1.0, Color::from_rgb(0.08, 0.08, 0.15));
+        
+        container::Style {
+            background: Some(Background::Gradient(iced::Gradient::Linear(gradient))),
+            ..container::Style::default()
+        }
+    }
+}
+
+// Elegant card container for buttons
+fn elegant_button_card() -> impl Fn(&Theme) -> container::Style {
+    |_theme: &Theme| {
+        container::Style {
+            background: Some(Background::Color(Color::from_rgba(0.1, 0.1, 0.18, 0.8))),
+            border: Border {
+                width: 1.0,
+                radius: 16.0.into(),
+                color: Color::from_rgba(0.3, 0.3, 0.4, 0.3),
+            },
+            shadow: Shadow {
+                color: Color::from_rgba(0.0, 0.0, 0.0, 0.3),
+                offset: Vector::new(0.0, 8.0),
+                blur_radius: 24.0,
+            },
+            ..container::Style::default()
+        }
+    }
+}
+
+// Modern elegant button styling
+fn elegant_primary_button() -> impl Fn(&Theme, button::Status) -> button::Style {
+    |_theme: &Theme, status: button::Status| {
+        let is_hover = matches!(status, button::Status::Hovered);
+        let is_pressed = matches!(status, button::Status::Pressed);
+        
+        let background_color = if is_pressed {
+            Color::from_rgb(0.0, 0.3, 0.7)
+        } else if is_hover {
+            Color::from_rgb(0.0, 0.45, 0.9)
+        } else {
+            Color::from_rgb(0.0, 0.4, 0.8)
+        };
+        
+        button::Style {
+            background: Some(Background::Color(background_color)),
+            text_color: Color::WHITE,
+            border: Border {
+                width: 0.0,
+                radius: 12.0.into(),
+                color: Color::TRANSPARENT,
+            },
+            shadow: Shadow {
+                color: if is_hover {
+                    Color::from_rgba(0.0, 0.4, 0.8, 0.5)
+                } else {
+                    Color::from_rgba(0.0, 0.4, 0.8, 0.3)
+                },
+                offset: Vector::new(0.0, if is_pressed { 2.0 } else { 6.0 }),
+                blur_radius: if is_hover { 20.0 } else { 12.0 },
+            },
+        }
+    }
+}
+
+// Modern elegant secondary button styling
+fn elegant_secondary_button() -> impl Fn(&Theme, button::Status) -> button::Style {
+    |_theme: &Theme, status: button::Status| {
+        let is_hover = matches!(status, button::Status::Hovered);
+        let is_pressed = matches!(status, button::Status::Pressed);
+        
+        let background_color = if is_pressed {
+            Color::from_rgba(0.2, 0.2, 0.3, 0.8)
+        } else if is_hover {
+            Color::from_rgba(0.15, 0.15, 0.25, 0.9)
+        } else {
+            Color::from_rgba(0.1, 0.1, 0.2, 0.7)
+        };
+        
+        button::Style {
+            background: Some(Background::Color(background_color)),
+            text_color: Color::from_rgb(0.9, 0.9, 0.9),
+            border: Border {
+                width: 1.0,
+                radius: 12.0.into(),
+                color: if is_hover {
+                    Color::from_rgba(0.4, 0.4, 0.5, 0.6)
+                } else {
+                    Color::from_rgba(0.3, 0.3, 0.4, 0.4)
+                },
+            },
+            shadow: Shadow {
+                color: Color::from_rgba(0.0, 0.0, 0.0, 0.2),
+                offset: Vector::new(0.0, if is_pressed { 1.0 } else { 4.0 }),
+                blur_radius: if is_hover { 12.0 } else { 8.0 },
+            },
+        }
+    }
+}
 
 pub fn view_start_screen<'a>(
     error_message: Option<&'a str>,
     is_elevated: bool,
     _elevation_status: &'a str,
 ) -> Element<'a, Message> {
-    // Create the logo widget from the included SVG data
+    // Create the logo widget with subtle direct glow
     let logo = svg::Svg::new(svg::Handle::from_memory(LOGO_SVG))
-        .width(180)
-        .height(180);
+        .width(160)
+        .height(160);
 
     let title = text("Golem GPU Imager")
         .size(38)
         .width(Length::Fill)
-        .align_x(Horizontal::Center);
+        .align_x(Horizontal::Center)
+        .color(Color::from_rgb(0.95, 0.95, 0.95));
 
     let description = text(
         "A utility to flash OS images onto Golem GPU devices or edit existing configurations.",
     )
     .size(16)
     .width(Length::Fill)
-    .align_x(Horizontal::Center);
+    .align_x(Horizontal::Center)
+    .color(Color::from_rgb(0.7, 0.7, 0.8));
 
     // Create buttons - disable on Windows if not elevated
     let buttons_enabled = if cfg!(windows) { is_elevated } else { true };
 
     let mut flash_button = button(
-        container(iced::widget::row![icons::start(), "Flash New Image",]).center_x(Length::Fill),
+        container(
+            iced::widget::row![
+                icons::start().size(20), 
+                text("Flash New Image").size(16)
+            ]
+            .spacing(10)
+            .align_y(Alignment::Center)
+        ).center_x(Length::Fill),
     )
-    .width(250)
-    .padding(14);
+    .width(280)
+    .padding(16);
 
     if buttons_enabled {
         flash_button = flash_button
-            .style(|theme: &Theme, state| {
-                let is_hover = matches!(state, button::Status::Hovered);
-                let palette = theme.extended_palette();
-                let mut style = button::primary(theme, state);
-                style.shadow = Shadow {
-                    color: if is_hover {
-                        palette.background.strongest.color
-                    } else {
-                        palette.background.strong.color
-                    },
-                    offset: Vector::new(4.0, 4.0),
-                    blur_radius: if is_hover { 2.0 } else { 1.0 },
-                };
-                style
-            })
+            .style(elegant_primary_button())
             .on_press(Message::FlashNewImage);
     } else {
         flash_button = flash_button.style(|theme: &Theme, _state| {
@@ -71,14 +172,21 @@ pub fn view_start_screen<'a>(
     }
 
     let mut edit_button = button(
-        container(iced::widget::row![icons::edit(), "Edit Existing Disk"]).center_x(Length::Fill),
+        container(
+            iced::widget::row![
+                icons::edit().size(20), 
+                text("Edit Existing Disk").size(16)
+            ]
+            .spacing(10)
+            .align_y(Alignment::Center)
+        ).center_x(Length::Fill),
     )
-    .width(250)
-    .padding(14);
+    .width(280)
+    .padding(16);
 
     if buttons_enabled {
         edit_button = edit_button
-            .style(button::secondary)
+            .style(elegant_secondary_button())
             .on_press(Message::EditExistingDisk);
     } else {
         edit_button = edit_button.style(|theme: &Theme, _state| {
@@ -97,14 +205,21 @@ pub fn view_start_screen<'a>(
     }
 
     let mut presets_button = button(
-        container(iced::widget::row![icons::settings(), "Manage Presets"]).center_x(Length::Fill),
+        container(
+            iced::widget::row![
+                icons::settings().size(20), 
+                text("Manage Presets").size(16)
+            ]
+            .spacing(10)
+            .align_y(Alignment::Center)
+        ).center_x(Length::Fill),
     )
-    .width(250)
-    .padding(14);
+    .width(280)
+    .padding(16);
 
     if buttons_enabled {
         presets_button = presets_button
-            .style(button::secondary)
+            .style(elegant_secondary_button())
             .on_press(Message::ManagePresets);
     } else {
         presets_button = presets_button.style(|theme: &Theme, _state| {
@@ -237,13 +352,15 @@ pub fn view_start_screen<'a>(
         container(column![]) // Empty container
     };
 
-    // Add version and build time info
+    // Add version and build time info with elegant styling
     let version_info = format!(
         "v{} • Built {}",
         crate::version::VERSION,
         crate::version::BUILD_TIME
     );
-    let version_text = text(version_info).size(12);
+    let version_text = text(version_info)
+        .size(12)
+        .color(Color::from_rgb(0.5, 0.5, 0.6));
 
     // Main content column
     let mut content_items = vec![
@@ -262,24 +379,37 @@ pub fn view_start_screen<'a>(
         content_items.push(elevation_prompt.into());
     }
 
+    // Create elegant button card container with optimized spacing
+    let button_card = container(
+        column![
+            flash_button,
+            edit_button,
+            presets_button,
+        ]
+        .spacing(12)
+        .align_x(Alignment::Center)
+    )
+    .style(elegant_button_card())
+    .padding(20)
+    .width(Length::Shrink);
+
     content_items.extend([
         container(iced::widget::row![]).height(Length::Fill).into(),
-        flash_button.into(),
-        edit_button.into(),
-        presets_button.into(),
+        button_card.into(),
         container(column![]).height(Length::Fill).into(),
         version_text.into(),
     ]);
 
     let content = column(content_items)
         .width(Length::Fill)
-        .spacing(15)
+        .spacing(16)
         .align_x(Alignment::Center)
-        .padding(30);
+        .padding(20);
 
-    // Main container with background
+    // Main container with elegant gradient background
     container(content)
         .width(Length::Fill)
         .height(Length::Fill)
+        .style(elegant_gradient_background())
         .into()
 }

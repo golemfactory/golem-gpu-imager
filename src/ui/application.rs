@@ -359,12 +359,7 @@ impl GolemGpuImager {
                 }
             }
             AppMode::ManagePresets => {
-                // Return preset manager view
-                crate::ui::start_screen::view_start_screen(
-                    self.error_message.as_deref(),
-                    self.is_elevated,
-                    &self.elevation_status,
-                ) // Placeholder
+                crate::ui::preset_manager::view(&self.preset_manager).map(Message::PresetManager)
             }
         }
     }

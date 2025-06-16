@@ -1,7 +1,16 @@
 pub mod state;
 pub mod messages;
 pub mod handler;
+pub mod ui;
 
 pub use state::*;
 pub use messages::*;
 pub use handler::*;
+pub use ui::*;
+
+use iced::Element;
+
+/// Module-level view function for preset manager
+pub fn view<'a>(state: &'a PresetManagerState) -> Element<'a, PresetManagerMessage> {
+    ui::view_preset_manager(state)
+}

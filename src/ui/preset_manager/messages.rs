@@ -24,4 +24,5 @@ pub enum PresetManagerMessage {
     LoadPresetsFromStorage,        // Load presets from persistent storage
     SetPresetName(String),         // Set name for new preset
     ToggleManager,                 // Toggle preset management UI visibility
+    BackToMainMenu,                // Return to main menu
 }

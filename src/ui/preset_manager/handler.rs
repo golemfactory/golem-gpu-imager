@@ -119,6 +119,11 @@ pub fn handle_message(
             Task::none()
         }
         
+        PresetManagerMessage::BackToMainMenu => {
+            // This should trigger the main app to switch back to StartScreen mode
+            Task::done(crate::ui::messages::Message::BackToMainMenu)
+        }
+        
         _ => {
             debug!("Unhandled preset manager message: {:?}", message);
             Task::none()

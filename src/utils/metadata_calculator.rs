@@ -79,7 +79,11 @@ pub fn calculate_image_metadata(
                 Err(e)
             }
             Err(e) => {
-                let error_msg = format!("Task panicked: {}", e);
+                let error_msg = if e.is_cancelled() {
+                    "Operation cancelled by user".to_string()
+                } else {
+                    format!("Task panicked: {}", e)
+                };
                 let progress = MetadataProgress::Failed {
                     error: error_msg.clone(),
                 };
@@ -130,7 +134,7 @@ fn calculate_metadata_blocking(
     loop {
         // Check for cancellation before each read
         if cancel_token.is_cancelled() {
-            info!("Metadata calculation cancelled by user");
+            info!("Metadata calculation cancelled by user at main loop check");
             return Err(anyhow!("Operation cancelled by user"));
         }
 
@@ -156,12 +160,19 @@ fn calculate_metadata_blocking(
         let estimated_progress =
             (total_uncompressed as f64 / estimated_uncompressed as f64).min(0.95) as f32;
 
-        // Send progress updates periodically (every 100MB of uncompressed data)
-        if total_uncompressed % (100 * 1024 * 1024) == 0 || bytes_read < BUFFER_SIZE {
+        // Send progress updates periodically (every 10MB of uncompressed data for more responsive cancellation)
+        if total_uncompressed % (10 * 1024 * 1024) == 0 || bytes_read < BUFFER_SIZE {
+            // Double-check for cancellation before sending progress updates
+            if cancel_token.is_cancelled() {
+                info!("Metadata calculation cancelled by user during progress update");
+                return Err(anyhow!("Operation cancelled by user"));
+            }
+
             debug!(
-                "Processed {} MB of uncompressed data (estimated progress: {:.1}%)",
+                "Processed {} MB of uncompressed data (estimated progress: {:.1}%) - cancel_token.is_cancelled(): {}",
                 total_uncompressed / (1024 * 1024),
-                estimated_progress * 100.0
+                estimated_progress * 100.0,
+                cancel_token.is_cancelled()
             );
 
             // Send progress update to UI

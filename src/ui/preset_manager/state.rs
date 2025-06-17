@@ -2,7 +2,7 @@ use crate::models::{NetworkType, PaymentNetwork, ConfigurationPreset};
 
 #[derive(Debug, Clone)]
 pub struct PresetEditor {
-    pub preset_index: usize,
+    pub editing_index: Option<usize>,  // None for new preset, Some(index) for editing existing
     pub name: String,
     pub payment_network: PaymentNetwork,
     pub subnet: String,
@@ -14,13 +14,25 @@ pub struct PresetEditor {
 impl PresetEditor {
     pub fn new(preset_index: usize, preset: &ConfigurationPreset) -> Self {
         Self {
-            preset_index,
+            editing_index: Some(preset_index),
             name: preset.name.clone(),
             payment_network: preset.payment_network,
             subnet: preset.subnet.clone(),
             network_type: preset.network_type,
             wallet_address: preset.wallet_address.clone(),
             is_default: preset.is_default,
+        }
+    }
+
+    pub fn new_preset() -> Self {
+        Self {
+            editing_index: None,
+            name: String::new(),
+            payment_network: PaymentNetwork::Testnet,
+            subnet: "public".to_string(),
+            network_type: NetworkType::Central,
+            wallet_address: String::new(),
+            is_default: false,
         }
     }
 
@@ -82,4 +94,5 @@ impl PresetManagerState {
         ];
         state
     }
+
 }

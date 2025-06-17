@@ -124,6 +124,108 @@ pub fn handle_message(
             Task::done(crate::ui::messages::Message::BackToMainMenu)
         }
         
+        PresetManagerMessage::SetNewPresetName(name) => {
+            state.new_preset_name = name;
+            Task::none()
+        }
+        
+        PresetManagerMessage::CreatePreset => {
+            if !state.new_preset_name.trim().is_empty() {
+                state.editor = Some(PresetEditor::new_preset());
+                if let Some(editor) = &mut state.editor {
+                    editor.name = state.new_preset_name.clone();
+                }
+                state.new_preset_name.clear();
+            }
+            Task::none()
+        }
+        
+        PresetManagerMessage::EditPreset(index) => {
+            if let Some(preset) = state.presets.get(index) {
+                state.editor = Some(PresetEditor::new(index, preset));
+            }
+            Task::none()
+        }
+        
+        PresetManagerMessage::SavePreset => {
+            if let Some(editor) = &state.editor {
+                if editor.is_valid() {
+                    let preset = editor.to_preset();
+                    
+                    if let Some(index) = editor.editing_index {
+                        // Update existing preset
+                        if index < state.presets.len() {
+                            let preset_name = preset.name.clone();
+                            state.presets[index] = preset.clone();
+                            if let Some(manager) = preset_manager {
+                                let _ = manager.update_preset(index, preset);
+                            }
+                            info!("Updated preset: {}", preset_name);
+                        }
+                    } else {
+                        // Create new preset
+                        state.presets.push(preset.clone());
+                        if let Some(manager) = preset_manager {
+                            let _ = manager.add_preset(preset.clone());
+                        }
+                        info!("Created new preset: {}", preset.name);
+                    }
+                    
+                    state.editor = None;
+                }
+            }
+            Task::none()
+        }
+        
+        PresetManagerMessage::CancelEdit => {
+            state.editor = None;
+            Task::none()
+        }
+        
+        PresetManagerMessage::SetPaymentNetwork(network) => {
+            if let Some(editor) = &mut state.editor {
+                editor.payment_network = network;
+            }
+            Task::none()
+        }
+        
+        PresetManagerMessage::SetNetworkType(network_type) => {
+            if let Some(editor) = &mut state.editor {
+                editor.network_type = network_type;
+            }
+            Task::none()
+        }
+        
+        PresetManagerMessage::SetSubnet(subnet) => {
+            if let Some(editor) = &mut state.editor {
+                editor.subnet = subnet;
+            }
+            Task::none()
+        }
+        
+        PresetManagerMessage::SetWalletAddress(address) => {
+            if let Some(editor) = &mut state.editor {
+                editor.wallet_address = address;
+            }
+            Task::none()
+        }
+        
+        PresetManagerMessage::DuplicatePreset(index) => {
+            if let Some(preset) = state.presets.get(index) {
+                let mut duplicated = preset.clone();
+                duplicated.name = format!("{} Copy", preset.name);
+                duplicated.is_default = false; // Duplicates are never default
+                state.presets.push(duplicated.clone());
+                
+                if let Some(manager) = preset_manager {
+                    let _ = manager.add_preset(duplicated.clone());
+                }
+                
+                info!("Duplicated preset: {}", duplicated.name);
+            }
+            Task::none()
+        }
+        
         _ => {
             debug!("Unhandled preset manager message: {:?}", message);
             Task::none()
@@ -153,14 +255,15 @@ fn handle_editor_message(
             if let Some(editor) = &state.editor {
                 if editor.is_valid() {
                     let updated_preset = editor.to_preset();
-                    let index = editor.preset_index;
                     
-                    if index < state.presets.len() {
-                        state.presets[index] = updated_preset.clone();
-                        
-                        // Update in preset manager if available
-                        if let Some(manager) = preset_manager {
-                            let _ = manager.update_preset(index, updated_preset);
+                    if let Some(index) = editor.editing_index {
+                        if index < state.presets.len() {
+                            state.presets[index] = updated_preset.clone();
+                            
+                            // Update in preset manager if available
+                            if let Some(manager) = preset_manager {
+                                let _ = manager.update_preset(index, updated_preset);
+                            }
                         }
                     }
                     

@@ -9,7 +9,6 @@ use tracing::{debug, error, info, warn};
 pub fn handle_message(
     state: &mut FlashState,
     image_repo: &Arc<ImageRepo>,
-    cancel_token: &CancelToken,
     device_selection: &crate::ui::device_selection::DeviceSelectionState,
     message: FlashMessage,
 ) -> Task<crate::ui::messages::Message> {
@@ -207,6 +206,9 @@ pub fn handle_message(
         FlashMessage::DownloadOsImage(image_index) => {
             debug!("Starting download for OS image at index: {}", image_index);
             
+            // Create fresh cancel token for this operation
+            state.cancel_token = CancelToken::new();
+            
             if let Some(os_image) = state.os_images.get(image_index) {
                 // Create a Version struct that matches what ImageRepo expects
                 let repo_version = crate::utils::repo::Version {
@@ -218,7 +220,7 @@ pub fn handle_message(
 
                 // Start the download using ImageRepo
                 let repo_clone = Arc::clone(image_repo);
-                let cancel_token_clone = cancel_token.clone();
+                let cancel_token_clone = state.cancel_token.clone();
                 
                 let channel_name = "release".to_string(); // Default channel for flat list
                 
@@ -290,6 +292,9 @@ pub fn handle_message(
         FlashMessage::AnalyzeOsImage(image_index) => {
             debug!("Starting analysis for OS image at index: {}", image_index);
             
+            // Create fresh cancel token for this operation
+            state.cancel_token = CancelToken::new();
+            
             if let Some(os_image) = state.os_images.get(image_index) {
                 if os_image.downloaded && os_image.metadata.is_none() {
                     state.selected_os_image = Some(image_index);
@@ -314,7 +319,7 @@ pub fn handle_message(
                     // Get the image path for analysis
                     if let Some(ref image_path) = os_image.path {
                         let version_id = os_image.version.clone();
-                        let cancel_token_clone = cancel_token.clone();
+                        let cancel_token_clone = state.cancel_token.clone();
                         let version_id_1 = version_id.clone();
                         let version_id_2 = version_id.clone();
                         
@@ -373,6 +378,9 @@ pub fn handle_message(
         FlashMessage::DownloadOsImageFromGroup(group_index, version_index) => {
             debug!("Starting download for OS image from group {} at version {}", group_index, version_index);
             
+            // Create fresh cancel token for this operation
+            state.cancel_token = CancelToken::new();
+            
             // Get the version information from the group
             if let Some(group) = state.os_image_groups.get(group_index) {
                 let version = if version_index == 0 {
@@ -396,7 +404,7 @@ pub fn handle_message(
 
                     // Start the download using ImageRepo
                     let repo_clone = Arc::clone(image_repo);
-                    let cancel_token_clone = cancel_token.clone();
+                    let cancel_token_clone = state.cancel_token.clone();
                     
                     let channel_name = group.channel_name.clone();
                     
@@ -469,6 +477,9 @@ pub fn handle_message(
         FlashMessage::AnalyzeOsImageFromGroup(group_index, version_index) => {
             debug!("Starting analysis for OS image from group {} at version {}", group_index, version_index);
             
+            // Create fresh cancel token for this operation
+            state.cancel_token = CancelToken::new();
+            
             if let Some(group) = state.os_image_groups.get(group_index) {
                 let image = if version_index == 0 {
                     &group.latest_version
@@ -507,7 +518,7 @@ pub fn handle_message(
                     // Get the image path for analysis
                     if let Some(ref image_path) = image.path {
                         let version_id = image.version.clone();
-                        let cancel_token_clone = cancel_token.clone();
+                        let cancel_token_clone = state.cancel_token.clone();
                         let version_id_1 = version_id.clone();
                         let version_id_2 = version_id.clone();
                         
@@ -642,7 +653,7 @@ pub fn handle_message(
                             let image_path_val = image_path.clone();
                             let image_metadata = image.metadata.clone();
                             // Create a clone of the cancel token that we can pass to the task
-                            let cancel_token_clone = cancel_token.clone();
+                            let cancel_token_clone = state.cancel_token.clone();
 
                             // Extract configuration before creating async closure
                             let config = Some(crate::disk::ImageConfiguration::new(
@@ -856,6 +867,43 @@ pub fn handle_message(
                 debug!("Config write progress: {:.1}%", progress * 100.0);
                 state.workflow_state = FlashWorkflowState::WritingConfig(progress);
             }
+            Task::none()
+        }
+
+        FlashMessage::CancelWrite => {
+            debug!("Cancel write requested");
+            
+            // Cancel the current operation
+            state.cancel_token.cancel();
+            
+            // Reset state based on what was being cancelled
+            match &state.workflow_state {
+                FlashWorkflowState::ProcessingImage { .. } => {
+                    // Cancel download/analysis - go back to image selection
+                    state.workflow_state = FlashWorkflowState::SelectOsImage;
+                    // Clear downloads in progress
+                    state.downloads_in_progress.clear();
+                    info!("Download/analysis cancelled, returning to image selection");
+                }
+                FlashWorkflowState::WritingImage(_) | 
+                FlashWorkflowState::VerifyingImage(_) |
+                FlashWorkflowState::ClearingPartitions(_) |
+                FlashWorkflowState::WritingConfig(_) => {
+                    // Cancel write process - go to completion with failed status
+                    state.workflow_state = FlashWorkflowState::Completion(false);
+                    info!("Write process cancelled");
+                }
+                _ => {
+                    // For other states, just go back to start
+                    state.workflow_state = FlashWorkflowState::SelectOsImage;
+                    info!("Operation cancelled, returning to image selection");
+                }
+            }
+            
+            // Note: Do NOT reset the cancel token here - it should remain cancelled
+            // until the background task actually stops. The token will be reset
+            // when starting a new operation.
+            
             Task::none()
         }
 

@@ -1,4 +1,4 @@
-use crate::models::{AppMode, CancelToken};
+use crate::models::AppMode;
 use crate::ui::{
     messages::Message,
     flash_workflow::{FlashState, FlashMessage},
@@ -25,7 +25,6 @@ pub struct GolemGpuImager {
     
     // Shared resources
     pub image_repo: Arc<ImageRepo>,
-    pub cancel_token: CancelToken,
     pub elevation_status: String,
     pub is_elevated: bool,
     pub metadata_manager: Option<MetadataManager>,
@@ -83,7 +82,6 @@ impl GolemGpuImager {
             device_selection: DeviceSelectionState::new(),
             configuration: ConfigurationState::new(),
             image_repo,
-            cancel_token: CancelToken::new(),
             elevation_status,
             is_elevated,
             metadata_manager,
@@ -185,7 +183,6 @@ impl GolemGpuImager {
                     crate::ui::flash_workflow::handler::handle_message(
                         flash_state,
                         &self.image_repo,
-                        &self.cancel_token,
                         &self.device_selection,
                         flash_msg,
                     )
@@ -227,8 +224,17 @@ impl GolemGpuImager {
             
             // Elevation management
             Message::RequestElevation => {
-                // This would trigger elevation request
-                debug!("Elevation requested");
+                #[cfg(windows)]
+                {
+                    if let Err(e) = crate::utils::request_elevation() {
+                        self.error_message = Some(format!("Failed to request elevation: {}", e));
+                        error!("Failed to request elevation: {}", e);
+                    }
+                }
+                #[cfg(not(windows))]
+                {
+                    self.error_message = Some("Elevation request is only supported on Windows. Please run with sudo on Unix systems.".to_string());
+                }
                 Task::none()
             }
             
@@ -271,7 +277,6 @@ impl GolemGpuImager {
                         crate::ui::flash_workflow::handler::handle_message(
                             flash_state,
                             &self.image_repo,
-                            &self.cancel_token,
                             &self.device_selection,
                             FlashMessage::SetPaymentNetwork(network),
                         )
@@ -286,7 +291,6 @@ impl GolemGpuImager {
                         crate::ui::flash_workflow::handler::handle_message(
                             flash_state,
                             &self.image_repo,
-                            &self.cancel_token,
                             &self.device_selection,
                             FlashMessage::SetNetworkType(network_type),
                         )
@@ -301,7 +305,6 @@ impl GolemGpuImager {
                         crate::ui::flash_workflow::handler::handle_message(
                             flash_state,
                             &self.image_repo,
-                            &self.cancel_token,
                             &self.device_selection,
                             FlashMessage::SetSubnet(subnet),
                         )
@@ -316,7 +319,6 @@ impl GolemGpuImager {
                         crate::ui::flash_workflow::handler::handle_message(
                             flash_state,
                             &self.image_repo,
-                            &self.cancel_token,
                             &self.device_selection,
                             FlashMessage::SetWalletAddress(address),
                         )

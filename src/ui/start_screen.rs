@@ -111,6 +111,177 @@ fn elegant_secondary_button() -> impl Fn(&Theme, button::Status) -> button::Styl
     }
 }
 
+// Hero elevation card styling (replaces button card when not elevated)
+fn elevation_hero_card() -> impl Fn(&Theme) -> container::Style {
+    |_theme: &Theme| {
+        container::Style {
+            background: Some(Background::Color(Color::from_rgba(0.08, 0.12, 0.24, 0.95))),
+            border: Border {
+                width: 1.0,
+                radius: 20.0.into(),
+                color: Color::from_rgba(0.2, 0.35, 0.6, 0.4),
+            },
+            shadow: Shadow {
+                color: Color::from_rgba(0.0, 0.1, 0.3, 0.4),
+                offset: Vector::new(0.0, 12.0),
+                blur_radius: 32.0,
+            },
+            ..container::Style::default()
+        }
+    }
+}
+
+// Large prominent elevation button styling  
+fn elevation_hero_button() -> impl Fn(&Theme, button::Status) -> button::Style {
+    |_theme: &Theme, status: button::Status| {
+        let is_hover = matches!(status, button::Status::Hovered);
+        let is_pressed = matches!(status, button::Status::Pressed);
+        
+        let background_color = if is_pressed {
+            Color::from_rgb(0.1, 0.4, 0.8)
+        } else if is_hover {
+            Color::from_rgb(0.15, 0.5, 0.9)
+        } else {
+            Color::from_rgb(0.2, 0.55, 0.95)
+        };
+        
+        button::Style {
+            background: Some(Background::Color(background_color)),
+            text_color: Color::WHITE,
+            border: Border {
+                width: 0.0,
+                radius: 16.0.into(),
+                color: Color::TRANSPARENT,
+            },
+            shadow: Shadow {
+                color: if is_hover {
+                    Color::from_rgba(0.2, 0.55, 0.95, 0.6)
+                } else {
+                    Color::from_rgba(0.2, 0.55, 0.95, 0.4)
+                },
+                offset: Vector::new(0.0, if is_pressed { 4.0 } else { 8.0 }),
+                blur_radius: if is_hover { 24.0 } else { 16.0 },
+            },
+        }
+    }
+}
+
+// Subtle info text styling for elevation explanation
+fn elevation_info_text_style() -> Color {
+    Color::from_rgb(0.7, 0.8, 0.9)
+}
+
+// Create elevation hero card component
+fn create_elevation_hero_card<'a>() -> Element<'a, Message> {
+    let shield_icon = icons::shield()
+        .size(48)
+        .color(Color::from_rgb(0.3, 0.6, 1.0));
+    
+    let title = text("Enable Disk Operations")
+        .size(24)
+        .color(Color::WHITE)
+        .align_x(Horizontal::Center);
+    
+    let explanation = text("Administrator access is required to safely write to storage devices")
+        .size(14)
+        .color(elevation_info_text_style())
+        .align_x(Horizontal::Center);
+    
+    let elevation_button = button(
+        container(
+            row![
+                icons::rocket_launch().size(20),
+                text("Run as Administrator").size(18)
+            ]
+            .spacing(12)
+            .align_y(Alignment::Center)
+        ).center_x(Length::Fill)
+    )
+    .width(320)
+    .padding(20)
+    .style(elevation_hero_button())
+    .on_press(Message::RequestElevation);
+    
+    let subtext = text("This will restart the application with elevated privileges")
+        .size(12)
+        .color(Color::from_rgb(0.6, 0.7, 0.8))
+        .align_x(Horizontal::Center);
+    
+    container(
+        column![
+            shield_icon,
+            title,
+            explanation,
+            elevation_button,
+            subtext
+        ]
+        .spacing(20)
+        .align_x(Alignment::Center)
+    )
+    .style(elevation_hero_card())
+    .padding(40)
+    .width(Length::Shrink)
+    .into()
+}
+
+// Create button card for normal operations
+fn create_button_card<'a>(
+    flash_button: button::Button<'a, Message>,
+    edit_button: button::Button<'a, Message>,
+    presets_button: button::Button<'a, Message>
+) -> Element<'a, Message> {
+    container(
+        column![
+            flash_button,
+            edit_button,
+            presets_button,
+        ]
+        .spacing(12)
+        .align_x(Alignment::Center)
+    )
+    .style(elegant_button_card())
+    .padding(20)
+    .width(Length::Shrink)
+    .into()
+}
+
+// Create non-Windows sudo instruction card
+fn create_sudo_instruction_card<'a>() -> Element<'a, Message> {
+    let info_icon = icons::info()
+        .size(32)
+        .color(Color::from_rgb(0.3, 0.6, 1.0));
+    
+    let title = text("Root Access Required")
+        .size(20)
+        .color(Color::WHITE)
+        .align_x(Horizontal::Center);
+    
+    let explanation = text("Please run this application with sudo to enable disk operations")
+        .size(14)
+        .color(elevation_info_text_style())
+        .align_x(Horizontal::Center);
+    
+    let command_text = text("sudo ./golem-gpu-imager")
+        .size(16)
+        .color(Color::from_rgb(0.8, 0.9, 1.0))
+        .align_x(Horizontal::Center);
+    
+    container(
+        column![
+            info_icon,
+            title,
+            explanation,
+            command_text
+        ]
+        .spacing(16)
+        .align_x(Alignment::Center)
+    )
+    .style(elevation_hero_card())
+    .padding(32)
+    .width(Length::Shrink)
+    .into()
+}
+
 pub fn view_start_screen<'a>(
     error_message: Option<&'a str>,
     is_elevated: bool,
@@ -135,107 +306,69 @@ pub fn view_start_screen<'a>(
     .align_x(Horizontal::Center)
     .color(Color::from_rgb(0.7, 0.7, 0.8));
 
-    // Create buttons - disable on Windows if not elevated
+    // Create buttons - hide on Windows if not elevated
     let buttons_enabled = if cfg!(windows) { is_elevated } else { true };
 
-    let mut flash_button = button(
-        container(
-            iced::widget::row![
-                icons::start().size(20), 
-                text("Flash New Image").size(16)
-            ]
-            .spacing(10)
-            .align_y(Alignment::Center)
-        ).center_x(Length::Fill),
-    )
-    .width(280)
-    .padding(16);
-
-    if buttons_enabled {
-        flash_button = flash_button
-            .style(elegant_primary_button())
-            .on_press(Message::FlashNewImage);
+    // Only create buttons when they will be functional
+    let flash_button = if buttons_enabled {
+        button(
+            container(
+                iced::widget::row![
+                    icons::start().size(20), 
+                    text("Flash New Image").size(16)
+                ]
+                .spacing(10)
+                .align_y(Alignment::Center)
+            ).center_x(Length::Fill),
+        )
+        .width(320)
+        .padding(16)
+        .style(elegant_primary_button())
+        .on_press(Message::FlashNewImage)
     } else {
-        flash_button = flash_button.style(|theme: &Theme, _state| {
-            let palette = theme.extended_palette();
-            button::Style {
-                background: Some(palette.background.weak.color.into()),
-                text_color: palette.background.strong.color,
-                border: iced::Border {
-                    color: palette.background.strong.color,
-                    width: 1.0,
-                    radius: 4.0.into(),
-                },
-                shadow: Shadow::default(),
-            }
-        });
-    }
+        // Placeholder button that won't be used
+        button(text(""))
+    };
 
-    let mut edit_button = button(
-        container(
-            iced::widget::row![
-                icons::edit().size(20), 
-                text("Edit Existing Disk").size(16)
-            ]
-            .spacing(10)
-            .align_y(Alignment::Center)
-        ).center_x(Length::Fill),
-    )
-    .width(280)
-    .padding(16);
-
-    if buttons_enabled {
-        edit_button = edit_button
-            .style(elegant_secondary_button())
-            .on_press(Message::EditExistingDisk);
+    let edit_button = if buttons_enabled {
+        button(
+            container(
+                iced::widget::row![
+                    icons::edit().size(20), 
+                    text("Edit Existing Disk").size(16)
+                ]
+                .spacing(10)
+                .align_y(Alignment::Center)
+            ).center_x(Length::Fill),
+        )
+        .width(320)
+        .padding(16)
+        .style(elegant_secondary_button())
+        .on_press(Message::EditExistingDisk)
     } else {
-        edit_button = edit_button.style(|theme: &Theme, _state| {
-            let palette = theme.extended_palette();
-            button::Style {
-                background: Some(palette.background.weak.color.into()),
-                text_color: palette.background.strong.color,
-                border: iced::Border {
-                    color: palette.background.strong.color,
-                    width: 1.0,
-                    radius: 4.0.into(),
-                },
-                shadow: Shadow::default(),
-            }
-        });
-    }
+        // Placeholder button that won't be used
+        button(text(""))
+    };
 
-    let mut presets_button = button(
-        container(
-            iced::widget::row![
-                icons::settings().size(20), 
-                text("Manage Presets").size(16)
-            ]
-            .spacing(10)
-            .align_y(Alignment::Center)
-        ).center_x(Length::Fill),
-    )
-    .width(280)
-    .padding(16);
-
-    if buttons_enabled {
-        presets_button = presets_button
-            .style(elegant_secondary_button())
-            .on_press(Message::ManagePresets);
+    let presets_button = if buttons_enabled {
+        button(
+            container(
+                iced::widget::row![
+                    icons::settings().size(20), 
+                    text("Manage Presets").size(16)
+                ]
+                .spacing(10)
+                .align_y(Alignment::Center)
+            ).center_x(Length::Fill),
+        )
+        .width(320)
+        .padding(16)
+        .style(elegant_secondary_button())
+        .on_press(Message::ManagePresets)
     } else {
-        presets_button = presets_button.style(|theme: &Theme, _state| {
-            let palette = theme.extended_palette();
-            button::Style {
-                background: Some(palette.background.weak.color.into()),
-                text_color: palette.background.strong.color,
-                border: iced::Border {
-                    color: palette.background.strong.color,
-                    width: 1.0,
-                    radius: 4.0.into(),
-                },
-                shadow: Shadow::default(),
-            }
-        });
-    }
+        // Placeholder button that won't be used
+        button(text(""))
+    };
 
     // Error message container (only shown if error_message is Some)
     let error_container = if let Some(error) = error_message {
@@ -287,69 +420,16 @@ pub fn view_start_screen<'a>(
         container(column![]) // Empty container if no error
     };
 
-    // Create elevation prompt for Windows when not elevated
-    let elevation_prompt = if !is_elevated && cfg!(windows) {
-        // Show elevation button for all Windows users - UAC can prompt for admin credentials
-        container(
-            column![
-                row![
-                    icons::warning().color(Color::from_rgb(1.0, 0.6, 0.0)),
-                    text("Administrator privileges required for disk operations")
-                        .size(14)
-                        .color(Color::from_rgb(0.7, 0.4, 0.0))
-                ]
-                .spacing(8)
-                .align_y(Alignment::Center),
-                button(
-                    row![icons::rocket_launch(), "Run as Administrator"]
-                        .spacing(8)
-                        .align_y(Alignment::Center)
-                )
-                .width(Length::Shrink)
-                .padding(12)
-                .style(|_theme: &Theme, state| {
-                    let is_hover = matches!(state, button::Status::Hovered);
-                    button::Style {
-                        background: Some(
-                            if is_hover {
-                                Color::from_rgb(0.15, 0.55, 0.95)
-                            } else {
-                                Color::from_rgb(0.2, 0.6, 1.0)
-                            }
-                            .into(),
-                        ),
-                        text_color: Color::WHITE,
-                        border: iced::Border {
-                            radius: 6.0.into(),
-                            width: 0.0,
-                            color: Color::TRANSPARENT,
-                        },
-                        shadow: Shadow {
-                            color: Color::from_rgb(0.0, 0.0, 0.0),
-                            offset: Vector::new(2.0, 2.0),
-                            blur_radius: if is_hover { 6.0 } else { 4.0 },
-                        },
-                    }
-                })
-                .on_press(Message::RequestElevation)
-            ]
-            .spacing(10)
-            .align_x(Alignment::Center),
-        )
-        .width(Length::Fill)
-        .padding(20)
-        .style(|_theme| container::Style {
-            background: Some(Color::from_rgb(1.0, 0.98, 0.9).into()),
-            border: iced::Border {
-                radius: 8.0.into(),
-                width: 1.0,
-                color: Color::from_rgb(0.9, 0.6, 0.0),
-            },
-            ..container::Style::default()
-        })
+    // Conditional main action area
+    let main_action_area = if buttons_enabled {
+        // Show normal button card
+        create_button_card(flash_button, edit_button, presets_button)
+    } else if cfg!(windows) {
+        // Show elevation hero card (replaces button area)
+        create_elevation_hero_card()
     } else {
-        // Either elevated or not Windows - no elevation prompt needed
-        container(column![]) // Empty container
+        // Non-Windows fallback - show sudo message
+        create_sudo_instruction_card()
     };
 
     // Add version and build time info with elegant styling
@@ -374,28 +454,9 @@ pub fn view_start_screen<'a>(
         content_items.push(error_container.into());
     }
 
-    // Add elevation prompt for Windows when not elevated
-    if !is_elevated && cfg!(windows) {
-        content_items.push(elevation_prompt.into());
-    }
-
-    // Create elegant button card container with optimized spacing
-    let button_card = container(
-        column![
-            flash_button,
-            edit_button,
-            presets_button,
-        ]
-        .spacing(12)
-        .align_x(Alignment::Center)
-    )
-    .style(elegant_button_card())
-    .padding(20)
-    .width(Length::Shrink);
-
     content_items.extend([
         container(iced::widget::row![]).height(Length::Fill).into(),
-        button_card.into(),
+        main_action_area,
         container(column![]).height(Length::Fill).into(),
         version_text.into(),
     ]);

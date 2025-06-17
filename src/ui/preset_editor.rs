@@ -24,7 +24,7 @@ impl PresetEditorHandler {
                 if let Some(editor_instance) = editor {
                     if editor_instance.is_valid() {
                         let updated_preset = editor_instance.to_preset();
-                        let index = editor_instance.preset_index;
+                        let index = editor_instance.editing_index.unwrap_or(0);
                         
                         if index < presets.len() {
                             presets[index] = updated_preset.clone();

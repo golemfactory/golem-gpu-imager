@@ -1,4 +1,4 @@
-pub use crate::models::{PaymentNetwork, NetworkType};
+pub use crate::models::{PaymentNetwork, NetworkType, CancelToken};
 
 #[derive(Debug, Clone)]
 pub struct OsImage {
@@ -62,6 +62,7 @@ pub struct FlashState {
     pub selected_os_image_group: Option<(usize, usize)>,
     pub selected_device: Option<usize>,
     pub downloads_in_progress: Vec<(String, f32)>, // (version_id, progress)
+    pub cancel_token: CancelToken, // Cancellation token for this workflow's operations
 }
 
 impl FlashState {
@@ -74,6 +75,7 @@ impl FlashState {
             selected_os_image_group: None,
             selected_device: None,
             downloads_in_progress: Vec::new(),
+            cancel_token: CancelToken::new(),
         }
     }
 }

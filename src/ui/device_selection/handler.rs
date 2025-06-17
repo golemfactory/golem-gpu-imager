@@ -27,6 +27,10 @@ pub fn handle_message(
                                         name: d.description,
                                         path: d.device,
                                         size: format!("{:.2} GB", d.size as f64 / 1000.0 / 1000.0 / 1000.0),
+                                        is_card: d.isCard,
+                                        is_usb: d.isUSB,
+                                        is_scsi: d.isSCSI,
+                                        is_removable: d.isRemovable,
                                     })
                                     .collect();
 

@@ -39,13 +39,71 @@ pub fn view_select_existing_device<'a>(
         .into()
     } else {
         column(storage_devices.iter().enumerate().map(|(i, device)| {
-            let device_info = column![
-                text(&device.name).size(18),
-                text(format!("Path: {}", device.path)).size(14),
-                text(format!("Size: {}", device.size)).size(14),
+            let is_selected = Some(i) == selected_device;
+
+            // Device type icon and info
+            let device_header = row![
+                device.type_icon()
+                    .color(if is_selected { 
+                        crate::style::PRIMARY 
+                    } else { 
+                        Color::from_rgb(0.6, 0.6, 0.6) 
+                    }),
+                column![
+                    text(&device.name)
+                        .size(18)
+                        .color(if is_selected { 
+                            Color::from_rgb(0.1, 0.1, 0.1) // Dark text on light background
+                        } else { 
+                            Color::from_rgb(0.9, 0.9, 0.9) 
+                        }),
+                    text(device.type_name())
+                        .size(12)
+                        .color(if is_selected { 
+                            crate::style::PRIMARY 
+                        } else { 
+                            Color::from_rgb(0.7, 0.7, 0.7) 
+                        }),
+                ]
+                .spacing(2)
             ]
-            .spacing(5)
-            .width(Length::Fill);
+            .spacing(15) // Increased spacing to accommodate larger icon
+            .align_y(Alignment::Center);
+
+            // Device details with better formatting
+            let device_details = column![
+                row![
+                    text("Path:").size(14).color(if is_selected { 
+                        Color::from_rgb(0.3, 0.3, 0.3) // Darker gray for better contrast
+                    } else { 
+                        Color::from_rgb(0.6, 0.6, 0.6) 
+                    }),
+                    text(&device.path).size(14).color(if is_selected { 
+                        Color::from_rgb(0.1, 0.1, 0.1) // Dark text on light background
+                    } else { 
+                        Color::from_rgb(0.8, 0.8, 0.8) 
+                    })
+                ]
+                .spacing(8),
+                row![
+                    text("Size:").size(14).color(if is_selected { 
+                        Color::from_rgb(0.3, 0.3, 0.3) // Darker gray for better contrast
+                    } else { 
+                        Color::from_rgb(0.6, 0.6, 0.6) 
+                    }),
+                    text(&device.size).size(14).color(if is_selected { 
+                        Color::from_rgb(0.1, 0.1, 0.1) // Dark text on light background
+                    } else { 
+                        Color::from_rgb(0.8, 0.8, 0.8) 
+                    })
+                ]
+                .spacing(8),
+            ]
+            .spacing(4);
+
+            let device_info = column![device_header, device_details]
+                .spacing(8)
+                .width(Length::Fill);
 
             let select_button = button(
                 row![icons::edit(), text("Edit")]
@@ -53,21 +111,24 @@ pub fn view_select_existing_device<'a>(
                     .align_y(Alignment::Center),
             )
             .on_press(EditMessage::SelectExistingDevice(i))
-            .padding(8);
-
-            let is_selected = Some(i) == selected_device;
+            .padding(10)
+            .style(if is_selected {
+                button::success
+            } else {
+                button::primary
+            });
 
             container(
-                row![device_info, select_button,]
+                row![device_info, select_button]
                     .spacing(20)
-                    .padding(8)
+                    .padding(15)
                     .width(Length::Fill)
                     .align_y(Alignment::Center),
             )
             .style(if is_selected {
-                crate::style::selected_container
+                crate::style::selected_device_card_container
             } else {
-                crate::style::bordered_box
+                crate::style::device_card_container
             })
             .width(Length::Fill)
             .into()

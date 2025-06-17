@@ -186,3 +186,158 @@ pub fn pick_list_style(
         },
     }
 }
+
+// Enhanced device card styling for better UX
+pub fn device_card_container(theme: &Theme) -> container::Style {
+    let palette = theme.extended_palette();
+
+    container::Style {
+        background: Some(palette.background.weakest.color.into()),
+        border: Border {
+            width: 1.0,
+            radius: 8.0.into(),
+            color: palette.background.strong.color,
+        },
+        shadow: iced::Shadow {
+            color: Color::BLACK.scale_alpha(0.1),
+            offset: iced::Vector::new(0.0, 1.0),
+            blur_radius: 2.0,
+        },
+        ..container::Style::default()
+    }
+}
+
+// Selected device card with proper contrast and visual feedback
+pub fn selected_device_card_container(theme: &Theme) -> container::Style {
+    let _palette = theme.extended_palette();
+
+    container::Style {
+        // Light blue-white background for excellent contrast with dark text
+        background: Some(Color::from_rgb(0.95, 0.97, 1.0).into()),
+        border: Border {
+            width: 2.0,
+            radius: 8.0.into(),
+            color: PRIMARY, // Strong blue border for clear selection
+        },
+        // Enhanced shadow for selected state
+        shadow: iced::Shadow {
+            color: PRIMARY.scale_alpha(0.2),
+            offset: iced::Vector::new(0.0, 2.0),
+            blur_radius: 4.0,
+        },
+        // Dark text color for high contrast on light background
+        text_color: Some(Color::from_rgb(0.1, 0.1, 0.1)),
+        ..container::Style::default()
+    }
+}
+
+// Device card with hover effect
+pub fn device_card_hover(theme: &Theme) -> container::Style {
+    let palette = theme.extended_palette();
+
+    container::Style {
+        background: Some(palette.background.weak.color.into()),
+        border: Border {
+            width: 1.5,
+            radius: 8.0.into(),
+            color: PRIMARY.scale_alpha(0.6),
+        },
+        shadow: iced::Shadow {
+            color: Color::BLACK.scale_alpha(0.15),
+            offset: iced::Vector::new(0.0, 2.0),
+            blur_radius: 3.0,
+        },
+        ..container::Style::default()
+    }
+}
+
+// Compact preset card styling
+pub fn compact_preset_card(theme: &Theme) -> container::Style {
+    let palette = theme.extended_palette();
+
+    container::Style {
+        background: Some(palette.background.weakest.color.into()),
+        border: Border {
+            width: 1.0,
+            radius: 12.0.into(),
+            color: palette.background.strong.color,
+        },
+        shadow: iced::Shadow {
+            color: Color::BLACK.scale_alpha(0.08),
+            offset: iced::Vector::new(0.0, 2.0),
+            blur_radius: 8.0,
+        },
+        ..container::Style::default()
+    }
+}
+
+// Selected compact preset card
+pub fn selected_compact_preset_card(theme: &Theme) -> container::Style {
+    let _palette = theme.extended_palette();
+
+    container::Style {
+        background: Some(Color::from_rgb(0.96, 0.98, 1.0).into()),
+        border: Border {
+            width: 2.0,
+            radius: 12.0.into(),
+            color: PRIMARY,
+        },
+        shadow: iced::Shadow {
+            color: PRIMARY.scale_alpha(0.15),
+            offset: iced::Vector::new(0.0, 3.0),
+            blur_radius: 12.0,
+        },
+        text_color: Some(Color::from_rgb(0.1, 0.1, 0.1)),
+        ..container::Style::default()
+    }
+}
+
+// Network badge styling for Testnet
+pub fn testnet_badge(theme: &Theme) -> container::Style {
+    let _palette = theme.extended_palette();
+
+    container::Style {
+        background: Some(Color::from_rgb(0.95, 0.7, 0.3).into()),
+        border: Border {
+            width: 0.0,
+            radius: 12.0.into(),
+            color: Color::TRANSPARENT,
+        },
+        text_color: Some(Color::from_rgb(0.4, 0.2, 0.0)),
+        ..container::Style::default()
+    }
+}
+
+// Network badge styling for Mainnet
+pub fn mainnet_badge(theme: &Theme) -> container::Style {
+    let _palette = theme.extended_palette();
+
+    container::Style {
+        background: Some(Color::from_rgb(0.7, 0.9, 0.7).into()),
+        border: Border {
+            width: 0.0,
+            radius: 12.0.into(),
+            color: Color::TRANSPARENT,
+        },
+        text_color: Some(Color::from_rgb(0.0, 0.3, 0.0)),
+        ..container::Style::default()
+    }
+}
+
+// Search input styling
+pub fn search_input(theme: &Theme) -> iced::widget::text_input::Style {
+    let palette = theme.extended_palette();
+
+    iced::widget::text_input::Style {
+        background: palette.background.weak.color.into(),
+        border: Border {
+            radius: 8.0.into(),
+            width: 1.0,
+            color: palette.background.strong.color,
+        },
+        icon: TEXT,
+        placeholder: palette.background.strong.color,
+        value: TEXT,
+        selection: palette.primary.weak.color,
+    }
+}

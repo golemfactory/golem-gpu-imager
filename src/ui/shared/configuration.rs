@@ -5,12 +5,8 @@ use iced::{Alignment, Color, Element, Length};
 use iced::{Border, Theme};
 
 use crate::models::{NetworkType, PaymentNetwork};
-use crate::ui::{
-    messages::Message,
-    preset_manager::PresetEditorMessage,
-    icons,
-};
 use crate::style;
+use crate::ui::{icons, messages::Message, preset_manager::PresetEditorMessage};
 
 #[derive(Debug, Clone)]
 pub enum ConfigMessage {
@@ -40,8 +36,9 @@ pub fn view_configuration_editor<'a, F>(
     show_preset_manager: bool,
     preset_editor: Option<&'a crate::ui::preset_manager::PresetEditor>,
     preset_back_action: Message,
+    preset_manager_action: Message,
     message_factory: F,
-) -> Element<'a, Message> 
+) -> Element<'a, Message>
 where
     F: Fn(ConfigMessage) -> Message + Copy + 'a,
 {
@@ -51,16 +48,11 @@ where
     }
 
     // Page header
-    let header = container(
-        column![
-            text(title_text).size(28),
-            text(description_text).size(16),
-        ]
-        .spacing(5)
-    )
-    .width(Length::Fill)
-    .padding(15)
-    .style(crate::style::bordered_box);
+    let header =
+        container(column![text(title_text).size(28), text(description_text).size(16),].spacing(5))
+            .width(Length::Fill)
+            .padding(15)
+            .style(crate::style::bordered_box);
 
     // Configuration preset selection section
     let preset_section = if !configuration_presets.is_empty() {
@@ -69,12 +61,15 @@ where
             selected_preset.and_then(|i| configuration_presets.get(i)),
             move |preset| {
                 // Find the index of the selected preset and apply it
-                if let Some(index) = configuration_presets.iter().position(|p| p.name == preset.name) {
+                if let Some(index) = configuration_presets
+                    .iter()
+                    .position(|p| p.name == preset.name)
+                {
                     message_factory(ConfigMessage::SelectPreset(index))
                 } else {
                     Message::ShowError("Preset not found".to_string())
                 }
-            }
+            },
         )
         .placeholder("Select a configuration preset...")
         .width(Length::Fill)
@@ -83,9 +78,9 @@ where
         let preset_manager_button = button(
             row![icons::settings(), text("Manage Presets")]
                 .spacing(5)
-                .align_y(Alignment::Center)
+                .align_y(Alignment::Center),
         )
-        .on_press(Message::PresetManager(crate::ui::preset_manager::PresetManagerMessage::ToggleManager))
+        .on_press(preset_manager_action.clone())
         .padding(8)
         .style(button::secondary);
 
@@ -96,7 +91,7 @@ where
                     .spacing(10)
                     .align_y(Alignment::Center),
             ]
-            .spacing(10)
+            .spacing(10),
         )
         .width(Length::Fill)
         .padding(15)
@@ -111,11 +106,11 @@ where
                         .spacing(5)
                         .align_y(Alignment::Center)
                 )
-                .on_press(Message::PresetManager(crate::ui::preset_manager::PresetManagerMessage::ToggleManager))
+                .on_press(preset_manager_action.clone())
                 .padding(8)
                 .style(button::primary)
             ]
-            .spacing(10)
+            .spacing(10),
         )
         .width(Length::Fill)
         .padding(15)
@@ -143,14 +138,15 @@ where
                 .color(Color::from_rgb(0.6, 0.6, 0.6)),
             ]
             .spacing(5),
-
             // Network Type selection
             column![
                 text("Network Type").size(16),
                 pick_list(
                     &[NetworkType::Central, NetworkType::Hybrid][..],
                     Some(network_type),
-                    move |network_type| message_factory(ConfigMessage::SetNetworkType(network_type))
+                    move |network_type| message_factory(ConfigMessage::SetNetworkType(
+                        network_type
+                    ))
                 )
                 .width(Length::Fill)
                 .style(crate::style::pick_list_style),
@@ -162,7 +158,6 @@ where
                 .color(Color::from_rgb(0.6, 0.6, 0.6)),
             ]
             .spacing(5),
-
             // Subnet configuration
             column![
                 text("Subnet").size(16),
@@ -175,12 +170,13 @@ where
                     .color(Color::from_rgb(0.6, 0.6, 0.6)),
             ]
             .spacing(5),
-
             // Wallet address input with validation
             column![
                 text("Wallet Address (Optional)").size(16),
                 text_input("Enter Ethereum wallet address (0x...)", &wallet_address)
-                    .on_input(move |address| message_factory(ConfigMessage::SetWalletAddress(address)))
+                    .on_input(
+                        move |address| message_factory(ConfigMessage::SetWalletAddress(address))
+                    )
                     .width(Length::Fill)
                     .style(if wallet_address.is_empty() {
                         crate::style::default_text_input
@@ -198,7 +194,7 @@ where
                                 text("Valid Ethereum address").color(crate::style::SUCCESS)
                             ]
                             .spacing(5)
-                            .align_y(Alignment::Center)
+                            .align_y(Alignment::Center),
                         )
                         .style(crate::style::valid_message_container)
                     } else {
@@ -208,7 +204,7 @@ where
                                 text("Invalid Ethereum address format").color(crate::style::ERROR)
                             ]
                             .spacing(5)
-                            .align_y(Alignment::Center)
+                            .align_y(Alignment::Center),
                         )
                         .style(crate::style::invalid_message_container)
                     }
@@ -216,13 +212,13 @@ where
                     container(
                         text("Leave empty to use the node's default wallet")
                             .size(12)
-                            .color(Color::from_rgb(0.6, 0.6, 0.6))
+                            .color(Color::from_rgb(0.6, 0.6, 0.6)),
                     )
                 }
             ]
             .spacing(5),
         ]
-        .spacing(20)
+        .spacing(20),
     )
     .width(Length::Fill)
     .padding(15)
@@ -250,7 +246,7 @@ where
                 .spacing(10)
                 .align_y(Alignment::Center),
             ]
-            .spacing(10)
+            .spacing(10),
         )
         .width(Length::Fill)
         .padding(15)
@@ -261,15 +257,15 @@ where
 
     // Navigation buttons
     let can_proceed = !subnet.trim().is_empty() && (wallet_address.is_empty() || is_wallet_valid);
-    
+
     let next_button = if can_proceed && !next_label.is_empty() {
         button(
             container(
                 row![text(next_label), icons::navigate_next()]
                     .spacing(5)
-                    .align_y(Alignment::Center)
+                    .align_y(Alignment::Center),
             )
-            .center_x(Length::Fill)
+            .center_x(Length::Fill),
         )
         .on_press(next_action)
         .padding(8)
@@ -284,11 +280,14 @@ where
     } else {
         button(
             container(
-                row![text("Complete configuration to continue"), icons::navigate_next()]
-                    .spacing(5)
-                    .align_y(Alignment::Center)
+                row![
+                    text("Complete configuration to continue"),
+                    icons::navigate_next()
+                ]
+                .spacing(5)
+                .align_y(Alignment::Center),
             )
-            .center_x(Length::Fill)
+            .center_x(Length::Fill),
         )
         .padding(8)
         .width(220)
@@ -298,7 +297,7 @@ where
     let back_button = button(
         row![icons::navigate_before(), text(back_label)]
             .spacing(5)
-            .align_y(Alignment::Center)
+            .align_y(Alignment::Center),
     )
     .on_press(back_action)
     .padding(8)
@@ -309,7 +308,7 @@ where
         row![back_button, next_button]
             .spacing(15)
             .width(Length::Fill)
-            .align_y(Alignment::Center)
+            .align_y(Alignment::Center),
     )
     .width(Length::Fill)
     .padding(15)
@@ -319,13 +318,9 @@ where
     let content = column![
         header,
         scrollable(
-            column![
-                preset_section,
-                form_section,
-                save_preset_section,
-            ]
-            .spacing(15)
-            .width(Length::Fill)
+            column![preset_section, form_section, save_preset_section,]
+                .spacing(15)
+                .width(Length::Fill)
         )
         .height(Length::Fill),
         navigation,
@@ -349,7 +344,7 @@ pub fn view_preset_editor<'a>(
             text(format!("Edit Preset: {}", editor.name)).size(28),
             text("Modify the configuration settings for this preset").size(16),
         ]
-        .spacing(5)
+        .spacing(5),
     )
     .width(Length::Fill)
     .padding(15)
@@ -362,19 +357,28 @@ pub fn view_preset_editor<'a>(
             column![
                 text("Preset Name").size(16),
                 text_input("Enter preset name", &editor.name)
-                    .on_input(|name| Message::PresetManager(crate::ui::preset_manager::PresetManagerMessage::Editor(crate::ui::preset_manager::PresetEditorMessage::UpdateName(name))))
+                    .on_input(|name| Message::PresetManager(
+                        crate::ui::preset_manager::PresetManagerMessage::Editor(
+                            crate::ui::preset_manager::PresetEditorMessage::UpdateName(name)
+                        )
+                    ))
                     .width(Length::Fill)
                     .style(crate::style::default_text_input),
             ]
             .spacing(5),
-
             // Payment Network selection
             column![
                 text("Payment Network").size(16),
                 pick_list(
                     &[PaymentNetwork::Testnet, PaymentNetwork::Mainnet][..],
                     Some(editor.payment_network),
-                    |network| Message::PresetManager(crate::ui::preset_manager::PresetManagerMessage::Editor(crate::ui::preset_manager::PresetEditorMessage::UpdatePaymentNetwork(network)))
+                    |network| Message::PresetManager(
+                        crate::ui::preset_manager::PresetManagerMessage::Editor(
+                            crate::ui::preset_manager::PresetEditorMessage::UpdatePaymentNetwork(
+                                network
+                            )
+                        )
+                    )
                 )
                 .width(Length::Fill)
                 .style(crate::style::pick_list_style),
@@ -386,14 +390,19 @@ pub fn view_preset_editor<'a>(
                 .color(Color::from_rgb(0.6, 0.6, 0.6)),
             ]
             .spacing(5),
-
             // Network Type selection
             column![
                 text("Network Type").size(16),
                 pick_list(
                     &[NetworkType::Central, NetworkType::Hybrid][..],
                     Some(editor.network_type),
-                    |network_type| Message::PresetManager(crate::ui::preset_manager::PresetManagerMessage::Editor(crate::ui::preset_manager::PresetEditorMessage::UpdateNetworkType(network_type)))
+                    |network_type| Message::PresetManager(
+                        crate::ui::preset_manager::PresetManagerMessage::Editor(
+                            crate::ui::preset_manager::PresetEditorMessage::UpdateNetworkType(
+                                network_type
+                            )
+                        )
+                    )
                 )
                 .width(Length::Fill)
                 .style(crate::style::pick_list_style),
@@ -405,12 +414,15 @@ pub fn view_preset_editor<'a>(
                 .color(Color::from_rgb(0.6, 0.6, 0.6)),
             ]
             .spacing(5),
-
             // Subnet configuration
             column![
                 text("Subnet").size(16),
                 text_input("Enter subnet name (e.g., 'public')", &editor.subnet)
-                    .on_input(|subnet| Message::PresetManager(crate::ui::preset_manager::PresetManagerMessage::Editor(crate::ui::preset_manager::PresetEditorMessage::UpdateSubnet(subnet))))
+                    .on_input(|subnet| Message::PresetManager(
+                        crate::ui::preset_manager::PresetManagerMessage::Editor(
+                            crate::ui::preset_manager::PresetEditorMessage::UpdateSubnet(subnet)
+                        )
+                    ))
                     .width(Length::Fill)
                     .style(crate::style::default_text_input),
                 text("Specify which subnet to connect to on the Golem Network")
@@ -418,20 +430,28 @@ pub fn view_preset_editor<'a>(
                     .color(Color::from_rgb(0.6, 0.6, 0.6)),
             ]
             .spacing(5),
-
             // Wallet address input
             column![
                 text("Wallet Address (Optional)").size(16),
-                text_input("Enter Ethereum wallet address (0x...)", &editor.wallet_address)
-                    .on_input(|address| Message::PresetManager(crate::ui::preset_manager::PresetManagerMessage::Editor(crate::ui::preset_manager::PresetEditorMessage::UpdateWalletAddress(address))))
-                    .width(Length::Fill)
-                    .style(if editor.wallet_address.is_empty() {
-                        crate::style::default_text_input
-                    } else if crate::utils::eth::is_valid_eth_address(&editor.wallet_address) {
-                        crate::style::valid_wallet_input
-                    } else {
-                        crate::style::invalid_wallet_input
-                    }),
+                text_input(
+                    "Enter Ethereum wallet address (0x...)",
+                    &editor.wallet_address
+                )
+                .on_input(|address| Message::PresetManager(
+                    crate::ui::preset_manager::PresetManagerMessage::Editor(
+                        crate::ui::preset_manager::PresetEditorMessage::UpdateWalletAddress(
+                            address
+                        )
+                    )
+                ))
+                .width(Length::Fill)
+                .style(if editor.wallet_address.is_empty() {
+                    crate::style::default_text_input
+                } else if crate::utils::eth::is_valid_eth_address(&editor.wallet_address) {
+                    crate::style::valid_wallet_input
+                } else {
+                    crate::style::invalid_wallet_input
+                }),
                 // Validation message
                 if !editor.wallet_address.is_empty() {
                     if crate::utils::eth::is_valid_eth_address(&editor.wallet_address) {
@@ -441,7 +461,7 @@ pub fn view_preset_editor<'a>(
                                 text("Valid Ethereum address").color(crate::style::SUCCESS)
                             ]
                             .spacing(5)
-                            .align_y(Alignment::Center)
+                            .align_y(Alignment::Center),
                         )
                         .style(crate::style::valid_message_container)
                     } else {
@@ -451,7 +471,7 @@ pub fn view_preset_editor<'a>(
                                 text("Invalid Ethereum address format").color(crate::style::ERROR)
                             ]
                             .spacing(5)
-                            .align_y(Alignment::Center)
+                            .align_y(Alignment::Center),
                         )
                         .style(crate::style::invalid_message_container)
                     }
@@ -459,29 +479,35 @@ pub fn view_preset_editor<'a>(
                     container(
                         text("Leave empty to use the node's default wallet")
                             .size(12)
-                            .color(Color::from_rgb(0.6, 0.6, 0.6))
+                            .color(Color::from_rgb(0.6, 0.6, 0.6)),
                     )
                 }
             ]
             .spacing(5),
         ]
-        .spacing(20)
+        .spacing(20),
     )
     .width(Length::Fill)
     .padding(15)
     .style(crate::style::bordered_box);
 
     // Navigation buttons
-    let can_save = !editor.name.trim().is_empty() && !editor.subnet.trim().is_empty() &&
-        (editor.wallet_address.is_empty() || crate::utils::eth::is_valid_eth_address(&editor.wallet_address));
-    
+    let can_save = !editor.name.trim().is_empty()
+        && !editor.subnet.trim().is_empty()
+        && (editor.wallet_address.is_empty()
+            || crate::utils::eth::is_valid_eth_address(&editor.wallet_address));
+
     let save_button = if can_save {
         button(
             row![icons::save(), text("Save Preset")]
                 .spacing(5)
-                .align_y(Alignment::Center)
+                .align_y(Alignment::Center),
         )
-        .on_press(Message::PresetManager(crate::ui::preset_manager::PresetManagerMessage::Editor(crate::ui::preset_manager::PresetEditorMessage::Save)))
+        .on_press(Message::PresetManager(
+            crate::ui::preset_manager::PresetManagerMessage::Editor(
+                crate::ui::preset_manager::PresetEditorMessage::Save,
+            ),
+        ))
         .padding(8)
         .width(150)
         .style(button::primary)
@@ -489,7 +515,7 @@ pub fn view_preset_editor<'a>(
         button(
             row![icons::save(), text("Complete all fields")]
                 .spacing(5)
-                .align_y(Alignment::Center)
+                .align_y(Alignment::Center),
         )
         .padding(8)
         .width(150)
@@ -499,9 +525,13 @@ pub fn view_preset_editor<'a>(
     let cancel_button = button(
         row![icons::cancel(), text("Cancel")]
             .spacing(5)
-            .align_y(Alignment::Center)
+            .align_y(Alignment::Center),
     )
-    .on_press(Message::PresetManager(crate::ui::preset_manager::PresetManagerMessage::Editor(crate::ui::preset_manager::PresetEditorMessage::Cancel)))
+    .on_press(Message::PresetManager(
+        crate::ui::preset_manager::PresetManagerMessage::Editor(
+            crate::ui::preset_manager::PresetEditorMessage::Cancel,
+        ),
+    ))
     .padding(8)
     .width(150)
     .style(button::secondary);
@@ -510,7 +540,7 @@ pub fn view_preset_editor<'a>(
         row![cancel_button, save_button]
             .spacing(15)
             .width(Length::Fill)
-            .align_y(Alignment::Center)
+            .align_y(Alignment::Center),
     )
     .width(Length::Fill)
     .padding(15)

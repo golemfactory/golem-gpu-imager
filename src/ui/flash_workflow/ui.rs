@@ -1,16 +1,13 @@
+use super::{FlashMessage, OsImage, OsImageGroup};
+use crate::style;
+use crate::ui::device_selection::StorageDevice;
+use crate::ui::{LOGO_SVG, icons};
 use iced::alignment::Horizontal;
 use iced::widget::{
-    Column, Container, button, column, container, progress_bar, row, scrollable, svg,
-    text,
+    Column, Container, button, column, container, progress_bar, row, scrollable, svg, text,
 };
 use iced::{Alignment, Color, Element, Length};
 use iced::{Border, Theme};
-use crate::ui::{
-    device_selection::StorageDevice,
-};
-use super::{FlashMessage, OsImage, OsImageGroup};
-use crate::style;
-use crate::ui::{LOGO_SVG, icons};
 
 pub fn view_select_os_image<'a>(
     os_images: &'a [OsImage],
@@ -39,7 +36,7 @@ pub fn view_select_os_image<'a>(
         .width(Length::Fill)
         .padding(50)
         .style(crate::style::bordered_box);
-        
+
         scrollable(loading_content).height(Length::Fill)
     } else if os_images.is_empty() {
         // Show empty state with refresh option
@@ -62,7 +59,7 @@ pub fn view_select_os_image<'a>(
         .width(Length::Fill)
         .padding(50)
         .style(crate::style::bordered_box);
-        
+
         scrollable(empty_content).height(Length::Fill)
     } else {
         // Show actual OS image list
@@ -129,31 +126,33 @@ pub fn view_select_os_image<'a>(
                 // State 3: Ready to select
                 button(
                     row![
-                        if is_selected { icons::check_circle() } else { icons::check() },
+                        if is_selected {
+                            icons::check_circle()
+                        } else {
+                            icons::check()
+                        },
                         text(if is_selected { "Selected" } else { "Select" })
                     ]
-                        .spacing(5)
-                        .align_y(Alignment::Center),
+                    .spacing(5)
+                    .align_y(Alignment::Center),
                 )
                 .on_press(FlashMessage::SelectOsImage(i))
                 .padding(10)
                 .style(if is_selected {
-                    |_theme: &Theme, _status| {
-                        button::Style {
-                            background: Some(crate::style::PRIMARY.into()),
-                            text_color: Color::WHITE,
-                            border: Border {
-                                color: crate::style::PRIMARY,
-                                width: 2.0,
-                                radius: 5.0.into(),
-                            },
-                            shadow: iced::Shadow {
-                                color: crate::style::PRIMARY.scale_alpha(0.3),
-                                offset: iced::Vector::new(0.0, 2.0),
-                                blur_radius: 4.0,
-                            },
-                            ..button::Style::default()
-                        }
+                    |_theme: &Theme, _status| button::Style {
+                        background: Some(crate::style::PRIMARY.into()),
+                        text_color: Color::WHITE,
+                        border: Border {
+                            color: crate::style::PRIMARY,
+                            width: 2.0,
+                            radius: 5.0.into(),
+                        },
+                        shadow: iced::Shadow {
+                            color: crate::style::PRIMARY.scale_alpha(0.3),
+                            offset: iced::Vector::new(0.0, 2.0),
+                            blur_radius: 4.0,
+                        },
+                        ..button::Style::default()
                     }
                 } else {
                     button::primary
@@ -237,143 +236,149 @@ pub fn view_select_os_image_groups<'a>(
         .style(crate::style::bordered_box);
 
     // Create OS image group cards or loading/empty state
-    let scrollable_content = if is_loading {
-        // Show loading indicator
-        let loading_content = container(
-            column![
-                icons::timer(),
-                text("Loading OS Images...").size(20),
-                text("Please wait while we fetch available images").size(16),
-                progress_bar(0.0..=1.0, 0.5).style(progress_bar::primary)
-            ]
-            .spacing(20)
-            .align_x(Alignment::Center),
-        )
-        .width(Length::Fill)
-        .padding(50)
-        .style(crate::style::bordered_box);
-        
-        scrollable(loading_content).height(Length::Fill)
-    } else if os_image_groups.is_empty() {
-        // Show empty state with refresh option
-        let empty_content = container(
-            column![
-                text("No OS Images Found").size(20),
-                text("No images are currently available in the repository").size(16),
-                button(
-                    row![icons::refresh(), text("Refresh Repository").size(16)]
-                        .spacing(8)
-                        .align_y(Alignment::Center)
-                )
-                .on_press(FlashMessage::RefreshRepoData)
-                .padding(12)
-                .style(button::primary)
-            ]
-            .spacing(20)
-            .align_x(Alignment::Center),
-        )
-        .width(Length::Fill)
-        .padding(50)
-        .style(crate::style::bordered_box);
-        
-        scrollable(empty_content).height(Length::Fill)
-    } else {
-        // Show actual OS image group list
-        let os_image_list = column(
-            os_image_groups
-                .iter()
-                .enumerate()
-                .map(|(group_idx, group)| {
-                let is_selected_group = selected_os_image_group.map(|(g, _)| g) == Some(group_idx);
-                let selected_version_idx = if is_selected_group {
-                    selected_os_image_group.map(|(_, v)| v)
-                } else {
-                    None
-                };
+    let scrollable_content =
+        if is_loading {
+            // Show loading indicator
+            let loading_content = container(
+                column![
+                    icons::timer(),
+                    text("Loading OS Images...").size(20),
+                    text("Please wait while we fetch available images").size(16),
+                    progress_bar(0.0..=1.0, 0.5).style(progress_bar::primary)
+                ]
+                .spacing(20)
+                .align_x(Alignment::Center),
+            )
+            .width(Length::Fill)
+            .padding(50)
+            .style(crate::style::bordered_box);
 
-                // Latest version card (always shown)
-                let latest_is_selected = selected_version_idx == Some(0);
-                let mut image_info_items = vec![
-                    row![
-                        text(&group.channel_name).size(20),
-                        text("(Latest)")
-                            .size(14)
-                            .color(Color::from_rgb(0.0, 0.6, 0.0))
-                    ]
-                    .spacing(8)
-                    .align_y(Alignment::Center)
-                    .into(),
-                    text(format!("Version: {}", group.latest_version.version))
-                        .size(15)
-                        .into(),
-                    text(&group.description).size(14).into(),
-                ];
+            scrollable(loading_content).height(Length::Fill)
+        } else if os_image_groups.is_empty() {
+            // Show empty state with refresh option
+            let empty_content = container(
+                column![
+                    text("No OS Images Found").size(20),
+                    text("No images are currently available in the repository").size(16),
+                    button(
+                        row![icons::refresh(), text("Refresh Repository").size(16)]
+                            .spacing(8)
+                            .align_y(Alignment::Center)
+                    )
+                    .on_press(FlashMessage::RefreshRepoData)
+                    .padding(12)
+                    .style(button::primary)
+                ]
+                .spacing(20)
+                .align_x(Alignment::Center),
+            )
+            .width(Length::Fill)
+            .padding(50)
+            .style(crate::style::bordered_box);
 
-                // Add metadata information if available
-                if let Some(metadata) = &group.latest_version.metadata {
-                    let uncompressed_size_gb =
-                        metadata.uncompressed_size as f64 / (1024.0 * 1024.0 * 1024.0);
-                    image_info_items.push(
+            scrollable(empty_content).height(Length::Fill)
+        } else {
+            // Show actual OS image group list
+            let os_image_list = column(os_image_groups.iter().enumerate().map(
+                |(group_idx, group)| {
+                    let is_selected_group =
+                        selected_os_image_group.map(|(g, _)| g) == Some(group_idx);
+                    let selected_version_idx = if is_selected_group {
+                        selected_os_image_group.map(|(_, v)| v)
+                    } else {
+                        None
+                    };
+
+                    // Latest version card (always shown)
+                    let latest_is_selected = selected_version_idx == Some(0);
+                    let mut image_info_items = vec![
                         row![
-                            icons::analytics(),
-                            text(format!("Uncompressed: {:.2} GB", uncompressed_size_gb))
-                                .size(12)
-                                .color(Color::from_rgb(0.0, 0.5, 0.8)),
-                            icons::verified(),
-                            text("Verified")
-                                .size(12)
+                            text(&group.channel_name).size(20),
+                            text("(Latest)")
+                                .size(14)
                                 .color(Color::from_rgb(0.0, 0.6, 0.0))
                         ]
-                        .spacing(5)
+                        .spacing(8)
                         .align_y(Alignment::Center)
                         .into(),
+                        text(format!("Version: {}", group.latest_version.version))
+                            .size(15)
+                            .into(),
+                        text(&group.description).size(14).into(),
+                    ];
+
+                    // Add metadata information if available
+                    if let Some(metadata) = &group.latest_version.metadata {
+                        let uncompressed_size_gb =
+                            metadata.uncompressed_size as f64 / (1024.0 * 1024.0 * 1024.0);
+                        image_info_items.push(
+                            row![
+                                icons::analytics(),
+                                text(format!("Uncompressed: {:.2} GB", uncompressed_size_gb))
+                                    .size(12)
+                                    .color(Color::from_rgb(0.0, 0.5, 0.8)),
+                                icons::verified(),
+                                text("Verified")
+                                    .size(12)
+                                    .color(Color::from_rgb(0.0, 0.6, 0.0))
+                            ]
+                            .spacing(5)
+                            .align_y(Alignment::Center)
+                            .into(),
+                        );
+                    }
+
+                    image_info_items.push(
+                        text(format!("Created: {}", group.latest_version.created))
+                            .size(12)
+                            .color(Color::from_rgb(0.5, 0.5, 0.5))
+                            .into(),
                     );
-                }
 
-                image_info_items.push(
-                    text(format!("Created: {}", group.latest_version.created))
-                        .size(12)
-                        .color(Color::from_rgb(0.5, 0.5, 0.5))
-                        .into(),
-                );
+                    let latest_image_info = column(image_info_items).spacing(8).width(Length::Fill);
 
-                let latest_image_info = column(image_info_items).spacing(8).width(Length::Fill);
-
-                let latest_action_button = if !group.latest_version.downloaded {
-                    // State 1: Not downloaded
-                    button(
-                        row![icons::get_app(), text("Download")]
+                    let latest_action_button = if !group.latest_version.downloaded {
+                        // State 1: Not downloaded
+                        button(
+                            row![icons::get_app(), text("Download")]
+                                .spacing(5)
+                                .align_y(Alignment::Center),
+                        )
+                        .on_press(FlashMessage::DownloadOsImageFromGroup(group_idx, 0))
+                        .padding(10)
+                        .style(button::secondary)
+                    } else if group.latest_version.metadata.is_none() {
+                        // State 2: Downloaded but needs analysis
+                        button(
+                            row![icons::analytics(), text("Analyze")]
+                                .spacing(5)
+                                .align_y(Alignment::Center),
+                        )
+                        .on_press(FlashMessage::AnalyzeOsImageFromGroup(group_idx, 0))
+                        .padding(10)
+                        .style(button::secondary)
+                    } else {
+                        // State 3: Ready to select
+                        button(
+                            row![
+                                if latest_is_selected {
+                                    icons::check_circle()
+                                } else {
+                                    icons::check()
+                                },
+                                text(if latest_is_selected {
+                                    "Selected"
+                                } else {
+                                    "Select"
+                                })
+                            ]
                             .spacing(5)
                             .align_y(Alignment::Center),
-                    )
-                    .on_press(FlashMessage::DownloadOsImageFromGroup(group_idx, 0))
-                    .padding(10)
-                    .style(button::secondary)
-                } else if group.latest_version.metadata.is_none() {
-                    // State 2: Downloaded but needs analysis
-                    button(
-                        row![icons::analytics(), text("Analyze")]
-                            .spacing(5)
-                            .align_y(Alignment::Center),
-                    )
-                    .on_press(FlashMessage::AnalyzeOsImageFromGroup(group_idx, 0))
-                    .padding(10)
-                    .style(button::secondary)
-                } else {
-                    // State 3: Ready to select
-                    button(
-                        row![
-                            if latest_is_selected { icons::check_circle() } else { icons::check() },
-                            text(if latest_is_selected { "Selected" } else { "Select" })
-                        ]
-                            .spacing(5)
-                            .align_y(Alignment::Center),
-                    )
-                    .on_press(FlashMessage::SelectOsImageFromGroup(group_idx, 0))
-                    .padding(10)
-                    .style(if latest_is_selected {
-                        |_theme: &Theme, _status| {
-                            button::Style {
+                        )
+                        .on_press(FlashMessage::SelectOsImageFromGroup(group_idx, 0))
+                        .padding(10)
+                        .style(if latest_is_selected {
+                            |_theme: &Theme, _status| button::Style {
                                 background: Some(crate::style::PRIMARY.into()),
                                 text_color: Color::WHITE,
                                 border: Border {
@@ -388,154 +393,162 @@ pub fn view_select_os_image_groups<'a>(
                                 },
                                 ..button::Style::default()
                             }
-                        }
-                    } else {
-                        button::primary
-                    })
-                };
-
-                // Create latest version container
-                let latest_container = container(
-                    row![latest_image_info, latest_action_button]
-                        .spacing(15)
-                        .align_y(Alignment::Center),
-                )
-                .width(Length::Fill)
-                .padding(15)
-                .style(if latest_is_selected {
-                    crate::style::selected_os_image_container
-                } else {
-                    crate::style::bordered_box
-                });
-
-                // Version history expansion section
-                let mut version_items = vec![latest_container.into()];
-
-                if !group.older_versions.is_empty() {
-                    // Expand/collapse toggle button
-                    let (toggle_icon, toggle_text) = if group.expanded {
-                        (
-                            icons::expand_less(),
-                            format!("Hide {} older versions", group.older_versions.len()),
-                        )
-                    } else {
-                        (
-                            icons::expand_more(),
-                            format!("Show {} older versions", group.older_versions.len()),
-                        )
+                        } else {
+                            button::primary
+                        })
                     };
 
-                    let toggle_button = button(
-                        row![toggle_icon, text(toggle_text).size(14)]
-                            .spacing(5)
+                    // Create latest version container
+                    let latest_container = container(
+                        row![latest_image_info, latest_action_button]
+                            .spacing(15)
                             .align_y(Alignment::Center),
                     )
-                    .on_press(FlashMessage::ToggleVersionHistory(group_idx))
-                    .padding(8)
-                    .style(button::text);
+                    .width(Length::Fill)
+                    .padding(15)
+                    .style(if latest_is_selected {
+                        crate::style::selected_os_image_container
+                    } else {
+                        crate::style::bordered_box
+                    });
 
-                    let toggle_container = container(toggle_button)
-                        .width(Length::Fill)
-                        .padding([0, 15]);
+                    // Version history expansion section
+                    let mut version_items = vec![latest_container.into()];
 
-                    version_items.push(toggle_container.into());
+                    if !group.older_versions.is_empty() {
+                        // Expand/collapse toggle button
+                        let (toggle_icon, toggle_text) = if group.expanded {
+                            (
+                                icons::expand_less(),
+                                format!("Hide {} older versions", group.older_versions.len()),
+                            )
+                        } else {
+                            (
+                                icons::expand_more(),
+                                format!("Show {} older versions", group.older_versions.len()),
+                            )
+                        };
 
-                    // Older versions (shown when expanded)
-                    if group.expanded {
-                        let older_versions_list =
-                            column(group.older_versions.iter().enumerate().map(
-                                |(version_idx, older_image)| {
-                                    let actual_version_idx = version_idx + 1; // +1 because 0 is latest
-                                    let is_selected =
-                                        selected_version_idx == Some(actual_version_idx);
+                        let toggle_button = button(
+                            row![toggle_icon, text(toggle_text).size(14)]
+                                .spacing(5)
+                                .align_y(Alignment::Center),
+                        )
+                        .on_press(FlashMessage::ToggleVersionHistory(group_idx))
+                        .padding(8)
+                        .style(button::text);
 
-                                    let mut older_info_items = vec![
-                                        text(format!("Version: {}", older_image.version))
-                                            .size(15)
-                                            .into(),
-                                    ];
+                        let toggle_container = container(toggle_button)
+                            .width(Length::Fill)
+                            .padding([0, 15]);
 
-                                    // Add metadata information if available for older versions
-                                    if let Some(metadata) = &older_image.metadata {
-                                        let uncompressed_size_gb = metadata.uncompressed_size
-                                            as f64
-                                            / (1024.0 * 1024.0 * 1024.0);
-                                        older_info_items.push(
-                                            row![
-                                                icons::analytics(),
-                                                text(format!(
-                                                    "Uncompressed: {:.2} GB",
-                                                    uncompressed_size_gb
-                                                ))
-                                                .size(11)
-                                                .color(Color::from_rgb(0.0, 0.5, 0.8)),
-                                                icons::verified(),
-                                                text("Verified")
+                        version_items.push(toggle_container.into());
+
+                        // Older versions (shown when expanded)
+                        if group.expanded {
+                            let older_versions_list =
+                                column(group.older_versions.iter().enumerate().map(
+                                    |(version_idx, older_image)| {
+                                        let actual_version_idx = version_idx + 1; // +1 because 0 is latest
+                                        let is_selected =
+                                            selected_version_idx == Some(actual_version_idx);
+
+                                        let mut older_info_items = vec![
+                                            text(format!("Version: {}", older_image.version))
+                                                .size(15)
+                                                .into(),
+                                        ];
+
+                                        // Add metadata information if available for older versions
+                                        if let Some(metadata) = &older_image.metadata {
+                                            let uncompressed_size_gb = metadata.uncompressed_size
+                                                as f64
+                                                / (1024.0 * 1024.0 * 1024.0);
+                                            older_info_items.push(
+                                                row![
+                                                    icons::analytics(),
+                                                    text(format!(
+                                                        "Uncompressed: {:.2} GB",
+                                                        uncompressed_size_gb
+                                                    ))
                                                     .size(11)
-                                                    .color(Color::from_rgb(0.0, 0.6, 0.0))
-                                            ]
-                                            .spacing(4)
-                                            .align_y(Alignment::Center)
-                                            .into(),
+                                                    .color(Color::from_rgb(0.0, 0.5, 0.8)),
+                                                    icons::verified(),
+                                                    text("Verified")
+                                                        .size(11)
+                                                        .color(Color::from_rgb(0.0, 0.6, 0.0))
+                                                ]
+                                                .spacing(4)
+                                                .align_y(Alignment::Center)
+                                                .into(),
+                                            );
+                                        }
+
+                                        older_info_items.push(
+                                            text(format!("Created: {}", older_image.created))
+                                                .size(12)
+                                                .color(Color::from_rgb(0.5, 0.5, 0.5))
+                                                .into(),
                                         );
-                                    }
 
-                                    older_info_items.push(
-                                        text(format!("Created: {}", older_image.created))
-                                            .size(12)
-                                            .color(Color::from_rgb(0.5, 0.5, 0.5))
-                                            .into(),
-                                    );
+                                        let older_image_info =
+                                            column(older_info_items).spacing(5).width(Length::Fill);
 
-                                    let older_image_info =
-                                        column(older_info_items).spacing(5).width(Length::Fill);
-
-                                    let older_action_button = if !older_image.downloaded {
-                                        // State 1: Not downloaded
-                                        button(
-                                            row![icons::get_app(), text("Download")]
-                                                .spacing(5)
-                                                .align_y(Alignment::Center),
-                                        )
-                                        .on_press(FlashMessage::DownloadOsImageFromGroup(
-                                            group_idx,
-                                            actual_version_idx,
-                                        ))
-                                        .padding(8)
-                                        .style(button::secondary)
-                                    } else if older_image.metadata.is_none() {
-                                        // State 2: Downloaded but needs analysis
-                                        button(
-                                            row![icons::analytics(), text("Analyze")]
-                                                .spacing(5)
-                                                .align_y(Alignment::Center),
-                                        )
-                                        .on_press(FlashMessage::AnalyzeOsImageFromGroup(
-                                            group_idx,
-                                            actual_version_idx,
-                                        ))
-                                        .padding(8)
-                                        .style(button::secondary)
-                                    } else {
-                                        // State 3: Ready to select
-                                        button(
-                                            row![
-                                                if is_selected { icons::check_circle() } else { icons::check() },
-                                                text(if is_selected { "Selected" } else { "Select" })
-                                            ]
-                                                .spacing(5)
-                                                .align_y(Alignment::Center),
-                                        )
-                                        .on_press(FlashMessage::SelectOsImageFromGroup(
-                                            group_idx,
-                                            actual_version_idx,
-                                        ))
-                                        .padding(8)
-                                        .style(
-                                            if is_selected {
-                                                |_theme: &Theme, _status| {
-                                                    button::Style {
-                                                        background: Some(crate::style::PRIMARY.into()),
+                                        let older_action_button =
+                                            if !older_image.downloaded {
+                                                // State 1: Not downloaded
+                                                button(
+                                                    row![icons::get_app(), text("Download")]
+                                                        .spacing(5)
+                                                        .align_y(Alignment::Center),
+                                                )
+                                                .on_press(FlashMessage::DownloadOsImageFromGroup(
+                                                    group_idx,
+                                                    actual_version_idx,
+                                                ))
+                                                .padding(8)
+                                                .style(button::secondary)
+                                            } else if older_image.metadata.is_none() {
+                                                // State 2: Downloaded but needs analysis
+                                                button(
+                                                    row![icons::analytics(), text("Analyze")]
+                                                        .spacing(5)
+                                                        .align_y(Alignment::Center),
+                                                )
+                                                .on_press(FlashMessage::AnalyzeOsImageFromGroup(
+                                                    group_idx,
+                                                    actual_version_idx,
+                                                ))
+                                                .padding(8)
+                                                .style(button::secondary)
+                                            } else {
+                                                // State 3: Ready to select
+                                                button(
+                                                    row![
+                                                        if is_selected {
+                                                            icons::check_circle()
+                                                        } else {
+                                                            icons::check()
+                                                        },
+                                                        text(if is_selected {
+                                                            "Selected"
+                                                        } else {
+                                                            "Select"
+                                                        })
+                                                    ]
+                                                    .spacing(5)
+                                                    .align_y(Alignment::Center),
+                                                )
+                                                .on_press(FlashMessage::SelectOsImageFromGroup(
+                                                    group_idx,
+                                                    actual_version_idx,
+                                                ))
+                                                .padding(8)
+                                                .style(if is_selected {
+                                                    |_theme: &Theme, _status| button::Style {
+                                                        background: Some(
+                                                            crate::style::PRIMARY.into(),
+                                                        ),
                                                         text_color: Color::WHITE,
                                                         border: Border {
                                                             color: crate::style::PRIMARY,
@@ -543,73 +556,72 @@ pub fn view_select_os_image_groups<'a>(
                                                             radius: 5.0.into(),
                                                         },
                                                         shadow: iced::Shadow {
-                                                            color: crate::style::PRIMARY.scale_alpha(0.3),
+                                                            color: crate::style::PRIMARY
+                                                                .scale_alpha(0.3),
                                                             offset: iced::Vector::new(0.0, 2.0),
                                                             blur_radius: 4.0,
                                                         },
                                                         ..button::Style::default()
                                                     }
-                                                }
-                                            } else {
-                                                button::secondary
-                                            },
+                                                } else {
+                                                    button::secondary
+                                                })
+                                            };
+
+                                        container(
+                                            row![older_image_info, older_action_button]
+                                                .spacing(15)
+                                                .align_y(Alignment::Center),
                                         )
-                                    };
-
-                                    container(
-                                        row![older_image_info, older_action_button]
-                                            .spacing(15)
-                                            .align_y(Alignment::Center),
-                                    )
-                                    .width(Length::Fill)
-                                    .padding(10)
-                                    .style(if is_selected {
-                                        crate::style::selected_os_image_container
-                                    } else {
-                                        |theme: &Theme| {
-                                            let palette = theme.extended_palette();
-                                            container::Style {
-                                                background: Some(
-                                                    palette.background.weakest.color.into(),
-                                                ),
-                                                border: Border {
-                                                    width: 1.0,
-                                                    radius: 3.0.into(),
-                                                    color: palette.background.strong.color,
-                                                },
-                                                ..container::Style::default()
+                                        .width(Length::Fill)
+                                        .padding(10)
+                                        .style(if is_selected {
+                                            crate::style::selected_os_image_container
+                                        } else {
+                                            |theme: &Theme| {
+                                                let palette = theme.extended_palette();
+                                                container::Style {
+                                                    background: Some(
+                                                        palette.background.weakest.color.into(),
+                                                    ),
+                                                    border: Border {
+                                                        width: 1.0,
+                                                        radius: 3.0.into(),
+                                                        color: palette.background.strong.color,
+                                                    },
+                                                    ..container::Style::default()
+                                                }
                                             }
-                                        }
-                                    })
-                                    .into()
-                                },
-                            ))
-                            .spacing(5)
-                            .width(Length::Fill);
+                                        })
+                                        .into()
+                                    },
+                                ))
+                                .spacing(5)
+                                .width(Length::Fill);
 
-                        let older_versions_container = container(older_versions_list)
-                            .width(Length::Fill)
-                            .padding(25); // Indent older versions
+                            let older_versions_container = container(older_versions_list)
+                                .width(Length::Fill)
+                                .padding(25); // Indent older versions
 
-                        version_items.push(older_versions_container.into());
+                            version_items.push(older_versions_container.into());
+                        }
                     }
-                }
 
-                // Combine all version items into a group
-                container(column(version_items).spacing(5))
-                    .width(Length::Fill)
-                    .padding(5)
-                    .style(crate::style::bordered_box)
-                    .into()
-            }),
-    )
-        .spacing(15)
-        .width(Length::Fill)
-        .padding(iced::Padding::new(0.0).right(10.0)); // Add right padding to prevent scrollbar collision
+                    // Combine all version items into a group
+                    container(column(version_items).spacing(5))
+                        .width(Length::Fill)
+                        .padding(5)
+                        .style(crate::style::bordered_box)
+                        .into()
+                },
+            ))
+            .spacing(15)
+            .width(Length::Fill)
+            .padding(iced::Padding::new(0.0).right(10.0)); // Add right padding to prevent scrollbar collision
 
-        // Make scrollable in case we have many images
-        scrollable(os_image_list).height(Length::Fill)
-    };
+            // Make scrollable in case we have many images
+            scrollable(os_image_list).height(Length::Fill)
+        };
 
     // Navigation buttons
     let has_selection = selected_os_image_group.is_some();
@@ -665,7 +677,7 @@ pub fn view_processing_image(
     uncompressed_size: Option<u64>,
 ) -> Element<'static, FlashMessage> {
     use crate::utils::streaming_hash_calculator::ProcessingPhase;
-    
+
     let title = match phase {
         ProcessingPhase::Download => text("Downloading and Verifying OS Image"),
         ProcessingPhase::Metadata => text("Analyzing Downloaded Image"),
@@ -752,8 +764,12 @@ pub fn view_processing_image(
     let progress_percentage = (overall_progress * 100.0) as i32;
     let progress_text = text(format!("{}%", progress_percentage)).size(25);
     let progress_bar = match phase {
-        ProcessingPhase::Download => progress_bar(0.0..=1.0, overall_progress).style(progress_bar::secondary),
-        ProcessingPhase::Metadata | ProcessingPhase::Complete => progress_bar(0.0..=1.0, overall_progress).style(progress_bar::primary),
+        ProcessingPhase::Download => {
+            progress_bar(0.0..=1.0, overall_progress).style(progress_bar::secondary)
+        }
+        ProcessingPhase::Metadata | ProcessingPhase::Complete => {
+            progress_bar(0.0..=1.0, overall_progress).style(progress_bar::primary)
+        }
     };
 
     // Size information if available
@@ -778,13 +794,15 @@ pub fn view_processing_image(
                 .style(|_| iced::widget::text::Style {
                     color: Some(Color::from_rgb(0.5, 0.5, 0.5)),
                     ..iced::widget::text::Style::default()
-                })
+                }),
         }
     };
 
     // Status message
     let status_message = match phase {
-        ProcessingPhase::Download => text("Download and verification in progress, please wait...").size(16),
+        ProcessingPhase::Download => {
+            text("Download and verification in progress, please wait...").size(16)
+        }
         ProcessingPhase::Metadata => text("Analyzing image data, please wait...").size(16),
         ProcessingPhase::Complete => text("Processing completed successfully!").size(16),
     };
@@ -792,10 +810,10 @@ pub fn view_processing_image(
     // Optional cancel button
     let cancel_button = button(
         row![
-            icons::cancel(), 
+            icons::cancel(),
             text(match phase {
                 ProcessingPhase::Download => "Cancel Download",
-                ProcessingPhase::Metadata => "Cancel Analysis", 
+                ProcessingPhase::Metadata => "Cancel Analysis",
                 ProcessingPhase::Complete => "Cancel",
             })
         ]
@@ -876,27 +894,22 @@ pub fn view_select_target_device<'a>(
 
             // Device type icon and info
             let device_header = row![
-                device.type_icon()
-                    .color(if is_selected { 
-                        crate::style::PRIMARY 
-                    } else { 
-                        Color::from_rgb(0.6, 0.6, 0.6) 
-                    }),
+                device.type_icon().color(if is_selected {
+                    crate::style::PRIMARY
+                } else {
+                    Color::from_rgb(0.6, 0.6, 0.6)
+                }),
                 column![
-                    text(&device.name)
-                        .size(18)
-                        .color(if is_selected { 
-                            Color::from_rgb(0.1, 0.1, 0.1) // Dark text on light background
-                        } else { 
-                            Color::from_rgb(0.9, 0.9, 0.9) 
-                        }),
-                    text(device.type_name())
-                        .size(12)
-                        .color(if is_selected { 
-                            crate::style::PRIMARY 
-                        } else { 
-                            Color::from_rgb(0.7, 0.7, 0.7) 
-                        }),
+                    text(&device.name).size(18).color(if is_selected {
+                        Color::from_rgb(0.1, 0.1, 0.1) // Dark text on light background
+                    } else {
+                        Color::from_rgb(0.9, 0.9, 0.9)
+                    }),
+                    text(device.type_name()).size(12).color(if is_selected {
+                        crate::style::PRIMARY
+                    } else {
+                        Color::from_rgb(0.7, 0.7, 0.7)
+                    }),
                 ]
                 .spacing(2)
             ]
@@ -906,28 +919,28 @@ pub fn view_select_target_device<'a>(
             // Device details with better formatting
             let device_details = column![
                 row![
-                    text("Path:").size(14).color(if is_selected { 
+                    text("Path:").size(14).color(if is_selected {
                         Color::from_rgb(0.3, 0.3, 0.3) // Darker gray for better contrast
-                    } else { 
-                        Color::from_rgb(0.6, 0.6, 0.6) 
+                    } else {
+                        Color::from_rgb(0.6, 0.6, 0.6)
                     }),
-                    text(&device.path).size(14).color(if is_selected { 
+                    text(&device.path).size(14).color(if is_selected {
                         Color::from_rgb(0.1, 0.1, 0.1) // Dark text on light background
-                    } else { 
-                        Color::from_rgb(0.8, 0.8, 0.8) 
+                    } else {
+                        Color::from_rgb(0.8, 0.8, 0.8)
                     })
                 ]
                 .spacing(8),
                 row![
-                    text("Size:").size(14).color(if is_selected { 
+                    text("Size:").size(14).color(if is_selected {
                         Color::from_rgb(0.3, 0.3, 0.3) // Darker gray for better contrast
-                    } else { 
-                        Color::from_rgb(0.6, 0.6, 0.6) 
+                    } else {
+                        Color::from_rgb(0.6, 0.6, 0.6)
                     }),
-                    text(&device.size).size(14).color(if is_selected { 
+                    text(&device.size).size(14).color(if is_selected {
                         Color::from_rgb(0.1, 0.1, 0.1) // Dark text on light background
-                    } else { 
-                        Color::from_rgb(0.8, 0.8, 0.8) 
+                    } else {
+                        Color::from_rgb(0.8, 0.8, 0.8)
                     })
                 ]
                 .spacing(8),
@@ -1231,194 +1244,56 @@ pub fn view_flash_configure_settings<'a>(
     network_type: crate::models::NetworkType,
     wallet_address: String,
     is_wallet_valid: bool,
-) -> Element<'a, FlashMessage> {
-    use iced::widget::{button, column, container, pick_list, row, scrollable, text, text_input};
-    use iced::{Alignment, Color, Length};
-    
-    // Page header
-    let header = container(
-        column![
-            text("Configure Settings").size(28),
-            text("Configure your Golem Network settings before flashing:").size(16),
-        ]
-        .spacing(5)
+    configuration_presets: &'a [crate::models::ConfigurationPreset],
+    selected_preset: Option<usize>,
+    new_preset_name: &'a str,
+    show_preset_manager: bool,
+    preset_editor: Option<&'a crate::ui::preset_manager::PresetEditor>,
+) -> Element<'a, crate::ui::messages::Message> {
+    // Use the shared configuration editor from the shared module
+    crate::ui::shared::configuration::view_configuration_editor(
+        payment_network,
+        subnet,
+        network_type,
+        wallet_address,
+        is_wallet_valid,
+        "Configure Settings",
+        "Configure your Golem Network settings before flashing:",
+        crate::ui::messages::Message::Flash(FlashMessage::BackToSelectTargetDevice),
+        crate::ui::messages::Message::Flash(FlashMessage::WriteImage),
+        "Back to Device Selection",
+        "Start Flashing",
+        configuration_presets,
+        selected_preset,
+        new_preset_name,
+        show_preset_manager,
+        preset_editor,
+        crate::ui::messages::Message::Flash(FlashMessage::BackToSelectTargetDevice),
+        crate::ui::messages::Message::ManagePresets,
+        |config_msg| match config_msg {
+            crate::ui::shared::configuration::ConfigMessage::SetPaymentNetwork(network) => {
+                crate::ui::messages::Message::Flash(FlashMessage::SetPaymentNetwork(network))
+            }
+            crate::ui::shared::configuration::ConfigMessage::SetNetworkType(network_type) => {
+                crate::ui::messages::Message::Flash(FlashMessage::SetNetworkType(network_type))
+            }
+            crate::ui::shared::configuration::ConfigMessage::SetSubnet(subnet) => {
+                crate::ui::messages::Message::Flash(FlashMessage::SetSubnet(subnet))
+            }
+            crate::ui::shared::configuration::ConfigMessage::SetWalletAddress(address) => {
+                crate::ui::messages::Message::Flash(FlashMessage::SetWalletAddress(address))
+            }
+            crate::ui::shared::configuration::ConfigMessage::SelectPreset(index) => {
+                crate::ui::messages::Message::Flash(FlashMessage::SelectPreset(index))
+            }
+        },
     )
-    .width(Length::Fill)
-    .padding(15)
-    .style(crate::style::bordered_box);
-
-    // Configuration form section
-    let form_section = container(
-        column![
-            // Payment Network selection
-            column![
-                text("Payment Network").size(16),
-                pick_list(
-                    &[crate::models::PaymentNetwork::Testnet, crate::models::PaymentNetwork::Mainnet][..],
-                    Some(payment_network),
-                    FlashMessage::SetPaymentNetwork
-                )
-                .width(Length::Fill)
-                .style(crate::style::pick_list_style),
-                text(match payment_network {
-                    crate::models::PaymentNetwork::Testnet => "Use testnet GLM tokens for development and testing",
-                    crate::models::PaymentNetwork::Mainnet => "Use real GLM tokens for production workloads",
-                })
-                .size(12)
-                .color(Color::from_rgb(0.6, 0.6, 0.6)),
-            ]
-            .spacing(5),
-
-            // Network Type selection
-            column![
-                text("Network Type").size(16),
-                pick_list(
-                    &[crate::models::NetworkType::Central, crate::models::NetworkType::Hybrid][..],
-                    Some(network_type),
-                    FlashMessage::SetNetworkType
-                )
-                .width(Length::Fill)
-                .style(crate::style::pick_list_style),
-                text(match network_type {
-                    crate::models::NetworkType::Central => "Connect through central network infrastructure",
-                    crate::models::NetworkType::Hybrid => "Mix of central and peer-to-peer connections",
-                })
-                .size(12)
-                .color(Color::from_rgb(0.6, 0.6, 0.6)),
-            ]
-            .spacing(5),
-
-            // Subnet configuration
-            column![
-                text("Subnet").size(16),
-                text_input("Enter subnet name (e.g., 'public')", &subnet)
-                    .on_input(FlashMessage::SetSubnet)
-                    .width(Length::Fill)
-                    .style(crate::style::default_text_input),
-                text("Specify which subnet to connect to on the Golem Network")
-                    .size(12)
-                    .color(Color::from_rgb(0.6, 0.6, 0.6)),
-            ]
-            .spacing(5),
-
-            // Wallet address input with validation
-            column![
-                text("Wallet Address (Optional)").size(16),
-                text_input("Enter Ethereum wallet address (0x...)", &wallet_address)
-                    .on_input(FlashMessage::SetWalletAddress)
-                    .width(Length::Fill)
-                    .style(if wallet_address.is_empty() {
-                        crate::style::default_text_input
-                    } else if is_wallet_valid {
-                        crate::style::valid_wallet_input
-                    } else {
-                        crate::style::invalid_wallet_input
-                    }),
-                // Validation message
-                if !wallet_address.is_empty() {
-                    if is_wallet_valid {
-                        container(
-                            row![
-                                crate::ui::icons::check_circle().color(crate::style::SUCCESS),
-                                text("Valid Ethereum address").color(crate::style::SUCCESS)
-                            ]
-                            .spacing(5)
-                            .align_y(Alignment::Center)
-                        )
-                        .style(crate::style::valid_message_container)
-                    } else {
-                        container(
-                            row![
-                                crate::ui::icons::error().color(crate::style::ERROR),
-                                text("Invalid Ethereum address format").color(crate::style::ERROR)
-                            ]
-                            .spacing(5)
-                            .align_y(Alignment::Center)
-                        )
-                        .style(crate::style::invalid_message_container)
-                    }
-                } else {
-                    container(
-                        text("Leave empty to use the node's default wallet")
-                            .size(12)
-                            .color(Color::from_rgb(0.6, 0.6, 0.6))
-                    )
-                }
-            ]
-            .spacing(5),
-        ]
-        .spacing(20)
-    )
-    .width(Length::Fill)
-    .padding(15)
-    .style(crate::style::bordered_box);
-
-    // Navigation buttons
-    let can_proceed = !subnet.trim().is_empty() && (wallet_address.is_empty() || is_wallet_valid);
-    
-    let next_button = if can_proceed {
-        button(
-            container(
-                row![text("Start Flashing"), crate::ui::icons::navigate_next()]
-                    .spacing(5)
-                    .align_y(Alignment::Center)
-            )
-            .center_x(Length::Fill)
-        )
-        .on_press(FlashMessage::WriteImage)
-        .padding(12)
-        .width(220)
-        .style(button::primary)
-    } else {
-        button(
-            container(
-                row![text("Complete configuration to continue"), crate::ui::icons::navigate_next()]
-                    .spacing(5)
-                    .align_y(Alignment::Center)
-            )
-            .center_x(Length::Fill)
-        )
-        .padding(12)
-        .width(220)
-        .style(button::secondary)
-    };
-
-    let back_button = button(
-        row![crate::ui::icons::navigate_before(), text("Back to Device Selection")]
-            .spacing(5)
-            .align_y(Alignment::Center)
-    )
-    .on_press(FlashMessage::BackToSelectTargetDevice)
-    .padding(12)
-    .width(200)
-    .style(button::secondary);
-
-    let navigation = container(
-        row![back_button, next_button]
-            .spacing(15)
-            .width(Length::Fill)
-            .align_y(Alignment::Center)
-    )
-    .width(Length::Fill)
-    .padding(15)
-    .style(crate::style::bordered_box);
-
-    // Main content
-    let content = column![
-        header,
-        scrollable(form_section).height(Length::Fill),
-        navigation,
-    ]
-    .width(Length::Fill);
-
-    container(content)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .style(crate::style::main_box)
-        .into()
 }
 
-pub fn view_flash_completion(success: bool, error_message: Option<&str>) -> Element<'_, FlashMessage> {
+pub fn view_flash_completion(
+    success: bool,
+    error_message: Option<&str>,
+) -> Element<'_, FlashMessage> {
     // Page header with success/error status with improved styling
     let header_text = if success {
         "Installation Successful"
@@ -1482,41 +1357,45 @@ pub fn view_flash_completion(success: bool, error_message: Option<&str>) -> Elem
             // Truncate very long error messages and format them better
             let formatted_error = if error.len() > 500 {
                 // For very long errors, show first part and indicate truncation
-                format!("{}... (error truncated, see logs for full details)", &error[..500])
+                format!(
+                    "{}... (error truncated, see logs for full details)",
+                    &error[..500]
+                )
             } else {
                 error.to_string()
             };
-            
-            Some(container(
-                scrollable(
+
+            Some(
+                container(scrollable(
                     column![
                         row![
                             icons::error().color(Color::from_rgb(0.8, 0.0, 0.0)),
-                            text("Error Details:").size(16).color(Color::from_rgb(0.8, 0.0, 0.0))
+                            text("Error Details:")
+                                .size(16)
+                                .color(Color::from_rgb(0.8, 0.0, 0.0))
                         ]
                         .spacing(10)
                         .align_y(Alignment::Center),
-                        
                         text(formatted_error)
                             .size(14)
                             .color(Color::from_rgb(0.7, 0.0, 0.0))
                     ]
-                    .spacing(10)
-                )
+                    .spacing(10),
+                ))
+                .width(Length::Fill)
+                .height(Length::Fixed(120.0)) // Fixed height with scrolling
+                .padding(15)
+                .style(|_theme| container::Style {
+                    text_color: Some(Color::from_rgb(0.8, 0.0, 0.0)),
+                    background: Some(Color::from_rgb(1.0, 0.9, 0.9).into()),
+                    border: iced::Border {
+                        radius: 5.0.into(),
+                        width: 1.0,
+                        color: Color::from_rgb(0.8, 0.0, 0.0),
+                    },
+                    ..container::Style::default()
+                }),
             )
-            .width(Length::Fill)
-            .height(Length::Fixed(120.0)) // Fixed height with scrolling
-            .padding(15)
-            .style(|_theme| container::Style {
-                text_color: Some(Color::from_rgb(0.8, 0.0, 0.0)),
-                background: Some(Color::from_rgb(1.0, 0.9, 0.9).into()),
-                border: iced::Border {
-                    radius: 5.0.into(),
-                    width: 1.0,
-                    color: Color::from_rgb(0.8, 0.0, 0.0),
-                },
-                ..container::Style::default()
-            }))
         } else {
             None
         }
@@ -1595,24 +1474,20 @@ pub fn view_flash_completion(success: bool, error_message: Option<&str>) -> Elem
     info_column = info_column.push(column![].height(25)); // Larger spacer
     info_column = info_column.push(next_steps);
 
-    let info_container = container(
-        info_column
-        .spacing(10)
-        .align_x(Alignment::Center),
-    )
-    .width(Length::Fill)
-    .padding(30)
-    .style(move |theme: &Theme| {
-        container::secondary(theme).border(Border {
-            radius: 12.0.into(),
-            width: 2.0,
-            color: if success_clone {
-                style::SUCCESS.scale_alpha(0.5)
-            } else {
-                style::ERROR.scale_alpha(0.5)
-            },
-        })
-    });
+    let info_container = container(info_column.spacing(10).align_x(Alignment::Center))
+        .width(Length::Fill)
+        .padding(30)
+        .style(move |theme: &Theme| {
+            container::secondary(theme).border(Border {
+                radius: 12.0.into(),
+                width: 2.0,
+                color: if success_clone {
+                    style::SUCCESS.scale_alpha(0.5)
+                } else {
+                    style::ERROR.scale_alpha(0.5)
+                },
+            })
+        });
 
     // Add a spacer to push the buttons to the bottom
     let spacer = Container::new(Column::new())

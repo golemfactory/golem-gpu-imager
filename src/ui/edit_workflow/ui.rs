@@ -1,22 +1,16 @@
 use iced::widget::{button, column, container, row, text};
 use iced::{Alignment, Color, Element, Length};
 
-use crate::ui::{
-    device_selection::StorageDevice,
-    icons,
-    messages::Message,
-};
-use crate::models::{NetworkType, PaymentNetwork};
 use super::EditMessage;
+use crate::models::{NetworkType, PaymentNetwork};
+use crate::ui::{device_selection::StorageDevice, icons, messages::Message};
 
 /// Select existing device for editing - pure edit workflow function
 pub fn view_select_existing_device<'a>(
     storage_devices: &'a [StorageDevice],
     selected_device: Option<usize>,
 ) -> Element<'a, EditMessage> {
-    let title = text("Select Device to Edit")
-        .size(28)
-        .width(Length::Fill);
+    let title = text("Select Device to Edit").size(28).width(Length::Fill);
 
     let device_list: Element<'a, EditMessage> = if storage_devices.is_empty() {
         container(
@@ -32,7 +26,7 @@ pub fn view_select_existing_device<'a>(
                 .padding(8)
                 .style(button::primary)
             ]
-            .spacing(15)
+            .spacing(15),
         )
         .padding(20)
         .style(crate::style::bordered_box)
@@ -43,27 +37,22 @@ pub fn view_select_existing_device<'a>(
 
             // Device type icon and info
             let device_header = row![
-                device.type_icon()
-                    .color(if is_selected { 
-                        crate::style::PRIMARY 
-                    } else { 
-                        Color::from_rgb(0.6, 0.6, 0.6) 
-                    }),
+                device.type_icon().color(if is_selected {
+                    crate::style::PRIMARY
+                } else {
+                    Color::from_rgb(0.6, 0.6, 0.6)
+                }),
                 column![
-                    text(&device.name)
-                        .size(18)
-                        .color(if is_selected { 
-                            Color::from_rgb(0.1, 0.1, 0.1) // Dark text on light background
-                        } else { 
-                            Color::from_rgb(0.9, 0.9, 0.9) 
-                        }),
-                    text(device.type_name())
-                        .size(12)
-                        .color(if is_selected { 
-                            crate::style::PRIMARY 
-                        } else { 
-                            Color::from_rgb(0.7, 0.7, 0.7) 
-                        }),
+                    text(&device.name).size(18).color(if is_selected {
+                        Color::from_rgb(0.1, 0.1, 0.1) // Dark text on light background
+                    } else {
+                        Color::from_rgb(0.9, 0.9, 0.9)
+                    }),
+                    text(device.type_name()).size(12).color(if is_selected {
+                        crate::style::PRIMARY
+                    } else {
+                        Color::from_rgb(0.7, 0.7, 0.7)
+                    }),
                 ]
                 .spacing(2)
             ]
@@ -73,28 +62,28 @@ pub fn view_select_existing_device<'a>(
             // Device details with better formatting
             let device_details = column![
                 row![
-                    text("Path:").size(14).color(if is_selected { 
+                    text("Path:").size(14).color(if is_selected {
                         Color::from_rgb(0.3, 0.3, 0.3) // Darker gray for better contrast
-                    } else { 
-                        Color::from_rgb(0.6, 0.6, 0.6) 
+                    } else {
+                        Color::from_rgb(0.6, 0.6, 0.6)
                     }),
-                    text(&device.path).size(14).color(if is_selected { 
+                    text(&device.path).size(14).color(if is_selected {
                         Color::from_rgb(0.1, 0.1, 0.1) // Dark text on light background
-                    } else { 
-                        Color::from_rgb(0.8, 0.8, 0.8) 
+                    } else {
+                        Color::from_rgb(0.8, 0.8, 0.8)
                     })
                 ]
                 .spacing(8),
                 row![
-                    text("Size:").size(14).color(if is_selected { 
+                    text("Size:").size(14).color(if is_selected {
                         Color::from_rgb(0.3, 0.3, 0.3) // Darker gray for better contrast
-                    } else { 
-                        Color::from_rgb(0.6, 0.6, 0.6) 
+                    } else {
+                        Color::from_rgb(0.6, 0.6, 0.6)
                     }),
-                    text(&device.size).size(14).color(if is_selected { 
+                    text(&device.size).size(14).color(if is_selected {
                         Color::from_rgb(0.1, 0.1, 0.1) // Dark text on light background
-                    } else { 
-                        Color::from_rgb(0.8, 0.8, 0.8) 
+                    } else {
+                        Color::from_rgb(0.8, 0.8, 0.8)
                     })
                 ]
                 .spacing(8),
@@ -203,8 +192,7 @@ pub fn view_edit_completion(success: bool) -> Element<'static, EditMessage> {
         .padding(8)
         .style(button::secondary);
 
-    let buttons = row![edit_another_button, back_button]
-        .spacing(15);
+    let buttons = row![edit_another_button, back_button].spacing(15);
 
     container(
         column![
@@ -213,7 +201,7 @@ pub fn view_edit_completion(success: bool) -> Element<'static, EditMessage> {
             buttons
         ]
         .spacing(20)
-        .align_x(Alignment::Center)
+        .align_x(Alignment::Center),
     )
     .width(Length::Fill)
     .height(Length::Fill)
@@ -253,15 +241,24 @@ pub fn view_edit_configuration<'a>(
         new_preset_name,
         show_preset_manager,
         preset_editor,
-        Message::PresetManager(crate::ui::preset_manager::PresetManagerMessage::ToggleManager),
+        Message::Edit(EditMessage::BackToDeviceSelection),
+        Message::ManagePresets,
         |config_msg| {
             use crate::ui::shared::configuration::ConfigMessage;
             match config_msg {
-                ConfigMessage::SetPaymentNetwork(network) => Message::Edit(EditMessage::SetPaymentNetwork(network)),
-                ConfigMessage::SetNetworkType(network_type) => Message::Edit(EditMessage::SetNetworkType(network_type)),
+                ConfigMessage::SetPaymentNetwork(network) => {
+                    Message::Edit(EditMessage::SetPaymentNetwork(network))
+                }
+                ConfigMessage::SetNetworkType(network_type) => {
+                    Message::Edit(EditMessage::SetNetworkType(network_type))
+                }
                 ConfigMessage::SetSubnet(subnet) => Message::Edit(EditMessage::SetSubnet(subnet)),
-                ConfigMessage::SetWalletAddress(address) => Message::Edit(EditMessage::SetWalletAddress(address)),
-                ConfigMessage::SelectPreset(index) => Message::Edit(EditMessage::SelectPreset(index)),
+                ConfigMessage::SetWalletAddress(address) => {
+                    Message::Edit(EditMessage::SetWalletAddress(address))
+                }
+                ConfigMessage::SelectPreset(index) => {
+                    Message::Edit(EditMessage::SelectPreset(index))
+                }
             }
         },
     )

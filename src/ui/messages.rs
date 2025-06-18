@@ -1,9 +1,6 @@
 use crate::ui::{
-    flash_workflow::FlashMessage,
-    edit_workflow::EditMessage,
-    preset_manager::PresetManagerMessage,
-    device_selection::DeviceMessage,
-    configuration::ConfigurationMessage,
+    configuration::ConfigurationMessage, device_selection::DeviceMessage,
+    edit_workflow::EditMessage, flash_workflow::FlashMessage, preset_manager::PresetManagerMessage,
 };
 
 #[derive(Debug, Clone)]
@@ -15,30 +12,34 @@ pub enum Message {
     BackToMainMenu,
     Exit,
     ShowError(String),
-    
-    // Repository management  
+
+    // Repository management
     RepoDataLoaded(Vec<crate::ui::flash_workflow::OsImage>),
-    RepoGroupDataLoaded(Vec<crate::ui::flash_workflow::OsImage>, Vec<crate::ui::flash_workflow::OsImageGroup>),
+    RepoGroupDataLoaded(
+        Vec<crate::ui::flash_workflow::OsImage>,
+        Vec<crate::ui::flash_workflow::OsImageGroup>,
+    ),
     RepoLoadFailed,
     RefreshRepoData,
-    
+
     // Elevation management (Windows)
     RequestElevation,
     CheckElevationStatus,
-    
+
     // Preset management
     SaveAsPreset,
     SelectPreset(usize),
     DeletePreset(usize),
     SetDefaultPreset(usize),
     SetPresetName(String),
-    
+
     // Configuration settings
     SetPaymentNetwork(crate::models::PaymentNetwork),
     SetNetworkType(crate::models::NetworkType),
     SetSubnet(String),
     SetWalletAddress(String),
-    
+    InitializeFlashConfiguration,
+
     // Module-specific message variants
     Flash(FlashMessage),
     Edit(EditMessage),

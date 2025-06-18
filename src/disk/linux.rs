@@ -276,8 +276,7 @@ impl LinuxDiskAccess {
             .await?;
 
         // Return the first object path found or an error if none were found
-        obj
-            .pop()
+        obj.pop()
             .ok_or(anyhow!("No device found for path: {}", path))
     }
 

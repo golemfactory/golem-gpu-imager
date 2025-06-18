@@ -25,16 +25,16 @@ impl PresetEditorHandler {
                     if editor_instance.is_valid() {
                         let updated_preset = editor_instance.to_preset();
                         let index = editor_instance.editing_index.unwrap_or(0);
-                        
+
                         if index < presets.len() {
                             presets[index] = updated_preset.clone();
-                            
+
                             // Update in preset manager if available
                             if let Some(manager) = preset_manager {
                                 let _ = manager.update_preset(index, updated_preset);
                             }
                         }
-                        
+
                         *editor = None;
                     }
                 }

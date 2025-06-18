@@ -1,4 +1,4 @@
-use super::{DeviceSelectionState, DeviceMessage, StorageDevice};
+use super::{DeviceMessage, DeviceSelectionState, StorageDevice};
 use iced::Task;
 use tracing::{debug, error, info};
 
@@ -11,7 +11,7 @@ pub fn handle_message(
             state.is_refreshing = true;
             state.error_message = None;
             debug!("Starting device refresh");
-            
+
             Task::perform(
                 async {
                     // Run the blocking rs_drivelist call in a blocking task
@@ -26,7 +26,10 @@ pub fn handle_message(
                                     .map(|d| StorageDevice {
                                         name: d.description,
                                         path: d.device,
-                                        size: format!("{:.2} GB", d.size as f64 / 1000.0 / 1000.0 / 1000.0),
+                                        size: format!(
+                                            "{:.2} GB",
+                                            d.size as f64 / 1000.0 / 1000.0 / 1000.0
+                                        ),
                                         is_card: d.isCard,
                                         is_usb: d.isUSB,
                                         is_scsi: d.isSCSI,
@@ -47,16 +50,16 @@ pub fn handle_message(
                     .unwrap_or_else(|e| Err(format!("Task failed: {}", e)))
                 },
                 |result| match result {
-                    Ok(devices) => {
-                        crate::ui::messages::Message::DeviceSelection(DeviceMessage::DevicesLoaded(devices))
-                    }
-                    Err(error) => {
-                        crate::ui::messages::Message::DeviceSelection(DeviceMessage::DeviceLoadFailed(error))
-                    }
-                }
+                    Ok(devices) => crate::ui::messages::Message::DeviceSelection(
+                        DeviceMessage::DevicesLoaded(devices),
+                    ),
+                    Err(error) => crate::ui::messages::Message::DeviceSelection(
+                        DeviceMessage::DeviceLoadFailed(error),
+                    ),
+                },
             )
         }
-        
+
         DeviceMessage::DevicesLoaded(devices) => {
             state.devices = devices;
             state.is_refreshing = false;
@@ -64,14 +67,14 @@ pub fn handle_message(
             info!("Loaded {} devices", state.devices.len());
             Task::none()
         }
-        
+
         DeviceMessage::DeviceLoadFailed(error) => {
             state.is_refreshing = false;
             state.error_message = Some(error.clone());
             error!("Failed to load devices: {}", error);
             Task::none()
         }
-        
+
         DeviceMessage::SelectDevice(index) => {
             if index < state.devices.len() {
                 state.selected_device = Some(index);
@@ -79,7 +82,7 @@ pub fn handle_message(
             }
             Task::none()
         }
-        
+
         DeviceMessage::ClearSelection => {
             state.selected_device = None;
             debug!("Cleared device selection");

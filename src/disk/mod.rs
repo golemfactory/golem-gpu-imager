@@ -3,12 +3,12 @@
 // This module provides platform-independent disk access with platform-specific
 // implementations where necessary. Common operations share implementation code.
 
-use std::cmp;
 use anyhow::{Context, Result, anyhow};
 use crc32fast::Hasher;
 use gpt::GptConfig;
 use iced::task::{self, Sipper};
 use sha2::Digest;
+use std::cmp;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
 use tracing::{debug, error, info, warn};
@@ -113,7 +113,6 @@ impl Clone for Disk {
         }
     }
 }
-
 
 impl Disk {
     /// Open and lock a disk by its path
@@ -237,8 +236,7 @@ impl Disk {
         let offset_within_read = (partition_entries_offset - aligned_offset) as usize;
         // Need to account for the offset when calculating aligned size
         let total_needed = offset_within_read as u64 + partition_table_logical_size;
-        let aligned_size = total_needed.div_ceil(PHYSICAL_SECTOR_SIZE)
-            * PHYSICAL_SECTOR_SIZE;
+        let aligned_size = total_needed.div_ceil(PHYSICAL_SECTOR_SIZE) * PHYSICAL_SECTOR_SIZE;
 
         info!(
             "Reading partition table: logical offset={}, logical size={}, aligned offset={}, aligned size={}, offset within read={}, total needed={}",
@@ -275,7 +273,7 @@ impl Disk {
 
             // Extract partition GUID (bytes 16-31 of partition entry)
             let partition_guid = &partition_table[entry_offset + 16..entry_offset + 32];
-            
+
             // Skip empty partition entries (all zeros)
             if partition_guid.iter().all(|&b| b == 0) {
                 continue;
@@ -285,33 +283,33 @@ impl Disk {
             // GPT uses mixed-endian format: first 8 bytes need byte-swapping, last 8 bytes unchanged
             let mut guid_bytes = [0u8; 16];
             guid_bytes.copy_from_slice(partition_guid);
-            
+
             // Apply UEFI GUID mixed-endian conversion:
             // - Bytes 0-3: little-endian (swap)
-            // - Bytes 4-5: little-endian (swap) 
+            // - Bytes 4-5: little-endian (swap)
             // - Bytes 6-7: little-endian (swap)
             // - Bytes 8-15: big-endian (unchanged)
-            guid_bytes[0..4].reverse();   // First 4 bytes
-            guid_bytes[4..6].reverse();   // Next 2 bytes  
-            guid_bytes[6..8].reverse();   // Next 2 bytes
+            guid_bytes[0..4].reverse(); // First 4 bytes
+            guid_bytes[4..6].reverse(); // Next 2 bytes  
+            guid_bytes[6..8].reverse(); // Next 2 bytes
             // Last 8 bytes remain unchanged
-            
+
             let partition_uuid = Uuid::from_bytes(guid_bytes);
-            
-            // Extract partition type GUID (bytes 0-15 of partition entry)  
+
+            // Extract partition type GUID (bytes 0-15 of partition entry)
             let type_guid = &partition_table[entry_offset..entry_offset + 16];
             let mut type_bytes = [0u8; 16];
             type_bytes.copy_from_slice(type_guid);
-            
+
             // Apply same UEFI GUID conversion for type UUID
-            type_bytes[0..4].reverse();   // First 4 bytes
-            type_bytes[4..6].reverse();   // Next 2 bytes  
-            type_bytes[6..8].reverse();   // Next 2 bytes
+            type_bytes[0..4].reverse(); // First 4 bytes
+            type_bytes[4..6].reverse(); // Next 2 bytes  
+            type_bytes[6..8].reverse(); // Next 2 bytes
             // Last 8 bytes remain unchanged
-            
+
             let type_uuid = Uuid::from_bytes(type_bytes);
-            
-            // Extract LBA range for size calculation  
+
+            // Extract LBA range for size calculation
             let first_lba = u64::from_le_bytes([
                 partition_table[entry_offset + 32],
                 partition_table[entry_offset + 33],
@@ -333,11 +331,14 @@ impl Disk {
                 partition_table[entry_offset + 47],
             ]);
             let part_size = (last_lba - first_lba + 1) * LOGICAL_SECTOR_SIZE;
-            
+
             // Store discovered partition info for logging
             discovered_partitions.push(format!(
-                "Partition {}: UUID={}, Type={}, Size={}MB", 
-                i, partition_uuid, type_uuid, part_size / (1024 * 1024)
+                "Partition {}: UUID={}, Type={}, Size={}MB",
+                i,
+                partition_uuid,
+                type_uuid,
+                part_size / (1024 * 1024)
             ));
 
             // Convert target UUID to byte array for comparison
@@ -346,9 +347,9 @@ impl Disk {
             // Apply same UEFI GUID conversion to partition_guid for comparison
             let mut comparison_guid_bytes = [0u8; 16];
             comparison_guid_bytes.copy_from_slice(partition_guid);
-            comparison_guid_bytes[0..4].reverse();   // First 4 bytes
-            comparison_guid_bytes[4..6].reverse();   // Next 2 bytes  
-            comparison_guid_bytes[6..8].reverse();   // Next 2 bytes
+            comparison_guid_bytes[0..4].reverse(); // First 4 bytes
+            comparison_guid_bytes[4..6].reverse(); // Next 2 bytes  
+            comparison_guid_bytes[6..8].reverse(); // Next 2 bytes
             // Last 8 bytes remain unchanged
 
             if comparison_guid_bytes == *target_bytes {
@@ -366,13 +367,19 @@ impl Disk {
         }
 
         // Log all discovered partitions for debugging
-        info!("Discovered {} partitions in GPT:", discovered_partitions.len());
+        info!(
+            "Discovered {} partitions in GPT:",
+            discovered_partitions.len()
+        );
         for partition_info in &discovered_partitions {
             info!("  {}", partition_info);
         }
 
         if !found {
-            error!("Configuration partition {} not found", CONFIG_PARTITION_UUID);
+            error!(
+                "Configuration partition {} not found",
+                CONFIG_PARTITION_UUID
+            );
             error!("Available partitions:");
             for partition_info in &discovered_partitions {
                 error!("  {}", partition_info);
@@ -380,10 +387,10 @@ impl Disk {
             return Err(anyhow!(
                 "Configuration partition {} not found. Available partitions: {}",
                 CONFIG_PARTITION_UUID,
-                if discovered_partitions.is_empty() { 
-                    "None".to_string() 
-                } else { 
-                    discovered_partitions.join(", ") 
+                if discovered_partitions.is_empty() {
+                    "None".to_string()
+                } else {
+                    discovered_partitions.join(", ")
                 }
             ));
         }
@@ -399,8 +406,7 @@ impl Disk {
         let offset_within_aligned = (start_offset - aligned_start) as usize;
         // Need to account for the offset when calculating aligned size
         let total_needed = offset_within_aligned as u64 + partition_size;
-        let aligned_size = total_needed.div_ceil(PHYSICAL_SECTOR_SIZE)
-            * PHYSICAL_SECTOR_SIZE;
+        let aligned_size = total_needed.div_ceil(PHYSICAL_SECTOR_SIZE) * PHYSICAL_SECTOR_SIZE;
 
         info!(
             "Reading partition data: logical offset={}, logical size={}, aligned offset={}, aligned size={}, offset within aligned={}, total needed={}",
@@ -1990,8 +1996,8 @@ fn fix_gpt_backup_header(disk_file: &mut File) -> Result<()> {
             * PHYSICAL_SECTOR_SIZE;
         let entries_offset_within_read =
             (primary_partition_entries_logical_offset - entries_aligned_start) as usize;
-        let entries_aligned_size = (partition_entries_logical_size
-            + entries_offset_within_read).div_ceil(PHYSICAL_SECTOR_SIZE as usize)
+        let entries_aligned_size = (partition_entries_logical_size + entries_offset_within_read)
+            .div_ceil(PHYSICAL_SECTOR_SIZE as usize)
             * PHYSICAL_SECTOR_SIZE as usize;
 
         info!(

@@ -142,7 +142,6 @@ impl ImageRepo {
         Ok(metadata)
     }
 
-
     #[allow(dead_code)]
     pub fn get_newest_version_for_channel(&self, channel_name: &str) -> Option<Version> {
         let metadata = self.metadata.lock().ok()?;
@@ -172,7 +171,11 @@ impl ImageRepo {
     pub fn get_available_channels(&self) -> Vec<String> {
         if let Ok(metadata) = self.metadata.lock() {
             if let Some(metadata_ref) = metadata.as_ref() {
-                return metadata_ref.channels.iter().map(|c| c.name.clone()).collect();
+                return metadata_ref
+                    .channels
+                    .iter()
+                    .map(|c| c.name.clone())
+                    .collect();
             }
         }
         vec![]
@@ -260,7 +263,7 @@ impl ImageRepo {
                 // Try to load existing metadata
                 let metadata_manager = crate::utils::image_metadata::MetadataManager::new()
                     .map_err(|e| Error(format!("Failed to create metadata manager: {}", e)))?;
-                
+
                 if let Ok(Some(metadata)) = metadata_manager.load_metadata(&expected_hash) {
                     // Verify hash quickly
                     if this.verify_hash(&final_path, &expected_hash).is_ok() {
@@ -369,7 +372,8 @@ impl ImageRepo {
             let progress_handler = tokio::spawn(async move {
                 while let Some(progress) = progress_rx.recv().await {
                     let status = DownloadStatus::Processing(progress);
-                    this_clone.downloads
+                    this_clone
+                        .downloads
                         .lock()
                         .unwrap()
                         .insert(version_id_clone.clone(), status.clone());
@@ -377,23 +381,25 @@ impl ImageRepo {
                 }
             });
 
-            let result = calculator.calculate_metadata(&final_path_clone, compressed_hash, progress_tx).await;
-            
+            let result = calculator
+                .calculate_metadata(&final_path_clone, compressed_hash, progress_tx)
+                .await;
+
             // Clean up progress handler
             progress_handler.abort();
-            
+
             match result {
                 Ok(metadata) => {
                     // Store metadata for future use
                     let metadata_manager = crate::utils::image_metadata::MetadataManager::new()
                         .map_err(|e| Error(format!("Failed to create metadata manager: {}", e)))?;
-                    
+
                     if let Err(e) = metadata_manager.store_metadata(&expected_hash, &metadata) {
                         tracing::warn!("Failed to store metadata: {}", e);
                     }
 
                     // Update final status to completed
-                    let final_status = DownloadStatus::Completed { 
+                    let final_status = DownloadStatus::Completed {
                         path: final_path,
                         metadata,
                     };
@@ -474,7 +480,7 @@ mod tests {
             }
         });
     }
-    
+
     #[test]
     fn test_path() {
         let project_dirs = ProjectDirs::from("network", "Golem Factory", "GPU Imager").unwrap();

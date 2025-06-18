@@ -1,9 +1,9 @@
+use super::{PresetEditor, PresetManagerMessage};
+use crate::models::{ConfigurationPreset, NetworkType, PaymentNetwork};
+use crate::style;
+use crate::ui::icons;
 use iced::widget::{button, column, container, pick_list, row, scrollable, text, text_input};
 use iced::{Alignment, Border, Color, Element, Length};
-use crate::models::{ConfigurationPreset, NetworkType, PaymentNetwork};
-use crate::ui::icons;
-use crate::style;
-use super::{PresetEditor, PresetManagerMessage};
 
 /// Main preset manager view
 pub fn view_preset_manager<'a>(
@@ -27,7 +27,7 @@ pub fn view_preset_manager<'a>(
     let back_button = button(
         row![icons::navigate_before(), "Back to Main Menu"]
             .spacing(5)
-            .align_y(Alignment::Center)
+            .align_y(Alignment::Center),
     )
     .on_press(PresetManagerMessage::BackToMainMenu)
     .padding(8)
@@ -62,11 +62,11 @@ fn view_preset_list<'a>(
             .align_x(Alignment::End)
         ]
         .align_y(Alignment::Center)
-        .width(Length::Fill)
+        .width(Length::Fill),
     )
     .padding(10)
     .width(Length::Fill);
-    
+
     // Simple create section
     let quick_create = container(
         row![
@@ -84,7 +84,7 @@ fn view_preset_list<'a>(
                 .style(button::primary)
         ]
         .spacing(10)
-        .align_y(Alignment::Center)
+        .align_y(Alignment::Center),
     )
     .style(style::bordered_box)
     .padding(15)
@@ -93,35 +93,32 @@ fn view_preset_list<'a>(
     let presets_section: Element<'a, PresetManagerMessage> = if presets.is_empty() {
         container(
             column![
-                icons::star_border().size(32).color(Color::from_rgb(0.6, 0.6, 0.6)),
+                icons::star_border()
+                    .size(32)
+                    .color(Color::from_rgb(0.6, 0.6, 0.6)),
                 text("No presets found").size(16),
-                text("Create your first preset above").size(12)
+                text("Create your first preset above")
+                    .size(12)
                     .color(Color::from_rgb(0.7, 0.7, 0.7))
             ]
             .spacing(10)
-            .align_x(Alignment::Center)
+            .align_x(Alignment::Center),
         )
         .padding(30)
         .width(Length::Fill)
         .into()
     } else {
         // Grid layout for preset cards
-        let all_presets: Vec<(usize, &ConfigurationPreset)> = presets
-            .iter()
-            .enumerate()
-            .collect();
+        let all_presets: Vec<(usize, &ConfigurationPreset)> = presets.iter().enumerate().collect();
         let preset_grid = create_preset_grid(all_presets, selected_preset);
-        
-        container(preset_grid)
-            .padding(5)
-            .width(Length::Fill)
-            .into()
+
+        container(preset_grid).padding(5).width(Length::Fill).into()
     };
 
     scrollable(
         column![header, quick_create, presets_section]
             .spacing(20)
-            .width(Length::Fill)
+            .width(Length::Fill),
     )
     .height(Length::Fill)
     .into()
@@ -135,36 +132,33 @@ fn create_preset_grid<'a>(
     // Create rows of cards (3 cards per row)
     let mut rows = Vec::new();
     let mut current_row = Vec::new();
-    
+
     for (original_index, preset) in filtered_presets {
-        let card = create_compact_preset_card(preset, original_index, selected_preset == Some(original_index));
+        let card = create_compact_preset_card(
+            preset,
+            original_index,
+            selected_preset == Some(original_index),
+        );
         current_row.push(card);
-        
+
         if current_row.len() == 3 {
-            let row_element = row(current_row)
-                .spacing(12)
-                .width(Length::Fill);
+            let row_element = row(current_row).spacing(12).width(Length::Fill);
             rows.push(row_element.into());
             current_row = Vec::new();
         }
     }
-    
+
     // Add remaining cards in the last row
     if !current_row.is_empty() {
         // Pad with empty space to maintain alignment
         while current_row.len() < 3 {
             current_row.push(container("").width(Length::Fill).into());
         }
-        let row_element = row(current_row)
-            .spacing(12)
-            .width(Length::Fill);
+        let row_element = row(current_row).spacing(12).width(Length::Fill);
         rows.push(row_element.into());
     }
-    
-    column(rows)
-        .spacing(12)
-        .width(Length::Fill)
-        .into()
+
+    column(rows).spacing(12).width(Length::Fill).into()
 }
 
 /// Create compact preset card for grid layout
@@ -176,21 +170,16 @@ fn create_compact_preset_card<'a>(
     // Header with name and default badge
     let header = row![
         column![
-            text(&preset.name)
-                .size(15)
-                .color(if is_selected {
-                    Color::from_rgb(0.1, 0.1, 0.1)
-                } else {
-                    Color::from_rgb(0.9, 0.9, 0.9)
-                }),
+            text(&preset.name).size(15).color(if is_selected {
+                Color::from_rgb(0.1, 0.1, 0.1)
+            } else {
+                Color::from_rgb(0.9, 0.9, 0.9)
+            }),
             if preset.is_default {
                 container(
-                    row![
-                        icons::star().size(12),
-                        text("DEFAULT").size(10)
-                    ]
-                    .spacing(3)
-                    .align_y(Alignment::Center)
+                    row![icons::star().size(12), text("DEFAULT").size(10)]
+                        .spacing(3)
+                        .align_y(Alignment::Center),
                 )
                 .padding(6)
                 .style(|_| container::Style {
@@ -204,8 +193,7 @@ fn create_compact_preset_card<'a>(
                     ..container::Style::default()
                 })
             } else {
-                container("")
-                    .height(Length::Fixed(0.0))
+                container("").height(Length::Fixed(0.0))
             }
         ]
         .spacing(4)
@@ -225,18 +213,21 @@ fn create_compact_preset_card<'a>(
         })
     ]
     .align_y(Alignment::Start);
-    
+
     // Compact details
     let details = column![
         text(format!("{:?} • {}", preset.network_type, preset.subnet))
             .size(11)
             .color(Color::from_rgb(0.6, 0.6, 0.6)),
         if !preset.wallet_address.is_empty() {
-            text(format!("{}...{}", 
+            text(format!(
+                "{}...{}",
                 &preset.wallet_address[..6.min(preset.wallet_address.len())],
                 if preset.wallet_address.len() > 12 {
-                    &preset.wallet_address[preset.wallet_address.len()-6..]
-                } else { "" }
+                    &preset.wallet_address[preset.wallet_address.len() - 6..]
+                } else {
+                    ""
+                }
             ))
             .size(10)
             .color(Color::from_rgb(0.5, 0.5, 0.5))
@@ -247,7 +238,7 @@ fn create_compact_preset_card<'a>(
         }
     ]
     .spacing(2);
-    
+
     // Compact action buttons
     let actions = row![
         button(icons::edit())
@@ -264,9 +255,7 @@ fn create_compact_preset_card<'a>(
                 .padding(6)
                 .style(button::primary)
         } else {
-            button(icons::star())
-                .padding(6)
-                .style(button::success)
+            button(icons::star()).padding(6).style(button::success)
         },
         button(icons::delete())
             .on_press(PresetManagerMessage::DeletePreset(index))
@@ -274,17 +263,15 @@ fn create_compact_preset_card<'a>(
             .style(button::danger)
     ]
     .spacing(4);
-    
+
     let content = column![
         header,
         details,
-        container(actions)
-            .width(Length::Fill)
-            .padding(8)
+        container(actions).width(Length::Fill).padding(8)
     ]
     .spacing(8)
     .width(Length::Fill);
-    
+
     container(content)
         .style(if is_selected {
             style::selected_compact_preset_card
@@ -356,11 +343,9 @@ fn view_preset_editor<'a>(editor: &'a PresetEditor) -> Element<'a, PresetManager
     ]
     .spacing(5);
 
-    let default_checkbox = row![
-        text("Set as default preset").size(14),
-    ]
-    .spacing(8)
-    .align_y(Alignment::Center);
+    let default_checkbox = row![text("Set as default preset").size(14),]
+        .spacing(8)
+        .align_y(Alignment::Center);
 
     let actions = row![
         button("Cancel")
@@ -390,12 +375,9 @@ fn view_preset_editor<'a>(editor: &'a PresetEditor) -> Element<'a, PresetManager
     .spacing(15)
     .width(Length::Fill);
 
-    container(
-        column![title, form]
-            .spacing(20)
-    )
-    .style(style::bordered_box)
-    .padding(20)
-    .width(Length::Fill)
-    .into()
+    container(column![title, form].spacing(20))
+        .style(style::bordered_box)
+        .padding(20)
+        .width(Length::Fill)
+        .into()
 }

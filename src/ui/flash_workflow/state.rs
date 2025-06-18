@@ -1,4 +1,4 @@
-pub use crate::models::{PaymentNetwork, NetworkType, CancelToken};
+pub use crate::models::{CancelToken, NetworkType, PaymentNetwork};
 
 #[derive(Debug, Clone)]
 pub struct OsImage {

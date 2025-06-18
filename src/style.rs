@@ -92,7 +92,6 @@ pub fn invalid_wallet_input(
     }
 }
 
-
 // Container style for validation success message
 pub fn valid_message_container(_theme: &Theme) -> container::Style {
     container::Style {

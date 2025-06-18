@@ -1,4 +1,4 @@
-use crate::models::{NetworkType, PaymentNetwork, ConfigurationPreset};
+use crate::models::{ConfigurationPreset, NetworkType, PaymentNetwork};
 
 #[derive(Debug, Clone)]
 pub struct ConfigurationState {
@@ -19,18 +19,18 @@ impl ConfigurationState {
             is_wallet_valid: true,
         }
     }
-    
+
     pub fn from_preset(preset: &ConfigurationPreset) -> Self {
         Self {
             payment_network: preset.payment_network,
             subnet: preset.subnet.clone(),
             network_type: preset.network_type,
             wallet_address: preset.wallet_address.clone(),
-            is_wallet_valid: preset.wallet_address.is_empty() || 
-                crate::utils::eth::is_valid_eth_address(&preset.wallet_address),
+            is_wallet_valid: preset.wallet_address.is_empty()
+                || crate::utils::eth::is_valid_eth_address(&preset.wallet_address),
         }
     }
-    
+
     pub fn to_preset(&self, name: String, is_default: bool) -> ConfigurationPreset {
         ConfigurationPreset {
             name,
@@ -41,7 +41,7 @@ impl ConfigurationState {
             is_default,
         }
     }
-    
+
     pub fn is_valid(&self) -> bool {
         !self.subnet.trim().is_empty() && self.is_wallet_valid
     }

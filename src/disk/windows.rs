@@ -426,15 +426,20 @@ impl WindowsDiskAccess {
                     info!("Diskpart stdout: {}", output_msg);
 
                     // Enhanced error detection for offline disks and signature collisions
-                    let has_diskpart_error = output_msg.contains("DiskPart has encountered an error");
-                    let has_offline_error = output_msg.contains("Offline") || 
-                                          output_msg.contains("offline") ||
-                                          output_msg.contains("nie jest dozwolona dla dysku w trybie offline"); // Polish
-                    let has_signature_collision = output_msg.contains("Signature Collision") ||
-                                               output_msg.contains("signature collision");
+                    let has_diskpart_error =
+                        output_msg.contains("DiskPart has encountered an error");
+                    let has_offline_error = output_msg.contains("Offline")
+                        || output_msg.contains("offline")
+                        || output_msg.contains("nie jest dozwolona dla dysku w trybie offline"); // Polish
+                    let has_signature_collision = output_msg.contains("Signature Collision")
+                        || output_msg.contains("signature collision");
                     let has_vds_error = output_msg.contains("Virtual Disk Service error");
 
-                    if output.status.success() && !has_diskpart_error && !has_offline_error && !has_vds_error {
+                    if output.status.success()
+                        && !has_diskpart_error
+                        && !has_offline_error
+                        && !has_vds_error
+                    {
                         info!(
                             "Successfully cleaned disk {} with diskpart on attempt {}",
                             disk_num, attempt
@@ -443,13 +448,21 @@ impl WindowsDiskAccess {
                         break;
                     } else {
                         error_output = format!("stderr: {}, stdout: {}", error_msg, output_msg);
-                        
+
                         // Provide specific error information
                         if has_offline_error || has_signature_collision {
-                            error!("Diskpart failed on attempt {} - disk is offline with signature collision", attempt);
-                            error!("This usually happens when Windows detects duplicate disk signatures");
+                            error!(
+                                "Diskpart failed on attempt {} - disk is offline with signature collision",
+                                attempt
+                            );
+                            error!(
+                                "This usually happens when Windows detects duplicate disk signatures"
+                            );
                         } else if has_vds_error {
-                            error!("Diskpart failed on attempt {} - Virtual Disk Service error", attempt);
+                            error!(
+                                "Diskpart failed on attempt {} - Virtual Disk Service error",
+                                attempt
+                            );
                         } else {
                             error!("Diskpart cleaning failed on attempt {}", attempt);
                         }

@@ -1,31 +1,35 @@
-use crate::models::{NetworkType, PaymentNetwork, ImageMetadata};
+use crate::models::{ImageMetadata, NetworkType, PaymentNetwork};
 
 #[derive(Debug, Clone)]
 pub enum FlashMessage {
     SelectOsImage(usize),
     DownloadOsImage(usize),
-    AnalyzeOsImage(usize),                 // Analyze metadata for downloaded image
+    AnalyzeOsImage(usize), // Analyze metadata for downloaded image
     SelectOsImageFromGroup(usize, usize), // Group index, version index (0 = latest, 1+ = older)
     DownloadOsImageFromGroup(usize, usize), // Group index, version index
     AnalyzeOsImageFromGroup(usize, usize), // Group index, version index - analyze downloaded image
-    ToggleVersionHistory(usize),          // Toggle expanded state for a group
-    ProcessingProgress(String, crate::utils::streaming_hash_calculator::ProcessingProgress), // Version ID and unified progress
+    ToggleVersionHistory(usize), // Toggle expanded state for a group
+    ProcessingProgress(
+        String,
+        crate::utils::streaming_hash_calculator::ProcessingProgress,
+    ), // Version ID and unified progress
     ProcessingCompleted(String, ImageMetadata), // Version ID and final metadata
-    ProcessingFailed(String, String),           // Version ID and error message
-    GotoSelectTargetDevice,                  // Go to storage device selection screen
-    GotoConfigureSettings,                   // Go to image configuration screen
+    ProcessingFailed(String, String), // Version ID and error message
+    GotoSelectTargetDevice, // Go to storage device selection screen
+    GotoConfigureSettings, // Go to image configuration screen
     SetPaymentNetwork(PaymentNetwork),
     SetSubnet(String),
     SetNetworkType(NetworkType),
     SetWalletAddress(String),
+    SelectPreset(usize), // Select a configuration preset
     SelectTargetDevice(usize),
-    RefreshTargetDevices,                // Delegate device refresh to DeviceSelection module
+    RefreshTargetDevices, // Delegate device refresh to DeviceSelection module
     WriteImage,
     CancelWrite,
     FlashAnother,
     DeviceLockedForWriting(crate::disk::Disk, String), // Device locked for writing with image path
-    ClearPartitionsProgress(f32),  // Update partition clearing progress
-    ClearPartitionsCompleted,      // Partition clearing completed successfully
+    ClearPartitionsProgress(f32),                      // Update partition clearing progress
+    ClearPartitionsCompleted,                          // Partition clearing completed successfully
     ClearPartitionsFailed(String), // Partition clearing failed with error message
     WriteImageProgress(f32),       // Update the image writing progress
     VerificationProgress(f32),     // Update the verification progress

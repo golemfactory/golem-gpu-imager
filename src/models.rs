@@ -114,13 +114,13 @@ pub enum Message {
     BackToMainMenu,
     Exit,
     ShowError(String),
-    
-    // Repository management  
-    RepoDataLoaded(String), // Simplified for now
+
+    // Repository management
+    RepoDataLoaded(String),      // Simplified for now
     RepoGroupDataLoaded(String), // Simplified for now
     RepoLoadFailed,
     RefreshRepoData,
-    
+
     // Elevation management (Windows)
     RequestElevation,
     CheckElevationStatus,

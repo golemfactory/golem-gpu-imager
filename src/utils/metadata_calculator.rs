@@ -209,12 +209,10 @@ fn calculate_metadata_blocking(
     // Store metadata for future use
     let metadata_manager = crate::utils::image_metadata::MetadataManager::new()
         .map_err(|e| anyhow!("Failed to create metadata manager: {}", e))?;
-    
+
     if let Err(e) = metadata_manager.store_metadata(compressed_hash, &metadata) {
         tracing::warn!("Failed to store metadata: {}", e);
     }
 
     Ok(metadata)
 }
-
-

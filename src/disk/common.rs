@@ -26,7 +26,6 @@ pub struct DiskDevice {
     pub system: bool,
 }
 
-
 /// Progress message for disk write operations
 #[derive(Debug)]
 pub enum WriteProgress {
@@ -219,7 +218,6 @@ impl<T: Read + Write + Seek> PartitionFileProxy<T> {
 }
 
 // Note: Using tracker from utils/tracker.rs instead of duplicating implementation here
-
 
 // Implement Read for PartitionFileProxy
 impl<T: Read + Write + Seek> Read for PartitionFileProxy<T> {

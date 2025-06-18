@@ -1,7 +1,7 @@
 use iced::alignment::Horizontal;
+use iced::gradient;
 use iced::widget::{button, column, container, row, svg, text};
 use iced::{Alignment, Background, Border, Color, Element, Length, Shadow, Theme, Vector};
-use iced::gradient;
 
 use crate::ui::messages::Message;
 use crate::ui::{LOGO_SVG, icons};
@@ -13,7 +13,7 @@ fn elegant_gradient_background() -> impl Fn(&Theme) -> container::Style {
         let gradient = gradient::Linear::new(45.0)
             .add_stop(0.0, Color::from_rgb(0.03, 0.03, 0.08))
             .add_stop(1.0, Color::from_rgb(0.08, 0.08, 0.15));
-        
+
         container::Style {
             background: Some(Background::Gradient(iced::Gradient::Linear(gradient))),
             ..container::Style::default()
@@ -23,21 +23,19 @@ fn elegant_gradient_background() -> impl Fn(&Theme) -> container::Style {
 
 // Elegant card container for buttons
 fn elegant_button_card() -> impl Fn(&Theme) -> container::Style {
-    |_theme: &Theme| {
-        container::Style {
-            background: Some(Background::Color(Color::from_rgba(0.1, 0.1, 0.18, 0.8))),
-            border: Border {
-                width: 1.0,
-                radius: 16.0.into(),
-                color: Color::from_rgba(0.3, 0.3, 0.4, 0.3),
-            },
-            shadow: Shadow {
-                color: Color::from_rgba(0.0, 0.0, 0.0, 0.3),
-                offset: Vector::new(0.0, 8.0),
-                blur_radius: 24.0,
-            },
-            ..container::Style::default()
-        }
+    |_theme: &Theme| container::Style {
+        background: Some(Background::Color(Color::from_rgba(0.1, 0.1, 0.18, 0.8))),
+        border: Border {
+            width: 1.0,
+            radius: 16.0.into(),
+            color: Color::from_rgba(0.3, 0.3, 0.4, 0.3),
+        },
+        shadow: Shadow {
+            color: Color::from_rgba(0.0, 0.0, 0.0, 0.3),
+            offset: Vector::new(0.0, 8.0),
+            blur_radius: 24.0,
+        },
+        ..container::Style::default()
     }
 }
 
@@ -46,7 +44,7 @@ fn elegant_primary_button() -> impl Fn(&Theme, button::Status) -> button::Style 
     |_theme: &Theme, status: button::Status| {
         let is_hover = matches!(status, button::Status::Hovered);
         let is_pressed = matches!(status, button::Status::Pressed);
-        
+
         let background_color = if is_pressed {
             Color::from_rgb(0.0, 0.3, 0.7)
         } else if is_hover {
@@ -54,7 +52,7 @@ fn elegant_primary_button() -> impl Fn(&Theme, button::Status) -> button::Style 
         } else {
             Color::from_rgb(0.0, 0.4, 0.8)
         };
-        
+
         button::Style {
             background: Some(Background::Color(background_color)),
             text_color: Color::WHITE,
@@ -81,7 +79,7 @@ fn elegant_secondary_button() -> impl Fn(&Theme, button::Status) -> button::Styl
     |_theme: &Theme, status: button::Status| {
         let is_hover = matches!(status, button::Status::Hovered);
         let is_pressed = matches!(status, button::Status::Pressed);
-        
+
         let background_color = if is_pressed {
             Color::from_rgba(0.2, 0.2, 0.3, 0.8)
         } else if is_hover {
@@ -89,7 +87,7 @@ fn elegant_secondary_button() -> impl Fn(&Theme, button::Status) -> button::Styl
         } else {
             Color::from_rgba(0.1, 0.1, 0.2, 0.7)
         };
-        
+
         button::Style {
             background: Some(Background::Color(background_color)),
             text_color: Color::from_rgb(0.9, 0.9, 0.9),
@@ -113,30 +111,28 @@ fn elegant_secondary_button() -> impl Fn(&Theme, button::Status) -> button::Styl
 
 // Hero elevation card styling (replaces button card when not elevated)
 fn elevation_hero_card() -> impl Fn(&Theme) -> container::Style {
-    |_theme: &Theme| {
-        container::Style {
-            background: Some(Background::Color(Color::from_rgba(0.08, 0.12, 0.24, 0.95))),
-            border: Border {
-                width: 1.0,
-                radius: 20.0.into(),
-                color: Color::from_rgba(0.2, 0.35, 0.6, 0.4),
-            },
-            shadow: Shadow {
-                color: Color::from_rgba(0.0, 0.1, 0.3, 0.4),
-                offset: Vector::new(0.0, 12.0),
-                blur_radius: 32.0,
-            },
-            ..container::Style::default()
-        }
+    |_theme: &Theme| container::Style {
+        background: Some(Background::Color(Color::from_rgba(0.08, 0.12, 0.24, 0.95))),
+        border: Border {
+            width: 1.0,
+            radius: 20.0.into(),
+            color: Color::from_rgba(0.2, 0.35, 0.6, 0.4),
+        },
+        shadow: Shadow {
+            color: Color::from_rgba(0.0, 0.1, 0.3, 0.4),
+            offset: Vector::new(0.0, 12.0),
+            blur_radius: 32.0,
+        },
+        ..container::Style::default()
     }
 }
 
-// Large prominent elevation button styling  
+// Large prominent elevation button styling
 fn elevation_hero_button() -> impl Fn(&Theme, button::Status) -> button::Style {
     |_theme: &Theme, status: button::Status| {
         let is_hover = matches!(status, button::Status::Hovered);
         let is_pressed = matches!(status, button::Status::Pressed);
-        
+
         let background_color = if is_pressed {
             Color::from_rgb(0.1, 0.4, 0.8)
         } else if is_hover {
@@ -144,7 +140,7 @@ fn elevation_hero_button() -> impl Fn(&Theme, button::Status) -> button::Style {
         } else {
             Color::from_rgb(0.2, 0.55, 0.95)
         };
-        
+
         button::Style {
             background: Some(Background::Color(background_color)),
             text_color: Color::WHITE,
@@ -176,17 +172,17 @@ fn create_elevation_hero_card<'a>() -> Element<'a, Message> {
     let shield_icon = icons::shield()
         .size(48)
         .color(Color::from_rgb(0.3, 0.6, 1.0));
-    
+
     let title = text("Enable Disk Operations")
         .size(24)
         .color(Color::WHITE)
         .align_x(Horizontal::Center);
-    
+
     let explanation = text("Administrator access is required to safely write to storage devices")
         .size(14)
         .color(elevation_info_text_style())
         .align_x(Horizontal::Center);
-    
+
     let elevation_button = button(
         container(
             row![
@@ -194,29 +190,24 @@ fn create_elevation_hero_card<'a>() -> Element<'a, Message> {
                 text("Run as Administrator").size(18)
             ]
             .spacing(12)
-            .align_y(Alignment::Center)
-        ).center_x(Length::Fill)
+            .align_y(Alignment::Center),
+        )
+        .center_x(Length::Fill),
     )
     .width(320)
     .padding(20)
     .style(elevation_hero_button())
     .on_press(Message::RequestElevation);
-    
+
     let subtext = text("This will restart the application with elevated privileges")
         .size(12)
         .color(Color::from_rgb(0.6, 0.7, 0.8))
         .align_x(Horizontal::Center);
-    
+
     container(
-        column![
-            shield_icon,
-            title,
-            explanation,
-            elevation_button,
-            subtext
-        ]
-        .spacing(20)
-        .align_x(Alignment::Center)
+        column![shield_icon, title, explanation, elevation_button, subtext]
+            .spacing(20)
+            .align_x(Alignment::Center),
     )
     .style(elevation_hero_card())
     .padding(40)
@@ -228,16 +219,12 @@ fn create_elevation_hero_card<'a>() -> Element<'a, Message> {
 fn create_button_card<'a>(
     flash_button: button::Button<'a, Message>,
     edit_button: button::Button<'a, Message>,
-    presets_button: button::Button<'a, Message>
+    presets_button: button::Button<'a, Message>,
 ) -> Element<'a, Message> {
     container(
-        column![
-            flash_button,
-            edit_button,
-            presets_button,
-        ]
-        .spacing(12)
-        .align_x(Alignment::Center)
+        column![flash_button, edit_button, presets_button,]
+            .spacing(12)
+            .align_x(Alignment::Center),
     )
     .style(elegant_button_card())
     .padding(20)
@@ -247,34 +234,27 @@ fn create_button_card<'a>(
 
 // Create non-Windows sudo instruction card
 fn create_sudo_instruction_card<'a>() -> Element<'a, Message> {
-    let info_icon = icons::info()
-        .size(32)
-        .color(Color::from_rgb(0.3, 0.6, 1.0));
-    
+    let info_icon = icons::info().size(32).color(Color::from_rgb(0.3, 0.6, 1.0));
+
     let title = text("Root Access Required")
         .size(20)
         .color(Color::WHITE)
         .align_x(Horizontal::Center);
-    
+
     let explanation = text("Please run this application with sudo to enable disk operations")
         .size(14)
         .color(elevation_info_text_style())
         .align_x(Horizontal::Center);
-    
+
     let command_text = text("sudo ./golem-gpu-imager")
         .size(16)
         .color(Color::from_rgb(0.8, 0.9, 1.0))
         .align_x(Horizontal::Center);
-    
+
     container(
-        column![
-            info_icon,
-            title,
-            explanation,
-            command_text
-        ]
-        .spacing(16)
-        .align_x(Alignment::Center)
+        column![info_icon, title, explanation, command_text]
+            .spacing(16)
+            .align_x(Alignment::Center),
     )
     .style(elevation_hero_card())
     .padding(32)
@@ -313,13 +293,11 @@ pub fn view_start_screen<'a>(
     let flash_button = if buttons_enabled {
         button(
             container(
-                iced::widget::row![
-                    icons::start().size(20), 
-                    text("Flash New Image").size(16)
-                ]
-                .spacing(10)
-                .align_y(Alignment::Center)
-            ).center_x(Length::Fill),
+                iced::widget::row![icons::start().size(20), text("Flash New Image").size(16)]
+                    .spacing(10)
+                    .align_y(Alignment::Center),
+            )
+            .center_x(Length::Fill),
         )
         .width(320)
         .padding(16)
@@ -333,13 +311,11 @@ pub fn view_start_screen<'a>(
     let edit_button = if buttons_enabled {
         button(
             container(
-                iced::widget::row![
-                    icons::edit().size(20), 
-                    text("Edit Existing Disk").size(16)
-                ]
-                .spacing(10)
-                .align_y(Alignment::Center)
-            ).center_x(Length::Fill),
+                iced::widget::row![icons::edit().size(20), text("Edit Existing Disk").size(16)]
+                    .spacing(10)
+                    .align_y(Alignment::Center),
+            )
+            .center_x(Length::Fill),
         )
         .width(320)
         .padding(16)
@@ -353,13 +329,11 @@ pub fn view_start_screen<'a>(
     let presets_button = if buttons_enabled {
         button(
             container(
-                iced::widget::row![
-                    icons::settings().size(20), 
-                    text("Manage Presets").size(16)
-                ]
-                .spacing(10)
-                .align_y(Alignment::Center)
-            ).center_x(Length::Fill),
+                iced::widget::row![icons::settings().size(20), text("Manage Presets").size(16)]
+                    .spacing(10)
+                    .align_y(Alignment::Center),
+            )
+            .center_x(Length::Fill),
         )
         .width(320)
         .padding(16)

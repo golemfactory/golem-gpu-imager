@@ -1,8 +1,8 @@
-use crate::models::{NetworkType, PaymentNetwork, ConfigurationPreset};
+use crate::models::{ConfigurationPreset, NetworkType, PaymentNetwork};
 
 #[derive(Debug, Clone)]
 pub struct PresetEditor {
-    pub editing_index: Option<usize>,  // None for new preset, Some(index) for editing existing
+    pub editing_index: Option<usize>, // None for new preset, Some(index) for editing existing
     pub name: String,
     pub payment_network: PaymentNetwork,
     pub subnet: String,
@@ -71,7 +71,7 @@ impl PresetManagerState {
             editor: None,
         }
     }
-    
+
     pub fn with_defaults() -> Self {
         let mut state = Self::new();
         state.presets = vec![
@@ -94,5 +94,4 @@ impl PresetManagerState {
         ];
         state
     }
-
 }

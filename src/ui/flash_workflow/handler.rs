@@ -293,25 +293,25 @@ pub fn handle_message(
                         match status {
                         crate::utils::repo::DownloadStatus::NotStarted => {
                             crate::ui::messages::Message::Flash(FlashMessage::ProcessingProgress(
-                                version_id_2.clone(), 
+                                version_id_2.clone(),
                                 crate::utils::streaming_hash_calculator::ProcessingProgress::new_download(0, 0)
                             ))
                         }
                         crate::utils::repo::DownloadStatus::Processing(progress) => {
                             crate::ui::messages::Message::Flash(FlashMessage::ProcessingProgress(
-                                version_id_2.clone(), 
+                                version_id_2.clone(),
                                 progress
                             ))
                         }
                         crate::utils::repo::DownloadStatus::Completed { metadata, .. } => {
                             crate::ui::messages::Message::Flash(FlashMessage::ProcessingCompleted(
-                                version_id_2.clone(), 
+                                version_id_2.clone(),
                                 metadata
                             ))
                         }
                         crate::utils::repo::DownloadStatus::Failed { error } => {
                             crate::ui::messages::Message::Flash(FlashMessage::ProcessingFailed(
-                                version_id_2.clone(), 
+                                version_id_2.clone(),
                                 error
                             ))
                         }
@@ -509,25 +509,25 @@ pub fn handle_message(
                             match status {
                             crate::utils::repo::DownloadStatus::NotStarted => {
                                 crate::ui::messages::Message::Flash(FlashMessage::ProcessingProgress(
-                                    version_id_2.clone(), 
+                                    version_id_2.clone(),
                                     crate::utils::streaming_hash_calculator::ProcessingProgress::new_download(0, 0)
                                 ))
                             }
                             crate::utils::repo::DownloadStatus::Processing(progress) => {
                                 crate::ui::messages::Message::Flash(FlashMessage::ProcessingProgress(
-                                    version_id_2.clone(), 
+                                    version_id_2.clone(),
                                     progress
                                 ))
                             }
                             crate::utils::repo::DownloadStatus::Completed { metadata, .. } => {
                                 crate::ui::messages::Message::Flash(FlashMessage::ProcessingCompleted(
-                                    version_id_2.clone(), 
+                                    version_id_2.clone(),
                                     metadata
                                 ))
                             }
                             crate::utils::repo::DownloadStatus::Failed { error } => {
                                 crate::ui::messages::Message::Flash(FlashMessage::ProcessingFailed(
-                                    version_id_2.clone(), 
+                                    version_id_2.clone(),
                                     error
                                 ))
                             }

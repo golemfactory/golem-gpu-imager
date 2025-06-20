@@ -1,4 +1,4 @@
-use iced::widget::{button, column, container, row, text};
+use iced::widget::{button, column, container, row, text, Column, Container};
 use iced::{Alignment, Color, Element, Length};
 
 use super::EditMessage;
@@ -10,7 +10,10 @@ pub fn view_select_existing_device<'a>(
     storage_devices: &'a [StorageDevice],
     selected_device: Option<usize>,
 ) -> Element<'a, EditMessage> {
-    let title = text("Select Device to Edit").size(28).width(Length::Fill);
+    let title = container(text("Select Device to Edit").size(28))
+        .width(Length::Fill)
+        .padding(15)
+        .style(crate::style::bordered_box);
 
     let device_list: Element<'a, EditMessage> = if storage_devices.is_empty() {
         container(
@@ -147,14 +150,30 @@ pub fn view_select_existing_device<'a>(
     .padding(8)
     .style(button::secondary);
 
-    let buttons = row![back_button, next_button]
-        .spacing(15)
-        .width(Length::Fill)
-        .align_y(Alignment::Center);
+    // Add a spacer to push buttons to the bottom
+    let spacer = Container::new(Column::new())
+        .height(Length::Fill)
+        .width(Length::Fill);
 
-    column![title, device_list, buttons]
+    let buttons = container(
+        row![back_button, next_button]
+            .spacing(15)
+            .width(Length::Fill)
+            .align_y(Alignment::Center),
+    )
+    .width(Length::Fill)
+    .padding(15)
+    .style(crate::style::bordered_box);
+
+    let content = column![title, device_list, spacer, buttons]
         .spacing(20)
+        .width(Length::Fill);
+
+    container(content)
+        .width(Length::Fill)
+        .height(Length::Fill)
         .padding(20)
+        .style(crate::style::main_box)
         .into()
 }
 

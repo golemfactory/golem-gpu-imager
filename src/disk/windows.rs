@@ -189,7 +189,7 @@ impl WindowsDiskAccess {
                         } else if has_vds_error {
                             warn!("Diskpart failed on attempt {} - Virtual Disk Service error", attempt);
                         }
-                        
+
                         last_error = format!(
                             "Diskpart failed - stdout: {}, stderr: {}",
                             output_msg, error_msg
@@ -2197,6 +2197,7 @@ mod tests {
         assert!(
             WindowsDiskAccess::extract_disk_number_from_path_robust("PhysicalDriveABC").is_err()
         );
-        assert!(WindowsDiskAccess::extract_disk_number_from_path_robust("Drive5").is_err()); // Must contain "PhysicalDrive"
+        assert!(WindowsDiskAccess::extract_disk_number_from_path_robust("Drive5").is_err());
+        // Must contain "PhysicalDrive"
     }
 }

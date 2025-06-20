@@ -554,17 +554,17 @@ impl Disk {
 
                 // Clear first and last 4MB of disk to remove any existing partition tables or file systems
                 info!("Clearing first and last 4MB of disk");
-                
+
                 // Get disk size
                 let disk_size = get_disk_size_windows(&mut disk_file)?;
-                
+
                 // Create 4MB zero buffer (sector-aligned for Windows compatibility)
                 let zero_buffer = vec![0u8; 4 * 1024 * 1024];
-                
+
                 // Clear first 4MB
                 disk_file.seek(SeekFrom::Start(0))?;
                 disk_file.write_all(&zero_buffer)?;
-                
+
                 // Clear last 4MB (if disk is large enough)
                 if disk_size > 8 * 1024 * 1024 {
                     let last_4mb_start = disk_size - (4 * 1024 * 1024);
@@ -653,58 +653,57 @@ impl Disk {
                 #[cfg(feature = "debug")]
                 {
                     info!("DEBUG: Starting block-by-block comparison of XZ content vs disk content");
-                        
                         // Re-open XZ file for comparison
                         let debug_image_file = File::open(&image_path_owned)?;
                         let debug_buffer_size = std::num::NonZeroUsize::new(4 * 1024 * 1024).unwrap();
                         let mut debug_xz_reader = XzReader::new_with_buffer_size(debug_image_file, debug_buffer_size);
-                        
+
                         // Seek disk back to start for comparison
                         disk_file.seek(SeekFrom::Start(0))?;
-                        
+
                         let block_size = 1024 * 1024; // 1MB blocks
                         let mut debug_xz_buffer = vec![0u8; block_size];
                         let mut debug_disk_buffer = vec![0u8; block_size];
                         let mut block_number = 0;
                         let mut total_compared = 0u64;
                         let mut differences_found = 0;
-                        
+
                         loop {
                             // Check if we've compared enough (limit to image size)
                             if total_compared >= metadata.uncompressed_size {
                                 break;
                             }
-                            
+
                             // Calculate how much to read in this block
                             let remaining = metadata.uncompressed_size - total_compared;
                             let bytes_to_read = std::cmp::min(block_size as u64, remaining) as usize;
                             if remaining == 0 {
                                 break
                             }
-                            
+
                             // Read from XZ
                             debug_xz_reader.read_exact(&mut debug_xz_buffer[0..bytes_to_read])?;
-                            
+
                             // Read from disk
                             let disk_bytes = disk_file.read(&mut debug_disk_buffer[0..bytes_to_read])?;
-                            
+
                             if disk_bytes != bytes_to_read {
                                 error!("DEBUG: Block {} size mismatch: XZ={}, Disk={}", block_number, bytes_to_read, disk_bytes);
                                 differences_found += 1;
                                 break;
                             }
-                            
+
                             // Compare the blocks
                             if debug_xz_buffer[0..bytes_to_read] != debug_disk_buffer[0..bytes_to_read] {
                                 error!("DEBUG: Block {} differs at offset {}", block_number, total_compared);
                                 differences_found += 1;
-                                
+
                                 // Find first differing byte
                                 for i in 0..bytes_to_read {
                                     if debug_xz_buffer[i] != debug_disk_buffer[i] {
                                         error!("DEBUG: First difference at byte {}: XZ=0x{:02x}, Disk=0x{:02x}", 
                                                total_compared + i as u64, debug_xz_buffer[i], debug_disk_buffer[i]);
-                                        
+
                                         // Show context around the difference
                                         let start = i.saturating_sub(8);
                                         let end = (i + 8).min(bytes_to_read);
@@ -713,30 +712,30 @@ impl Disk {
                                         break;
                                     }
                                 }
-                                
+
                                 // Calculate hashes of this block
                                 let xz_block_hash = sha2::Sha256::digest(&debug_xz_buffer[0..bytes_to_read]);
                                 let disk_block_hash = sha2::Sha256::digest(&debug_disk_buffer[0..bytes_to_read]);
                                 error!("DEBUG: Block {} XZ hash:   {}", block_number, hex::encode(&xz_block_hash[..8]));
                                 error!("DEBUG: Block {} Disk hash: {}", block_number, hex::encode(&disk_block_hash[..8]));
-                                
+
                                 // Limit to first few differing blocks to avoid spam
                                 if differences_found >= 5 {
                                     error!("DEBUG: Stopping after {} differences to avoid log spam", differences_found);
                                     break;
                                 }
                             }
-                            
+
                             total_compared += bytes_to_read as u64;
                             block_number += 1;
-                            
+
                             // Safety limit to avoid infinite loops
                             if block_number > 20000 { // ~20GB worth of 1MB blocks
                                 warn!("DEBUG: Stopping comparison after {} blocks to avoid excessive processing", block_number);
                                 break;
                             }
                         }
-                        
+
                         if differences_found == 0 {
                             info!("DEBUG: No differences found between XZ and disk content ({} bytes in {} blocks)", total_compared, block_number);
                         } else {
@@ -846,7 +845,7 @@ impl Disk {
                             }
                             Err(e) => {
                                 error!("Error reading data for verification: {}", e);
-                                
+
                                 // Check for specific Windows errors that indicate device disconnection
                                 if let Some(error_code) = e.raw_os_error() {
                                     match error_code {

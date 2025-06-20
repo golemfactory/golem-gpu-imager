@@ -1,6 +1,6 @@
 use super::{EditMessage, EditState, EditWorkflowState};
 use iced::Task;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 pub fn handle_message(
     state: &mut EditState,
@@ -16,15 +16,79 @@ pub fn handle_message(
         }
 
         EditMessage::GotoEditConfiguration => {
-            if state.selected_device.is_some() {
-                state.workflow_state = EditWorkflowState::EditConfiguration {
-                    payment_network: crate::models::PaymentNetwork::Testnet,
-                    subnet: "public".to_string(),
-                    network_type: crate::models::NetworkType::Central,
-                    wallet_address: String::new(),
-                    is_wallet_valid: true,
-                };
+            if let Some(device_index) = state.selected_device {
+                if let Some(device) = device_selection.devices.get(device_index) {
+                    // Set loading state
+                    state.workflow_state = EditWorkflowState::LoadingConfiguration;
+                    
+                    // Start async task to read configuration from device
+                    let device_path = device.path.clone();
+                    debug!("Reading configuration from device: {} ({})", device.name, device.path);
+                    
+                    Task::perform(
+                        async move {
+                            // Lock the device for reading
+                            match crate::disk::Disk::lock_path(&device_path, true).await {
+                                Ok(mut disk) => {
+                                    // Read configuration from device
+                                    match disk.read_configuration("33b921b8-edc5-46a0-8baa-d0b7ad84fc71") {
+                                        Ok(config) => {
+                                            info!("Successfully read configuration from device: {}", device_path);
+                                            Ok(config)
+                                        }
+                                        Err(e) => {
+                                            warn!("Failed to read configuration from device {}: {}", device_path, e);
+                                            Err(format!("Failed to read configuration: {}", e))
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    error!("Failed to lock device {} for reading: {}", device_path, e);
+                                    Err(format!("Failed to lock device: {}", e))
+                                }
+                            }
+                        },
+                        |result| match result {
+                            Ok(config) => crate::ui::messages::Message::Edit(EditMessage::DeviceConfigurationLoaded(config)),
+                            Err(err) => crate::ui::messages::Message::Edit(EditMessage::DeviceConfigurationLoadFailed(err)),
+                        }
+                    )
+                } else {
+                    // Device not found, stay in current state
+                    Task::none()
+                }
+            } else {
+                // No device selected, stay in current state
+                Task::none()
             }
+        }
+
+        EditMessage::DeviceConfigurationLoaded(config) => {
+            // Convert loaded configuration to UI state
+            let is_wallet_valid = config.wallet_address.is_empty() 
+                || crate::utils::eth::is_valid_eth_address(&config.wallet_address);
+            
+            state.workflow_state = EditWorkflowState::EditConfiguration {
+                payment_network: config.payment_network,
+                subnet: config.subnet,
+                network_type: config.network_type,
+                wallet_address: config.wallet_address,
+                is_wallet_valid,
+            };
+            info!("Configuration loaded from device successfully");
+            Task::none()
+        }
+
+        EditMessage::DeviceConfigurationLoadFailed(error) => {
+            // Fall back to default values if configuration loading failed
+            warn!("Failed to load device configuration, using defaults: {}", error);
+            state.workflow_state = EditWorkflowState::EditConfiguration {
+                payment_network: crate::models::PaymentNetwork::Testnet,
+                subnet: "public".to_string(),
+                network_type: crate::models::NetworkType::Central,
+                wallet_address: String::new(),
+                is_wallet_valid: true,
+            };
             Task::none()
         }
 

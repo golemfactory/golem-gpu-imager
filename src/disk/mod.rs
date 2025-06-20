@@ -44,7 +44,7 @@ use linux::LinuxDiskAccess as PlatformDiskAccess;
 use windows::WindowsDiskAccess as PlatformDiskAccess;
 
 /// Configuration structure returned by read_configuration
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct GolemConfig {
     pub payment_network: crate::models::PaymentNetwork,
     pub network_type: crate::models::NetworkType,

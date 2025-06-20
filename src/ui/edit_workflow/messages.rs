@@ -4,6 +4,8 @@ use crate::models::{NetworkType, PaymentNetwork};
 pub enum EditMessage {
     SelectExistingDevice(usize),
     GotoEditConfiguration,
+    DeviceConfigurationLoaded(crate::disk::GolemConfig),
+    DeviceConfigurationLoadFailed(String),
     SaveConfiguration,
     SetPaymentNetwork(PaymentNetwork),
     SetSubnet(String),

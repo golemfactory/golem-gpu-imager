@@ -3,6 +3,7 @@ use crate::models::{NetworkType, PaymentNetwork};
 #[derive(Debug, Clone)]
 pub enum EditWorkflowState {
     SelectDevice,
+    LoadingConfiguration, // Loading configuration from selected device
     EditConfiguration {
         payment_network: PaymentNetwork,
         subnet: String,

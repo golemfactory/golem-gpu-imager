@@ -21,6 +21,9 @@ pub fn view<'a>(
             ui::view_select_existing_device(&device_selection.devices, edit_state.selected_device)
                 .map(crate::ui::messages::Message::Edit)
         }
+        EditWorkflowState::LoadingConfiguration => {
+            ui::view_loading_configuration().map(crate::ui::messages::Message::Edit)
+        }
         EditWorkflowState::EditConfiguration {
             payment_network,
             subnet,

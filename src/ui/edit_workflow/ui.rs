@@ -263,3 +263,24 @@ pub fn view_edit_configuration<'a>(
         },
     )
 }
+
+/// Loading configuration from device - shows progress indicator
+pub fn view_loading_configuration<'a>() -> Element<'a, EditMessage> {
+    let loading_content = container(
+        column![
+            icons::timer(),
+            text("Loading Configuration...").size(20),
+            text("Reading current settings from device").size(16),
+        ]
+        .spacing(20)
+        .align_x(Alignment::Center),
+    )
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .padding(50)
+    .style(crate::style::bordered_box)
+    .center_x(Length::Fill)
+    .center_y(Length::Fill);
+
+    loading_content.into()
+}

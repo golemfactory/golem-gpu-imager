@@ -44,6 +44,11 @@ impl PresetEditor {
             network_type: self.network_type,
             wallet_address: self.wallet_address.clone(),
             is_default: self.is_default,
+            non_interactive_install: false, // Default value
+            ssh_keys: Vec::new(),           // Default value
+            configuration_server: None,     // Default value
+            metrics_server: None,           // Default value
+            central_net_host: None,         // Default value
         }
     }
 
@@ -82,6 +87,11 @@ impl PresetManagerState {
                 network_type: NetworkType::Central,
                 wallet_address: "".to_string(),
                 is_default: true,
+                non_interactive_install: false,
+                ssh_keys: Vec::new(),
+                configuration_server: None,
+                metrics_server: None,
+                central_net_host: None,
             },
             ConfigurationPreset {
                 name: "Mainnet Production".to_string(),
@@ -90,6 +100,11 @@ impl PresetManagerState {
                 network_type: NetworkType::Central,
                 wallet_address: "".to_string(),
                 is_default: false,
+                non_interactive_install: false,
+                ssh_keys: Vec::new(),
+                configuration_server: None,
+                metrics_server: None,
+                central_net_host: None,
             },
         ];
         state

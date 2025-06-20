@@ -65,6 +65,11 @@ pub fn view<'a>(
             network_type,
             wallet_address,
             is_wallet_valid,
+            non_interactive_install,
+            ssh_keys,
+            configuration_server,
+            metrics_server,
+            central_net_host,
         } => {
             // Use shared configuration editor with preset support
             // Return app messages directly (no mapping) to match edit workflow pattern
@@ -74,6 +79,11 @@ pub fn view<'a>(
                 *network_type,
                 wallet_address.clone(),
                 *is_wallet_valid,
+                *non_interactive_install,
+                ssh_keys.clone(),
+                configuration_server.clone(),
+                metrics_server.clone(),
+                central_net_host.clone(),
                 &preset_manager.presets,
                 preset_manager.selected_preset,
                 &preset_manager.new_preset_name,

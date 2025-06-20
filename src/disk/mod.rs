@@ -51,6 +51,11 @@ pub struct GolemConfig {
     pub subnet: String,
     pub wallet_address: String,
     pub glm_per_hour: String,
+    pub non_interactive_install: bool,
+    pub ssh_keys: Vec<String>,
+    pub configuration_server: Option<String>,
+    pub metrics_server: Option<String>,
+    pub central_net_host: Option<String>,
 }
 
 /// Configuration for image writing and partition setup
@@ -61,6 +66,11 @@ pub struct ImageConfiguration {
     pub subnet: String,
     pub wallet_address: String,
     pub glm_per_hour: String,
+    pub non_interactive_install: bool,
+    pub ssh_keys: Vec<String>,
+    pub configuration_server: Option<String>,
+    pub metrics_server: Option<String>,
+    pub central_net_host: Option<String>,
 }
 
 impl ImageConfiguration {
@@ -77,6 +87,46 @@ impl ImageConfiguration {
             subnet,
             wallet_address,
             glm_per_hour: "0.25".to_string(),
+            non_interactive_install: false,
+            ssh_keys: Vec::new(),
+            configuration_server: None,
+            metrics_server: None,
+            central_net_host: None,
+        }
+    }
+
+    /// Create a new ImageConfiguration with all options
+    pub fn new_with_options(
+        payment_network: crate::models::PaymentNetwork,
+        network_type: crate::models::NetworkType,
+        subnet: String,
+        wallet_address: String,
+        non_interactive_install: bool,
+        ssh_keys: String,
+        configuration_server: String,
+        metrics_server: String,
+        central_net_host: String,
+    ) -> Self {
+        // Parse SSH keys from string (comma or newline separated)
+        let ssh_keys_vec: Vec<String> = if ssh_keys.trim().is_empty() {
+            Vec::new()
+        } else if ssh_keys.contains('\n') {
+            ssh_keys.lines().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()
+        } else {
+            ssh_keys.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()
+        };
+
+        Self {
+            payment_network,
+            network_type,
+            subnet,
+            wallet_address,
+            glm_per_hour: "0.25".to_string(),
+            non_interactive_install,
+            ssh_keys: ssh_keys_vec,
+            configuration_server: if configuration_server.trim().is_empty() { None } else { Some(configuration_server) },
+            metrics_server: if metrics_server.trim().is_empty() { None } else { Some(metrics_server) },
+            central_net_host: if central_net_host.trim().is_empty() { None } else { Some(central_net_host) },
         }
     }
 }
@@ -446,10 +496,46 @@ impl Disk {
             let root_dir = fs.root_dir();
 
             // Write golemwz.toml
-            let toml_content = format!(
+            let mut toml_content = format!(
                 "accepted_terms = true\nglm_account = \"{}\"\nglm_per_hour = \"{}\"\n",
                 config.wallet_address, config.glm_per_hour
             );
+
+            // Add new configuration fields
+            toml_content.push_str(&format!(
+                "non_interactive_install = {}\n",
+                config.non_interactive_install
+            ));
+
+            if !config.ssh_keys.is_empty() {
+                let keys_str = config
+                    .ssh_keys
+                    .iter()
+                    .map(|k| format!("\"{}\"", k))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                toml_content.push_str(&format!("ssh_keys = [{}]\n", keys_str));
+            } else {
+                toml_content.push_str("ssh_keys = []\n");
+            }
+
+            if let Some(config_server) = &config.configuration_server {
+                toml_content.push_str(&format!("configuration_server = \"{}\"\n", config_server));
+            } else {
+                toml_content.push_str("configuration_server = \"\"\n");
+            }
+
+            if let Some(metrics_srv) = &config.metrics_server {
+                toml_content.push_str(&format!("metrics_server = \"{}\"\n", metrics_srv));
+            } else {
+                toml_content.push_str("metrics_server = \"\"\n");
+            }
+
+            if let Some(central_host) = &config.central_net_host {
+                toml_content.push_str(&format!("central_net_host = \"{}\"\n", central_host));
+            } else {
+                toml_content.push_str("central_net_host = \"\"\n");
+            }
             let mut toml_file = root_dir.create_file("golemwz.toml")?;
             toml_file.write_all(toml_content.as_bytes())?;
             toml_file.flush()?;
@@ -464,10 +550,26 @@ impl Disk {
                 crate::models::NetworkType::Hybrid => "hybrid",
                 crate::models::NetworkType::Central => "central",
             };
-            let env_content = format!(
+            let mut env_content = format!(
                 "YA_NET_TYPE={}\nSUBNET={}\nYA_PAYMENT_NETWORK_GROUP={}\n",
                 network_type_str, config.subnet, payment_network_str
             );
+
+            // Add new environment variables
+            if let Some(central_host) = &config.central_net_host {
+                env_content.push_str(&format!("CENTRAL_NET_HOST={}\n", central_host));
+            } else {
+                env_content.push_str("CENTRAL_NET_HOST=\n");
+            }
+
+            if let Some(metrics_srv) = &config.metrics_server {
+                env_content.push_str(&format!("YAGNA_METRICS_URL={}\n", metrics_srv));
+            } else {
+                env_content.push_str("YAGNA_METRICS_URL=https://metrics.golem.network:9092/\n");
+            }
+
+            env_content.push_str("YAGNA_METRICS_JOB_NAME=community.1\n");
+            env_content.push_str("YAGNA_METRICS_GROUP=\n");
             let mut env_file = root_dir.create_file("golem.env")?;
             env_file.write_all(env_content.as_bytes())?;
             env_file.flush()?;
@@ -1044,6 +1146,11 @@ impl Disk {
             config.network_type,
             &config.subnet,
             &config.wallet_address,
+            config.non_interactive_install,
+            &config.ssh_keys,
+            config.configuration_server.as_deref(),
+            config.metrics_server.as_deref(),
+            config.central_net_host.as_deref(),
         )?;
 
         info!("Successfully wrote configuration to disk");
@@ -1391,6 +1498,11 @@ impl Disk {
             subnet: "public".to_string(),
             wallet_address: "".to_string(),
             glm_per_hour: "0.25".to_string(),
+            non_interactive_install: false,
+            ssh_keys: Vec::new(),
+            configuration_server: None,
+            metrics_server: None,
+            central_net_host: None,
         };
 
         // Use the find_partition function to get a properly initialized FAT filesystem
@@ -1423,6 +1535,49 @@ impl Disk {
                             // Extract rate
                             if let Some(value) = Self::extract_toml_string_value(line) {
                                 config.glm_per_hour = value;
+                            }
+                        } else if line.starts_with("non_interactive_install") {
+                            // Extract non-interactive install flag
+                            if let Some(value) = Self::extract_toml_string_value(line) {
+                                config.non_interactive_install =
+                                    value.parse::<bool>().unwrap_or(false);
+                            }
+                        } else if line.starts_with("ssh_keys") {
+                            // Extract SSH keys array - simplified parsing for array format
+                            if let Some(value) = Self::extract_toml_string_value(line) {
+                                // Parse as JSON-like array or comma-separated values
+                                if value.starts_with('[') && value.ends_with(']') {
+                                    let keys_str = &value[1..value.len() - 1];
+                                    config.ssh_keys = keys_str
+                                        .split(',')
+                                        .map(|s| s.trim().trim_matches('"').to_string())
+                                        .filter(|s| !s.is_empty())
+                                        .collect();
+                                } else {
+                                    // Fallback: treat as single key
+                                    config.ssh_keys = vec![value];
+                                }
+                            }
+                        } else if line.starts_with("configuration_server") {
+                            // Extract configuration server URL
+                            if let Some(value) = Self::extract_toml_string_value(line) {
+                                if !value.is_empty() {
+                                    config.configuration_server = Some(value);
+                                }
+                            }
+                        } else if line.starts_with("metrics_server") {
+                            // Extract metrics server URL
+                            if let Some(value) = Self::extract_toml_string_value(line) {
+                                if !value.is_empty() {
+                                    config.metrics_server = Some(value);
+                                }
+                            }
+                        } else if line.starts_with("central_net_host") {
+                            // Extract central net host
+                            if let Some(value) = Self::extract_toml_string_value(line) {
+                                if !value.is_empty() {
+                                    config.central_net_host = Some(value);
+                                }
                             }
                         }
                     }
@@ -1460,6 +1615,16 @@ impl Disk {
                                 "mainnet" => crate::models::PaymentNetwork::Mainnet,
                                 _ => crate::models::PaymentNetwork::Testnet,
                             };
+                        } else if line.starts_with("CENTRAL_NET_HOST=") {
+                            let value = line.trim_start_matches("CENTRAL_NET_HOST=").trim();
+                            if !value.is_empty() {
+                                config.central_net_host = Some(value.to_string());
+                            }
+                        } else if line.starts_with("YAGNA_METRICS_URL=") {
+                            let value = line.trim_start_matches("YAGNA_METRICS_URL=").trim();
+                            if !value.is_empty() {
+                                config.metrics_server = Some(value.to_string());
+                            }
                         }
                     }
                 }
@@ -1481,6 +1646,11 @@ impl Disk {
     /// * `network_type` - The network type (Hybrid or Central)
     /// * `subnet` - The subnet name
     /// * `wallet_address` - The GLM wallet address
+    /// * `non_interactive_install` - Whether to enable non-interactive installation
+    /// * `ssh_keys` - SSH public keys for user golem
+    /// * `configuration_server` - Optional configuration server URL
+    /// * `metrics_server` - Optional metrics server URL
+    /// * `central_net_host` - Optional central net host
     ///
     /// # Returns
     /// * `Result<()>` - Ok on success, Error on failure
@@ -1491,6 +1661,11 @@ impl Disk {
         network_type: crate::models::NetworkType,
         subnet: &str,
         wallet_address: &str,
+        non_interactive_install: bool,
+        ssh_keys: &[String],
+        configuration_server: Option<&str>,
+        metrics_server: Option<&str>,
+        central_net_host: Option<&str>,
     ) -> Result<()> {
         // Use the in-memory approach to avoid small I/O operations
         self.write_configuration_in_memory(
@@ -1499,6 +1674,11 @@ impl Disk {
             network_type,
             subnet,
             wallet_address,
+            non_interactive_install,
+            ssh_keys,
+            configuration_server,
+            metrics_server,
+            central_net_host,
         )
     }
 
@@ -1514,6 +1694,11 @@ impl Disk {
     /// * `network_type` - The network type (Hybrid or Central)
     /// * `subnet` - The subnet name
     /// * `wallet_address` - The GLM wallet address
+    /// * `non_interactive_install` - Whether to enable non-interactive installation
+    /// * `ssh_keys` - SSH public keys for user golem
+    /// * `configuration_server` - Optional configuration server URL
+    /// * `metrics_server` - Optional metrics server URL
+    /// * `central_net_host` - Optional central net host
     ///
     /// # Returns
     /// * `Result<()>` - Ok on success, Error on failure
@@ -1524,6 +1709,11 @@ impl Disk {
         network_type: crate::models::NetworkType,
         subnet: &str,
         wallet_address: &str,
+        non_interactive_install: bool,
+        ssh_keys: &[String],
+        configuration_server: Option<&str>,
+        metrics_server: Option<&str>,
+        central_net_host: Option<&str>,
     ) -> Result<()> {
         use std::io::{Cursor, Seek, SeekFrom, Write};
         use tracing::{info, warn};
@@ -1562,10 +1752,45 @@ impl Disk {
         cursor.seek(SeekFrom::Start(0))?;
 
         // Prepare the TOML content (complete file) before writing
-        let toml_content = format!(
+        let mut toml_content = format!(
             "accepted_terms = true\nglm_account = \"{}\"\nglm_per_hour = \"0.25\"\n",
             wallet_address
         );
+
+        // Add new configuration fields
+        toml_content.push_str(&format!(
+            "non_interactive_install = {}\n",
+            non_interactive_install
+        ));
+
+        if !ssh_keys.is_empty() {
+            let keys_str = ssh_keys
+                .iter()
+                .map(|k| format!("\"{}\"", k))
+                .collect::<Vec<_>>()
+                .join(", ");
+            toml_content.push_str(&format!("ssh_keys = [{}]\n", keys_str));
+        } else {
+            toml_content.push_str("ssh_keys = []\n");
+        }
+
+        if let Some(config_server) = configuration_server {
+            toml_content.push_str(&format!("configuration_server = \"{}\"\n", config_server));
+        } else {
+            toml_content.push_str("configuration_server = \"\"\n");
+        }
+
+        if let Some(metrics_srv) = metrics_server {
+            toml_content.push_str(&format!("metrics_server = \"{}\"\n", metrics_srv));
+        } else {
+            toml_content.push_str("metrics_server = \"\"\n");
+        }
+
+        if let Some(central_host) = central_net_host {
+            toml_content.push_str(&format!("central_net_host = \"{}\"\n", central_host));
+        } else {
+            toml_content.push_str("central_net_host = \"\"\n");
+        }
 
         // Prepare ENV content (complete file) before writing
         let payment_network_str = match payment_network {
@@ -1578,10 +1803,26 @@ impl Disk {
             crate::models::NetworkType::Central => "central",
         };
 
-        let env_content = format!(
+        let mut env_content = format!(
             "YA_NET_TYPE={}\nSUBNET={}\nYA_PAYMENT_NETWORK_GROUP={}\n",
             network_type_str, subnet, payment_network_str
         );
+
+        // Add new environment variables
+        if let Some(central_host) = central_net_host {
+            env_content.push_str(&format!("CENTRAL_NET_HOST={}\n", central_host));
+        } else {
+            env_content.push_str("CENTRAL_NET_HOST=\n");
+        }
+
+        if let Some(metrics_srv) = metrics_server {
+            env_content.push_str(&format!("YAGNA_METRICS_URL={}\n", metrics_srv));
+        } else {
+            env_content.push_str("YAGNA_METRICS_URL=https://metrics.golem.network:9092/\n");
+        }
+
+        env_content.push_str("YAGNA_METRICS_JOB_NAME=community.1\n");
+        env_content.push_str("YAGNA_METRICS_GROUP=\n");
 
         info!("Subnet value being written: '{}'", subnet);
 

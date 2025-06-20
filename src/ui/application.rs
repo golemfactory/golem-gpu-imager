@@ -255,10 +255,14 @@ impl GolemGpuImager {
                 Task::none()
             }
 
-            // Preset management messages - TODO: Implement properly
-            Message::SaveAsPreset => {
-                // TODO: Save current configuration as preset
-                Task::none()
+            // Preset management messages
+            Message::SaveAsPreset(preset) => {
+                // Forward to preset manager with the provided configuration
+                crate::ui::preset_manager::handler::handle_message(
+                    &mut self.preset_manager,
+                    &mut self.preset_manager_backend,
+                    crate::ui::preset_manager::PresetManagerMessage::SaveAsPreset(preset),
+                )
             }
 
             Message::SelectPreset(index) => {
@@ -274,6 +278,7 @@ impl GolemGpuImager {
                             network_type,
                             wallet_address,
                             is_wallet_valid,
+                            ..
                         } = &mut flash_state.workflow_state
                         {
                             *payment_network = preset.payment_network;
@@ -293,6 +298,7 @@ impl GolemGpuImager {
                             network_type,
                             wallet_address,
                             is_wallet_valid,
+                            ..
                         } = &mut edit_state.workflow_state
                         {
                             *payment_network = preset.payment_network;
@@ -366,7 +372,7 @@ impl GolemGpuImager {
             Message::InitializeFlashConfiguration => {
                 if let Some(flash_state) = &mut self.flash_workflow {
                     // Get the default preset values if a default preset is selected
-                    let (payment_network, subnet, network_type, wallet_address) =
+                    let (payment_network, subnet, network_type, wallet_address, non_interactive_install, ssh_keys, configuration_server, metrics_server, central_net_host) =
                         if let Some(selected_index) = self.preset_manager.selected_preset {
                             if let Some(preset) = self.preset_manager.presets.get(selected_index) {
                                 (
@@ -374,6 +380,11 @@ impl GolemGpuImager {
                                     preset.subnet.clone(),
                                     preset.network_type,
                                     preset.wallet_address.clone(),
+                                    preset.non_interactive_install,
+                                    preset.ssh_keys.join("\n"),
+                                    preset.configuration_server.clone().unwrap_or_default(),
+                                    preset.metrics_server.clone().unwrap_or_default(),
+                                    preset.central_net_host.clone().unwrap_or_default(),
                                 )
                             } else {
                                 // Fallback to defaults if preset not found
@@ -381,6 +392,11 @@ impl GolemGpuImager {
                                     crate::models::PaymentNetwork::Testnet,
                                     "public".to_string(),
                                     crate::models::NetworkType::Central,
+                                    String::new(),
+                                    false,
+                                    String::new(),
+                                    String::new(),
+                                    String::new(),
                                     String::new(),
                                 )
                             }
@@ -390,6 +406,11 @@ impl GolemGpuImager {
                                 crate::models::PaymentNetwork::Testnet,
                                 "public".to_string(),
                                 crate::models::NetworkType::Central,
+                                String::new(),
+                                false,
+                                String::new(),
+                                String::new(),
+                                String::new(),
                                 String::new(),
                             )
                         };
@@ -402,6 +423,11 @@ impl GolemGpuImager {
                         wallet_address: wallet_address.clone(),
                         is_wallet_valid: wallet_address.is_empty()
                             || crate::utils::eth::is_valid_eth_address(&wallet_address),
+                        non_interactive_install,
+                        ssh_keys,
+                        configuration_server,
+                        metrics_server,
+                        central_net_host,
                     };
                 }
                 Task::none()

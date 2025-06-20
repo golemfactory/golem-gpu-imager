@@ -14,7 +14,7 @@ pub enum PresetEditorMessage {
 
 #[derive(Debug, Clone)]
 pub enum PresetManagerMessage {
-    SaveAsPreset,                  // Save current configuration as a new preset
+    SaveAsPreset(crate::models::ConfigurationPreset), // Save current configuration as a new preset
     SelectPreset(usize),           // Select a preset by index
     DeletePreset(usize),           // Delete a preset by index
     SetDefaultPreset(usize),       // Set a preset as default

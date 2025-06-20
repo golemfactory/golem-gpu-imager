@@ -27,7 +27,7 @@ pub enum Message {
     CheckElevationStatus,
 
     // Preset management
-    SaveAsPreset,
+    SaveAsPreset(crate::models::ConfigurationPreset),
     SelectPreset(usize),
     DeletePreset(usize),
     SetDefaultPreset(usize),

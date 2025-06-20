@@ -73,18 +73,11 @@ pub fn handle_message(
             Task::none()
         }
 
-        PresetManagerMessage::SaveAsPreset => {
+        PresetManagerMessage::SaveAsPreset(mut new_preset) => {
             if !state.new_preset_name.trim().is_empty() {
-                // This would need current configuration from the calling context
-                // For now, create a placeholder
-                let new_preset = ConfigurationPreset {
-                    name: state.new_preset_name.clone(),
-                    payment_network: crate::models::PaymentNetwork::Testnet,
-                    subnet: "public".to_string(),
-                    network_type: crate::models::NetworkType::Central,
-                    wallet_address: String::new(),
-                    is_default: false,
-                };
+                // Use the provided configuration preset with the user-entered name
+                new_preset.name = state.new_preset_name.clone();
+                new_preset.is_default = false; // New presets are not default by default
 
                 let preset_name = new_preset.name.clone();
                 state.presets.push(new_preset.clone());

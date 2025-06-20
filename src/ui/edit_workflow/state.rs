@@ -10,6 +10,11 @@ pub enum EditWorkflowState {
         network_type: NetworkType,
         wallet_address: String,
         is_wallet_valid: bool,
+        non_interactive_install: bool,
+        ssh_keys: String,
+        configuration_server: String,
+        metrics_server: String,
+        central_net_host: String,
     },
     Completion(bool), // Success or failure
 }

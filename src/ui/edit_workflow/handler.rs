@@ -20,38 +20,56 @@ pub fn handle_message(
                 if let Some(device) = device_selection.devices.get(device_index) {
                     // Set loading state
                     state.workflow_state = EditWorkflowState::LoadingConfiguration;
-                    
+
                     // Start async task to read configuration from device
                     let device_path = device.path.clone();
-                    debug!("Reading configuration from device: {} ({})", device.name, device.path);
-                    
+                    debug!(
+                        "Reading configuration from device: {} ({})",
+                        device.name, device.path
+                    );
+
                     Task::perform(
                         async move {
                             // Lock the device for reading
                             match crate::disk::Disk::lock_path(&device_path, true).await {
                                 Ok(mut disk) => {
                                     // Read configuration from device
-                                    match disk.read_configuration("33b921b8-edc5-46a0-8baa-d0b7ad84fc71") {
+                                    match disk
+                                        .read_configuration("33b921b8-edc5-46a0-8baa-d0b7ad84fc71")
+                                    {
                                         Ok(config) => {
-                                            info!("Successfully read configuration from device: {}", device_path);
+                                            info!(
+                                                "Successfully read configuration from device: {}",
+                                                device_path
+                                            );
                                             Ok(config)
                                         }
                                         Err(e) => {
-                                            warn!("Failed to read configuration from device {}: {}", device_path, e);
+                                            warn!(
+                                                "Failed to read configuration from device {}: {}",
+                                                device_path, e
+                                            );
                                             Err(format!("Failed to read configuration: {}", e))
                                         }
                                     }
                                 }
                                 Err(e) => {
-                                    error!("Failed to lock device {} for reading: {}", device_path, e);
+                                    error!(
+                                        "Failed to lock device {} for reading: {}",
+                                        device_path, e
+                                    );
                                     Err(format!("Failed to lock device: {}", e))
                                 }
                             }
                         },
                         |result| match result {
-                            Ok(config) => crate::ui::messages::Message::Edit(EditMessage::DeviceConfigurationLoaded(config)),
-                            Err(err) => crate::ui::messages::Message::Edit(EditMessage::DeviceConfigurationLoadFailed(err)),
-                        }
+                            Ok(config) => crate::ui::messages::Message::Edit(
+                                EditMessage::DeviceConfigurationLoaded(config),
+                            ),
+                            Err(err) => crate::ui::messages::Message::Edit(
+                                EditMessage::DeviceConfigurationLoadFailed(err),
+                            ),
+                        },
                     )
                 } else {
                     // Device not found, stay in current state
@@ -65,15 +83,20 @@ pub fn handle_message(
 
         EditMessage::DeviceConfigurationLoaded(config) => {
             // Convert loaded configuration to UI state
-            let is_wallet_valid = config.wallet_address.is_empty() 
+            let is_wallet_valid = config.wallet_address.is_empty()
                 || crate::utils::eth::is_valid_eth_address(&config.wallet_address);
-            
+
             state.workflow_state = EditWorkflowState::EditConfiguration {
                 payment_network: config.payment_network,
                 subnet: config.subnet,
                 network_type: config.network_type,
                 wallet_address: config.wallet_address,
                 is_wallet_valid,
+                non_interactive_install: config.non_interactive_install,
+                ssh_keys: config.ssh_keys.join("\n"),
+                configuration_server: config.configuration_server.unwrap_or_default(),
+                metrics_server: config.metrics_server.unwrap_or_default(),
+                central_net_host: config.central_net_host.unwrap_or_default(),
             };
             info!("Configuration loaded from device successfully");
             Task::none()
@@ -81,13 +104,21 @@ pub fn handle_message(
 
         EditMessage::DeviceConfigurationLoadFailed(error) => {
             // Fall back to default values if configuration loading failed
-            warn!("Failed to load device configuration, using defaults: {}", error);
+            warn!(
+                "Failed to load device configuration, using defaults: {}",
+                error
+            );
             state.workflow_state = EditWorkflowState::EditConfiguration {
                 payment_network: crate::models::PaymentNetwork::Testnet,
                 subnet: "public".to_string(),
                 network_type: crate::models::NetworkType::Central,
                 wallet_address: String::new(),
                 is_wallet_valid: true,
+                non_interactive_install: false,
+                ssh_keys: String::new(),
+                configuration_server: String::new(),
+                metrics_server: String::new(),
+                central_net_host: String::new(),
             };
             Task::none()
         }
@@ -138,6 +169,61 @@ pub fn handle_message(
             Task::none()
         }
 
+        EditMessage::SetNonInteractiveInstall(enabled) => {
+            if let EditWorkflowState::EditConfiguration {
+                non_interactive_install,
+                ..
+            } = &mut state.workflow_state
+            {
+                *non_interactive_install = enabled;
+            }
+            Task::none()
+        }
+
+        EditMessage::SetSSHKeys(keys) => {
+            if let EditWorkflowState::EditConfiguration {
+                ssh_keys,
+                ..
+            } = &mut state.workflow_state
+            {
+                *ssh_keys = keys;
+            }
+            Task::none()
+        }
+
+        EditMessage::SetConfigurationServer(server) => {
+            if let EditWorkflowState::EditConfiguration {
+                configuration_server,
+                ..
+            } = &mut state.workflow_state
+            {
+                *configuration_server = server;
+            }
+            Task::none()
+        }
+
+        EditMessage::SetMetricsServer(server) => {
+            if let EditWorkflowState::EditConfiguration {
+                metrics_server,
+                ..
+            } = &mut state.workflow_state
+            {
+                *metrics_server = server;
+            }
+            Task::none()
+        }
+
+        EditMessage::SetCentralNetHost(host) => {
+            if let EditWorkflowState::EditConfiguration {
+                central_net_host,
+                ..
+            } = &mut state.workflow_state
+            {
+                *central_net_host = host;
+            }
+            Task::none()
+        }
+
         EditMessage::SelectPreset(index) => {
             // Forward to the application level to handle preset selection
             Task::done(crate::ui::messages::Message::SelectPreset(index))
@@ -180,6 +266,11 @@ pub fn handle_message(
                     subnet,
                     network_type,
                     wallet_address,
+                    non_interactive_install,
+                    ssh_keys,
+                    configuration_server,
+                    metrics_server,
+                    central_net_host,
                     ..
                 },
             ) = (state.selected_device, &state.workflow_state)
@@ -196,6 +287,11 @@ pub fn handle_message(
                     let subnet = subnet.clone();
                     let network_type = *network_type;
                     let wallet_address = wallet_address.clone();
+                    let non_interactive_install = *non_interactive_install;
+                    let ssh_keys = ssh_keys.clone();
+                    let configuration_server = configuration_server.clone();
+                    let metrics_server = metrics_server.clone();
+                    let central_net_host = central_net_host.clone();
 
                     Task::perform(
                         async move {
@@ -204,14 +300,18 @@ pub fn handle_message(
 
                             info!("Starting configuration save to device: {}", device_path);
 
-                            // Create configuration from current settings
-                            let config = ImageConfiguration {
+                            // Create configuration from current settings using new_with_options
+                            let config = ImageConfiguration::new_with_options(
                                 payment_network,
                                 network_type,
                                 subnet,
                                 wallet_address,
-                                glm_per_hour: "0.25".to_string(), // Default value
-                            };
+                                non_interactive_install,
+                                ssh_keys,
+                                configuration_server,
+                                metrics_server,
+                                central_net_host,
+                            );
 
                             // Attempt to write configuration to the device
                             match Disk::write_configuration_to_disk(&device_path, config).await {

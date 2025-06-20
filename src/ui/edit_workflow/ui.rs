@@ -1,4 +1,4 @@
-use iced::widget::{button, column, container, row, text, Column, Container};
+use iced::widget::{Column, Container, button, column, container, row, text};
 use iced::{Alignment, Color, Element, Length};
 
 use super::EditMessage;
@@ -236,6 +236,11 @@ pub fn view_edit_configuration<'a>(
     network_type: NetworkType,
     wallet_address: String,
     is_wallet_valid: bool,
+    non_interactive_install: bool,
+    ssh_keys: String,
+    configuration_server: String,
+    metrics_server: String,
+    central_net_host: String,
     configuration_presets: &'a [crate::models::ConfigurationPreset],
     selected_preset: Option<usize>,
     new_preset_name: &'a str,
@@ -243,12 +248,17 @@ pub fn view_edit_configuration<'a>(
     preset_editor: Option<&'a crate::ui::preset_manager::PresetEditor>,
 ) -> Element<'a, Message> {
     // Use the shared configuration editor
-    crate::ui::view_configuration_editor(
+    crate::ui::shared::configuration::view_configuration_editor(
         payment_network,
         subnet,
         network_type,
         wallet_address,
         is_wallet_valid,
+        non_interactive_install,
+        ssh_keys,
+        configuration_server,
+        metrics_server,
+        central_net_host,
         "Edit Configuration",
         "Edit the configuration settings for your device:",
         Message::Edit(EditMessage::BackToDeviceSelection), // Back to device selection
@@ -277,6 +287,22 @@ pub fn view_edit_configuration<'a>(
                 }
                 ConfigMessage::SelectPreset(index) => {
                     Message::Edit(EditMessage::SelectPreset(index))
+                }
+                // Handle the new configuration messages properly
+                ConfigMessage::SetNonInteractiveInstall(enabled) => {
+                    Message::Edit(EditMessage::SetNonInteractiveInstall(enabled))
+                }
+                ConfigMessage::SetSSHKeys(keys) => {
+                    Message::Edit(EditMessage::SetSSHKeys(keys))
+                }
+                ConfigMessage::SetConfigurationServer(server) => {
+                    Message::Edit(EditMessage::SetConfigurationServer(server))
+                }
+                ConfigMessage::SetMetricsServer(server) => {
+                    Message::Edit(EditMessage::SetMetricsServer(server))
+                }
+                ConfigMessage::SetCentralNetHost(host) => {
+                    Message::Edit(EditMessage::SetCentralNetHost(host))
                 }
             }
         },

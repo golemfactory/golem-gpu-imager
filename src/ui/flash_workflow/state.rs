@@ -44,6 +44,11 @@ pub enum FlashWorkflowState {
         network_type: NetworkType,
         wallet_address: String,
         is_wallet_valid: bool,
+        non_interactive_install: bool,
+        ssh_keys: String,
+        configuration_server: String,
+        metrics_server: String,
+        central_net_host: String,
     },
     ClearingPartitions(f32), // Progress 0.0 - 1.0 for partition clearing
     WritingImage(f32),       // Progress 0.0 - 1.0 for image writing

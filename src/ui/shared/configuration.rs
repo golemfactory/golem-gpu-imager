@@ -1,5 +1,6 @@
 use iced::widget::{
-    Column, Container, button, column, container, pick_list, row, scrollable, text, text_input,
+    Column, Container, button, checkbox, column, container, pick_list, row, scrollable, text,
+    text_input,
 };
 use iced::{Alignment, Color, Element, Length};
 use iced::{Border, Theme};
@@ -15,6 +16,11 @@ pub enum ConfigMessage {
     SetSubnet(String),
     SetWalletAddress(String),
     SelectPreset(usize),
+    SetNonInteractiveInstall(bool),
+    SetSSHKeys(String),
+    SetConfigurationServer(String),
+    SetMetricsServer(String),
+    SetCentralNetHost(String),
 }
 
 /// Shared configuration UI component used in both flash and edit workflows
@@ -24,6 +30,11 @@ pub fn view_configuration_editor<'a, F>(
     network_type: NetworkType,
     wallet_address: String,
     is_wallet_valid: bool,
+    non_interactive_install: bool,
+    ssh_keys: String,
+    configuration_server: String,
+    metrics_server: String,
+    central_net_host: String,
     title_text: &'a str,
     description_text: &'a str,
     back_action: Message,
@@ -120,6 +131,16 @@ where
     // Configuration form section
     let form_section = container(
         column![
+            // Non-interactive install (headless mode) - at the top as requested
+            column![
+                checkbox("Non-Interactive Mode (Headless)", non_interactive_install)
+                    .on_toggle(move |checked| message_factory(ConfigMessage::SetNonInteractiveInstall(checked)))
+                    .size(16),
+                text("First OS start will not ask anything - will select available GPUs and data partition without user interaction")
+                    .size(12)
+                    .color(Color::from_rgb(0.6, 0.6, 0.6)),
+            ]
+            .spacing(5),
             // Payment Network selection
             column![
                 text("Payment Network").size(16),
@@ -217,6 +238,56 @@ where
                 }
             ]
             .spacing(5),
+            // SSH Keys configuration
+            column![
+                text("SSH Public Keys").size(16),
+                text_input("Enter SSH public keys (one per line or comma separated)", &ssh_keys)
+                    .on_input(move |keys| message_factory(ConfigMessage::SetSSHKeys(keys)))
+                    .width(Length::Fill)
+                    .style(crate::style::default_text_input),
+                text("Public keys in OpenSSH format for user 'golem' - leave empty if not needed")
+                    .size(12)
+                    .color(Color::from_rgb(0.6, 0.6, 0.6)),
+            ]
+            .spacing(5),
+            // Configuration Server
+            column![
+                text("Configuration Server (Optional)").size(16),
+                text_input("Enter configuration server URL", &configuration_server)
+                    .on_input(move |server| message_factory(ConfigMessage::SetConfigurationServer(server)))
+                    .width(Length::Fill)
+                    .style(crate::style::default_text_input),
+                text("URL to server where to look for configuration updates")
+                    .size(12)
+                    .color(Color::from_rgb(0.6, 0.6, 0.6)),
+            ]
+            .spacing(5),
+            // Advanced Options Section
+            text("Advanced Options").size(18).color(Color::from_rgb(0.8, 0.8, 0.8)),
+            // Metrics Server
+            column![
+                text("Metrics Server").size(16),
+                text_input("Enter metrics server URL", &metrics_server)
+                    .on_input(move |server| message_factory(ConfigMessage::SetMetricsServer(server)))
+                    .width(Length::Fill)
+                    .style(crate::style::default_text_input),
+                text("URL to metrics server push endpoint (default: https://metrics.golem.network:9092/)")
+                    .size(12)
+                    .color(Color::from_rgb(0.6, 0.6, 0.6)),
+            ]
+            .spacing(5),
+            // Central Net Host
+            column![
+                text("Central Net Host").size(16),
+                text_input("Enter central net server address", &central_net_host)
+                    .on_input(move |host| message_factory(ConfigMessage::SetCentralNetHost(host)))
+                    .width(Length::Fill)
+                    .style(crate::style::default_text_input),
+                text("Central network coordination server address (leave empty by default)")
+                    .size(12)
+                    .color(Color::from_rgb(0.6, 0.6, 0.6)),
+            ]
+            .spacing(5),
         ]
         .spacing(20),
     )
@@ -239,7 +310,19 @@ where
                             .spacing(5)
                             .align_y(Alignment::Center)
                     )
-                    .on_press(Message::SaveAsPreset)
+                    .on_press(Message::SaveAsPreset(crate::models::ConfigurationPreset {
+                        name: new_preset_name.to_string(),
+                        payment_network,
+                        subnet: subnet.clone(),
+                        network_type,
+                        wallet_address: wallet_address.clone(),
+                        non_interactive_install,
+                        ssh_keys: ssh_keys.split('\n').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect(),
+                        configuration_server: if configuration_server.trim().is_empty() { None } else { Some(configuration_server.clone()) },
+                        metrics_server: if metrics_server.trim().is_empty() { None } else { Some(metrics_server.clone()) },
+                        central_net_host: if central_net_host.trim().is_empty() { None } else { Some(central_net_host.clone()) },
+                        is_default: false,
+                    }))
                     .padding(8)
                     .style(button::primary)
                 ]

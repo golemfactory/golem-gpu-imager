@@ -21,6 +21,11 @@ pub enum FlashMessage {
     SetSubnet(String),
     SetNetworkType(NetworkType),
     SetWalletAddress(String),
+    SetNonInteractiveInstall(bool),
+    SetSSHKeys(String),
+    SetConfigurationServer(String),
+    SetMetricsServer(String),
+    SetCentralNetHost(String),
     SelectPreset(usize), // Select a configuration preset
     SelectTargetDevice(usize),
     RefreshTargetDevices, // Delegate device refresh to DeviceSelection module

@@ -1244,6 +1244,11 @@ pub fn view_flash_configure_settings<'a>(
     network_type: crate::models::NetworkType,
     wallet_address: String,
     is_wallet_valid: bool,
+    non_interactive_install: bool,
+    ssh_keys: String,
+    configuration_server: String,
+    metrics_server: String,
+    central_net_host: String,
     configuration_presets: &'a [crate::models::ConfigurationPreset],
     selected_preset: Option<usize>,
     new_preset_name: &'a str,
@@ -1257,6 +1262,11 @@ pub fn view_flash_configure_settings<'a>(
         network_type,
         wallet_address,
         is_wallet_valid,
+        non_interactive_install,
+        ssh_keys,
+        configuration_server,
+        metrics_server,
+        central_net_host,
         "Configure Settings",
         "Configure your Golem Network settings before flashing:",
         crate::ui::messages::Message::Flash(FlashMessage::BackToSelectTargetDevice),
@@ -1285,6 +1295,22 @@ pub fn view_flash_configure_settings<'a>(
             }
             crate::ui::shared::configuration::ConfigMessage::SelectPreset(index) => {
                 crate::ui::messages::Message::Flash(FlashMessage::SelectPreset(index))
+            }
+            // Handle the new configuration messages properly
+            crate::ui::shared::configuration::ConfigMessage::SetNonInteractiveInstall(enabled) => {
+                crate::ui::messages::Message::Flash(FlashMessage::SetNonInteractiveInstall(enabled))
+            }
+            crate::ui::shared::configuration::ConfigMessage::SetSSHKeys(keys) => {
+                crate::ui::messages::Message::Flash(FlashMessage::SetSSHKeys(keys))
+            }
+            crate::ui::shared::configuration::ConfigMessage::SetConfigurationServer(server) => {
+                crate::ui::messages::Message::Flash(FlashMessage::SetConfigurationServer(server))
+            }
+            crate::ui::shared::configuration::ConfigMessage::SetMetricsServer(server) => {
+                crate::ui::messages::Message::Flash(FlashMessage::SetMetricsServer(server))
+            }
+            crate::ui::shared::configuration::ConfigMessage::SetCentralNetHost(host) => {
+                crate::ui::messages::Message::Flash(FlashMessage::SetCentralNetHost(host))
             }
         },
     )

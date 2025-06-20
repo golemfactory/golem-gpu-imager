@@ -2,6 +2,7 @@ use super::{FlashMessage, FlashState, FlashWorkflowState};
 use crate::disk::{Disk, WriteProgress};
 use crate::models::CancelToken;
 use crate::utils::repo::ImageRepo;
+use crate::utils::validation::{validate_ssh_keys, is_valid_url};
 use iced::Task;
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
@@ -108,6 +109,61 @@ pub fn handle_message(
                 *wallet_address = address.clone();
                 *is_wallet_valid =
                     address.is_empty() || crate::utils::eth::is_valid_eth_address(&address);
+            }
+            Task::none()
+        }
+
+        FlashMessage::SetNonInteractiveInstall(enabled) => {
+            if let FlashWorkflowState::ConfigureSettings {
+                non_interactive_install,
+                ..
+            } = &mut state.workflow_state
+            {
+                *non_interactive_install = enabled;
+            }
+            Task::none()
+        }
+
+        FlashMessage::SetSSHKeys(keys) => {
+            if let FlashWorkflowState::ConfigureSettings {
+                ssh_keys,
+                ..
+            } = &mut state.workflow_state
+            {
+                *ssh_keys = keys;
+            }
+            Task::none()
+        }
+
+        FlashMessage::SetConfigurationServer(server) => {
+            if let FlashWorkflowState::ConfigureSettings {
+                configuration_server,
+                ..
+            } = &mut state.workflow_state
+            {
+                *configuration_server = server;
+            }
+            Task::none()
+        }
+
+        FlashMessage::SetMetricsServer(server) => {
+            if let FlashWorkflowState::ConfigureSettings {
+                metrics_server,
+                ..
+            } = &mut state.workflow_state
+            {
+                *metrics_server = server;
+            }
+            Task::none()
+        }
+
+        FlashMessage::SetCentralNetHost(host) => {
+            if let FlashWorkflowState::ConfigureSettings {
+                central_net_host,
+                ..
+            } = &mut state.workflow_state
+            {
+                *central_net_host = host;
             }
             Task::none()
         }
@@ -720,6 +776,11 @@ pub fn handle_message(
                 network_type,
                 wallet_address,
                 is_wallet_valid,
+                non_interactive_install,
+                ssh_keys,
+                configuration_server,
+                metrics_server,
+                central_net_host,
             } = &state.workflow_state
             {
                 // Check if wallet address is valid before proceeding
@@ -733,20 +794,65 @@ pub fn handle_message(
                     ));
                 }
 
+                // Validate SSH keys
+                let ssh_key_errors = validate_ssh_keys(ssh_keys);
+                if !ssh_key_errors.is_empty() {
+                    warn!("Cannot proceed, SSH keys are invalid: {:?}", ssh_key_errors);
+                    return Task::done(crate::ui::messages::Message::ShowError(
+                        format!("Invalid SSH keys: {}", ssh_key_errors.join(", "))
+                    ));
+                }
+
+                // Validate URLs
+                if !is_valid_url(configuration_server) {
+                    warn!("Cannot proceed, configuration server URL is invalid: {}", configuration_server);
+                    return Task::done(crate::ui::messages::Message::ShowError(
+                        "Invalid configuration server URL".to_string(),
+                    ));
+                }
+
+                if !is_valid_url(metrics_server) {
+                    warn!("Cannot proceed, metrics server URL is invalid: {}", metrics_server);
+                    return Task::done(crate::ui::messages::Message::ShowError(
+                        "Invalid metrics server URL".to_string(),
+                    ));
+                }
+
+                if !is_valid_url(central_net_host) {
+                    warn!("Cannot proceed, central net host URL is invalid: {}", central_net_host);
+                    return Task::done(crate::ui::messages::Message::ShowError(
+                        "Invalid central net host URL".to_string(),
+                    ));
+                }
+
                 // Collect the data we need for the task
                 Some((
                     *payment_network,
                     *network_type,
                     subnet.clone(),
                     wallet_address.clone(),
+                    *non_interactive_install,
+                    ssh_keys.clone(),
+                    configuration_server.clone(),
+                    metrics_server.clone(),
+                    central_net_host.clone(),
                 ))
             } else {
                 None
             };
 
             // Only proceed if we have valid configuration data
-            if let Some((payment_network_val, network_type_val, subnet_val, wallet_address_val)) =
-                config_data
+            if let Some((
+                payment_network_val,
+                network_type_val,
+                subnet_val,
+                wallet_address_val,
+                non_interactive_install_val,
+                ssh_keys_val,
+                configuration_server_val,
+                metrics_server_val,
+                central_net_host_val,
+            )) = config_data
             {
                 // Get the selected OS image and device
                 if let (Some(image), Some(device_idx)) =
@@ -766,11 +872,16 @@ pub fn handle_message(
                             let cancel_token_clone = state.cancel_token.clone();
 
                             // Extract configuration before creating async closure
-                            let config = Some(crate::disk::ImageConfiguration::new(
+                            let config = Some(crate::disk::ImageConfiguration::new_with_options(
                                 payment_network_val,
                                 network_type_val,
                                 subnet_val.clone(),
                                 wallet_address_val.clone(),
+                                non_interactive_install_val,
+                                ssh_keys_val.clone(),
+                                configuration_server_val.clone(),
+                                metrics_server_val.clone(),
+                                central_net_host_val.clone(),
                             ));
 
                             info!(

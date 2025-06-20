@@ -79,7 +79,11 @@ pub fn calculate_image_metadata(
                 Err(e)
             }
             Err(e) => {
-                let error_msg = format!("Task panicked: {}", e);
+                let error_msg = if e.is_cancelled() {
+                    "Operation cancelled by user".to_string()
+                } else {
+                    format!("Task panicked: {}", e)
+                };
                 let progress = MetadataProgress::Failed {
                     error: error_msg.clone(),
                 };
@@ -130,7 +134,7 @@ fn calculate_metadata_blocking(
     loop {
         // Check for cancellation before each read
         if cancel_token.is_cancelled() {
-            info!("Metadata calculation cancelled by user");
+            info!("Metadata calculation cancelled by user at main loop check");
             return Err(anyhow!("Operation cancelled by user"));
         }
 
@@ -156,12 +160,19 @@ fn calculate_metadata_blocking(
         let estimated_progress =
             (total_uncompressed as f64 / estimated_uncompressed as f64).min(0.95) as f32;
 
-        // Send progress updates periodically (every 100MB of uncompressed data)
-        if total_uncompressed % (100 * 1024 * 1024) == 0 || bytes_read < BUFFER_SIZE {
+        // Send progress updates periodically (every 10MB of uncompressed data for more responsive cancellation)
+        if total_uncompressed % (10 * 1024 * 1024) == 0 || bytes_read < BUFFER_SIZE {
+            // Double-check for cancellation before sending progress updates
+            if cancel_token.is_cancelled() {
+                info!("Metadata calculation cancelled by user during progress update");
+                return Err(anyhow!("Operation cancelled by user"));
+            }
+
             debug!(
-                "Processed {} MB of uncompressed data (estimated progress: {:.1}%)",
+                "Processed {} MB of uncompressed data (estimated progress: {:.1}%) - cancel_token.is_cancelled(): {}",
                 total_uncompressed / (1024 * 1024),
-                estimated_progress * 100.0
+                estimated_progress * 100.0,
+                cancel_token.is_cancelled()
             );
 
             // Send progress update to UI
@@ -198,82 +209,10 @@ fn calculate_metadata_blocking(
     // Store metadata for future use
     let metadata_manager = crate::utils::image_metadata::MetadataManager::new()
         .map_err(|e| anyhow!("Failed to create metadata manager: {}", e))?;
-    
+
     if let Err(e) = metadata_manager.store_metadata(compressed_hash, &metadata) {
         tracing::warn!("Failed to store metadata: {}", e);
     }
 
     Ok(metadata)
-}
-
-/// Calculate progress estimation based on compressed file position
-/// This is a simplified approach since XzReader doesn't expose exact stream position
-fn estimate_progress_from_compressed_position(
-    compressed_bytes_read: u64,
-    total_compressed_size: u64,
-) -> f32 {
-    if total_compressed_size == 0 {
-        return 0.0;
-    }
-
-    let raw_progress = compressed_bytes_read as f32 / total_compressed_size as f32;
-
-    // Cap at 95% since decompression might finish before all compressed data is read
-    // due to padding or other factors in XZ format
-    raw_progress.min(0.95)
-}
-
-/// Validate that a calculated hash matches expected value
-pub fn validate_metadata_hash(metadata: &ImageMetadata, expected_compressed_hash: &str) -> bool {
-    metadata.compressed_hash.to_lowercase() == expected_compressed_hash.to_lowercase()
-}
-
-/// Format uncompressed size for display
-pub fn format_uncompressed_size(size_bytes: u64) -> String {
-    const GB: u64 = 1024 * 1024 * 1024;
-    const MB: u64 = 1024 * 1024;
-
-    if size_bytes >= GB {
-        format!("{:.2} GB", size_bytes as f64 / GB as f64)
-    } else if size_bytes >= MB {
-        format!("{:.1} MB", size_bytes as f64 / MB as f64)
-    } else {
-        format!("{} KB", size_bytes / 1024)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::io::Write;
-    use tempfile::NamedTempFile;
-
-    #[test]
-    fn test_format_uncompressed_size() {
-        assert_eq!(format_uncompressed_size(1024), "1 KB");
-        assert_eq!(format_uncompressed_size(1024 * 1024), "1.0 MB");
-        assert_eq!(format_uncompressed_size(2 * 1024 * 1024 * 1024), "2.00 GB");
-    }
-
-    #[test]
-    fn test_validate_metadata_hash() {
-        let metadata = ImageMetadata {
-            compressed_hash: "abc123".to_string(),
-            uncompressed_hash: "def456".to_string(),
-            uncompressed_size: 1024,
-            created_at: "2024-01-01T00:00:00Z".to_string(),
-        };
-
-        assert!(validate_metadata_hash(&metadata, "abc123"));
-        assert!(validate_metadata_hash(&metadata, "ABC123")); // Case insensitive
-        assert!(!validate_metadata_hash(&metadata, "different"));
-    }
-
-    #[test]
-    fn test_estimate_progress() {
-        assert_eq!(estimate_progress_from_compressed_position(0, 100), 0.0);
-        assert_eq!(estimate_progress_from_compressed_position(50, 100), 0.5);
-        assert_eq!(estimate_progress_from_compressed_position(100, 100), 0.95); // Capped
-        assert_eq!(estimate_progress_from_compressed_position(10, 0), 0.0); // Division by zero
-    }
 }

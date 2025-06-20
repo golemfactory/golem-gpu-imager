@@ -92,6 +92,7 @@ impl PresetManager {
     }
 
     /// Update an existing preset
+    #[allow(dead_code)]
     pub fn update_preset(
         &mut self,
         index: usize,
@@ -155,6 +156,7 @@ impl PresetManager {
     }
 
     /// Create default presets
+    #[allow(dead_code)]
     fn create_default_presets(&mut self) {
         self.presets = vec![
             ConfigurationPreset {

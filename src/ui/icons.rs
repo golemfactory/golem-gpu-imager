@@ -8,6 +8,15 @@ fn icon(unicode: char) -> iced::widget::Text<'static> {
         .align_x(iced::Center)
 }
 
+// Larger icon function for device cards and prominent UI elements
+fn device_icon(unicode: char) -> iced::widget::Text<'static> {
+    text(unicode.to_string())
+        .font(Font::with_name("Material Icons"))
+        .size(32)
+        .width(40)
+        .align_x(iced::Center)
+}
+
 pub fn house() -> iced::widget::Text<'static> {
     icon('\u{E88a}')
 }
@@ -24,6 +33,7 @@ pub fn navigate_next() -> iced::widget::Text<'static> {
     icon('\u{E409}')
 }
 
+#[allow(dead_code)]
 pub fn download() -> iced::widget::Text<'static> {
     icon('\u{F090}')
 }
@@ -33,15 +43,16 @@ pub fn warning() -> iced::widget::Text<'static> {
 }
 
 pub fn storage() -> iced::widget::Text<'static> {
-    icon('\u{e1dB}')
+    device_icon('\u{e1dB}') // Material Icons storage - larger for device cards
 }
 
+#[allow(dead_code)]
 pub fn sd_storage() -> iced::widget::Text<'static> {
     icon('\u{E1C2}')
 }
 
 pub fn usb() -> iced::widget::Text<'static> {
-    icon('\u{E1E0}')
+    device_icon('\u{E1E0}') // Material Icons usb - larger for device cards
 }
 
 pub fn refresh() -> iced::widget::Text<'static> {
@@ -110,18 +121,22 @@ pub fn check_circle() -> iced::widget::Text<'static> {
     icon('\u{E86C}')
 }
 
+#[allow(dead_code)]
 pub fn help() -> iced::widget::Text<'static> {
     icon('\u{E887}')
 }
 
+#[allow(dead_code)]
 pub fn warning_amber() -> iced::widget::Text<'static> {
     icon('\u{E002}')
 }
 
+#[allow(dead_code)]
 pub fn downloading() -> iced::widget::Text<'static> {
     icon('\u{F090}')
 }
 
+#[allow(dead_code)]
 pub fn device_hub() -> iced::widget::Text<'static> {
     icon('\u{E335}')
 }
@@ -154,4 +169,26 @@ pub fn analytics() -> iced::widget::Text<'static> {
 
 pub fn verified() -> iced::widget::Text<'static> {
     icon('\u{E86C}') // Material Icons check_circle (verified)
+}
+
+// Device type icons for better device identification - larger size for device cards
+pub fn sd_card() -> iced::widget::Text<'static> {
+    device_icon('\u{E1C2}') // Material Icons sd_card
+}
+
+pub fn memory() -> iced::widget::Text<'static> {
+    device_icon('\u{E322}') // Material Icons memory (for eMMC/internal storage)
+}
+
+pub fn hard_drive() -> iced::widget::Text<'static> {
+    device_icon('\u{E1DB}') // Material Icons storage (for hard drives)
+}
+
+// Security and elevation icons
+pub fn shield() -> iced::widget::Text<'static> {
+    icon('\u{E9E0}') // Material Icons shield
+}
+
+pub fn security() -> iced::widget::Text<'static> {
+    icon('\u{E32A}') // Material Icons security
 }

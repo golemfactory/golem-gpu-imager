@@ -15,7 +15,7 @@ pub fn main() -> iced::Result {
     // Initialize tracing with different default levels based on build profile
     let default_level = if cfg!(debug_assertions) {
         // In debug mode, show more detailed logs
-        "debug,golem_gpu_imager=debug,iced_winit=error"
+        "info,golem_gpu_imager=debug,iced_winit=error"
     } else {
         // In release mode, only show info and above
         "info,golem_gpu_imager=info,iced_winit=error"
@@ -192,7 +192,6 @@ fn enable_ansi_support() {
 mod test {
     use std::collections::HashMap;
     use std::io::Read;
-    use std::os::fd::FromRawFd;
     use udisks2::Client;
     use udisks2::zbus::zvariant::OwnedObjectPath;
 

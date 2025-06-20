@@ -49,7 +49,6 @@ pub enum FlashWorkflowState {
     WritingImage(f32),       // Progress 0.0 - 1.0 for image writing
     VerifyingImage(f32),     // Progress 0.0 - 1.0 for image verification
     WritingConfig(f32),      // Progress 0.0 - 1.0 for config writing
-    WritingProcess(f32),     // Legacy - for backward compatibility
     Completion(bool),        // Success or failure
 }
 

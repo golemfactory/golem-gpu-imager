@@ -97,10 +97,6 @@ pub fn view<'a>(
             ui::view_writing_process(*progress, "Writing Configuration")
                 .map(crate::ui::messages::Message::Flash)
         }
-        FlashWorkflowState::WritingProcess(progress) => {
-            ui::view_writing_process(*progress, "Writing Process")
-                .map(crate::ui::messages::Message::Flash)
-        }
         FlashWorkflowState::Completion(success) => {
             ui::view_flash_completion(*success, None).map(crate::ui::messages::Message::Flash)
         }

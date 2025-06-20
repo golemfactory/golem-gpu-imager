@@ -15,6 +15,7 @@ pub enum EditWorkflowState {
         configuration_server: String,
         metrics_server: String,
         central_net_host: String,
+        advanced_options_expanded: bool,
     },
     Completion(bool), // Success or failure
 }

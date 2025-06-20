@@ -21,6 +21,7 @@ pub enum ConfigMessage {
     SetConfigurationServer(String),
     SetMetricsServer(String),
     SetCentralNetHost(String),
+    ToggleAdvancedOptions,
 }
 
 /// Shared configuration UI component used in both flash and edit workflows
@@ -35,6 +36,7 @@ pub fn view_configuration_editor<'a, F>(
     configuration_server: String,
     metrics_server: String,
     central_net_host: String,
+    advanced_options_expanded: bool,
     title_text: &'a str,
     description_text: &'a str,
     back_action: Message,
@@ -262,32 +264,65 @@ where
                     .color(Color::from_rgb(0.6, 0.6, 0.6)),
             ]
             .spacing(5),
-            // Advanced Options Section
-            text("Advanced Options").size(18).color(Color::from_rgb(0.8, 0.8, 0.8)),
-            // Metrics Server
-            column![
-                text("Metrics Server").size(16),
-                text_input("Enter metrics server URL", &metrics_server)
-                    .on_input(move |server| message_factory(ConfigMessage::SetMetricsServer(server)))
+            // Advanced Options Accordion
+            {
+                let expand_icon = if advanced_options_expanded {
+                    icons::expand_less()
+                } else {
+                    icons::expand_more()
+                };
+
+                let toggle_text = if advanced_options_expanded {
+                    "Hide Advanced Options"
+                } else {
+                    "Show Advanced Options"
+                };
+
+                let toggle_button = button(
+                    row![expand_icon, text(toggle_text).size(16)]
+                        .spacing(8)
+                        .align_y(Alignment::Center),
+                )
+                .on_press(message_factory(ConfigMessage::ToggleAdvancedOptions))
+                .padding(8)
+                .style(button::text);
+
+                container(toggle_button)
                     .width(Length::Fill)
-                    .style(crate::style::default_text_input),
-                text("URL to metrics server push endpoint (default: https://metrics.golem.network:9092/)")
-                    .size(12)
-                    .color(Color::from_rgb(0.6, 0.6, 0.6)),
-            ]
-            .spacing(5),
-            // Central Net Host
-            column![
-                text("Central Net Host").size(16),
-                text_input("Enter central net server address", &central_net_host)
-                    .on_input(move |host| message_factory(ConfigMessage::SetCentralNetHost(host)))
-                    .width(Length::Fill)
-                    .style(crate::style::default_text_input),
-                text("Central network coordination server address (leave empty by default)")
-                    .size(12)
-                    .color(Color::from_rgb(0.6, 0.6, 0.6)),
-            ]
-            .spacing(5),
+                    .style(crate::style::bordered_box)
+            },
+            // Advanced options - shown conditionally
+            if advanced_options_expanded {
+                column![
+                    // Metrics Server
+                    column![
+                        text("Metrics Server").size(16),
+                        text_input("Enter metrics server URL", &metrics_server)
+                            .on_input(move |server| message_factory(ConfigMessage::SetMetricsServer(server)))
+                            .width(Length::Fill)
+                            .style(crate::style::default_text_input),
+                        text("URL to metrics server push endpoint (default: https://metrics.golem.network:9092/)")
+                            .size(12)
+                            .color(Color::from_rgb(0.6, 0.6, 0.6)),
+                    ]
+                    .spacing(5),
+                    // Central Net Host
+                    column![
+                        text("Central Net Host").size(16),
+                        text_input("Enter central net server address", &central_net_host)
+                            .on_input(move |host| message_factory(ConfigMessage::SetCentralNetHost(host)))
+                            .width(Length::Fill)
+                            .style(crate::style::default_text_input),
+                        text("Central network coordination server address (leave empty by default)")
+                            .size(12)
+                            .color(Color::from_rgb(0.6, 0.6, 0.6)),
+                    ]
+                    .spacing(5),
+                ]
+                .spacing(20)
+            } else {
+                column![]
+            },
         ]
         .spacing(20),
     )

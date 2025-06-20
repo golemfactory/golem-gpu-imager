@@ -26,6 +26,7 @@ pub enum FlashMessage {
     SetConfigurationServer(String),
     SetMetricsServer(String),
     SetCentralNetHost(String),
+    ToggleAdvancedOptions,
     SelectPreset(usize), // Select a configuration preset
     SelectTargetDevice(usize),
     RefreshTargetDevices, // Delegate device refresh to DeviceSelection module

@@ -1249,6 +1249,7 @@ pub fn view_flash_configure_settings<'a>(
     configuration_server: String,
     metrics_server: String,
     central_net_host: String,
+    advanced_options_expanded: bool,
     configuration_presets: &'a [crate::models::ConfigurationPreset],
     selected_preset: Option<usize>,
     new_preset_name: &'a str,
@@ -1267,6 +1268,7 @@ pub fn view_flash_configure_settings<'a>(
         configuration_server,
         metrics_server,
         central_net_host,
+        advanced_options_expanded,
         "Configure Settings",
         "Configure your Golem Network settings before flashing:",
         crate::ui::messages::Message::Flash(FlashMessage::BackToSelectTargetDevice),
@@ -1311,6 +1313,9 @@ pub fn view_flash_configure_settings<'a>(
             }
             crate::ui::shared::configuration::ConfigMessage::SetCentralNetHost(host) => {
                 crate::ui::messages::Message::Flash(FlashMessage::SetCentralNetHost(host))
+            }
+            crate::ui::shared::configuration::ConfigMessage::ToggleAdvancedOptions => {
+                crate::ui::messages::Message::Flash(FlashMessage::ToggleAdvancedOptions)
             }
         },
     )

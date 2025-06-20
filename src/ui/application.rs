@@ -428,6 +428,7 @@ impl GolemGpuImager {
                         configuration_server,
                         metrics_server,
                         central_net_host,
+                        advanced_options_expanded: false,
                     };
                 }
                 Task::none()

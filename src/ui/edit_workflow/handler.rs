@@ -97,6 +97,7 @@ pub fn handle_message(
                 configuration_server: config.configuration_server.unwrap_or_default(),
                 metrics_server: config.metrics_server.unwrap_or_default(),
                 central_net_host: config.central_net_host.unwrap_or_default(),
+                advanced_options_expanded: false,
             };
             info!("Configuration loaded from device successfully");
             Task::none()
@@ -119,6 +120,7 @@ pub fn handle_message(
                 configuration_server: String::new(),
                 metrics_server: String::new(),
                 central_net_host: String::new(),
+                advanced_options_expanded: false,
             };
             Task::none()
         }
@@ -220,6 +222,17 @@ pub fn handle_message(
             } = &mut state.workflow_state
             {
                 *central_net_host = host;
+            }
+            Task::none()
+        }
+
+        EditMessage::ToggleAdvancedOptions => {
+            if let EditWorkflowState::EditConfiguration {
+                advanced_options_expanded,
+                ..
+            } = &mut state.workflow_state
+            {
+                *advanced_options_expanded = !*advanced_options_expanded;
             }
             Task::none()
         }

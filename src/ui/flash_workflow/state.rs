@@ -49,6 +49,7 @@ pub enum FlashWorkflowState {
         configuration_server: String,
         metrics_server: String,
         central_net_host: String,
+        advanced_options_expanded: bool,
     },
     ClearingPartitions(f32), // Progress 0.0 - 1.0 for partition clearing
     WritingImage(f32),       // Progress 0.0 - 1.0 for image writing

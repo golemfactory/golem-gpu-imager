@@ -168,6 +168,17 @@ pub fn handle_message(
             Task::none()
         }
 
+        FlashMessage::ToggleAdvancedOptions => {
+            if let FlashWorkflowState::ConfigureSettings {
+                advanced_options_expanded,
+                ..
+            } = &mut state.workflow_state
+            {
+                *advanced_options_expanded = !*advanced_options_expanded;
+            }
+            Task::none()
+        }
+
         FlashMessage::SelectPreset(index) => {
             // Forward to the application level to handle preset selection
             Task::done(crate::ui::messages::Message::SelectPreset(index))
@@ -781,6 +792,7 @@ pub fn handle_message(
                 configuration_server,
                 metrics_server,
                 central_net_host,
+                ..
             } = &state.workflow_state
             {
                 // Check if wallet address is valid before proceeding

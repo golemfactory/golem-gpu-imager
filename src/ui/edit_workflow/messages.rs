@@ -16,6 +16,7 @@ pub enum EditMessage {
     SetConfigurationServer(String),
     SetMetricsServer(String),
     SetCentralNetHost(String),
+    ToggleAdvancedOptions,
     SelectPreset(usize),
     RefreshDevices,
     DevicesLoaded(Vec<crate::ui::device_selection::StorageDevice>),

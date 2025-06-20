@@ -35,6 +35,7 @@ pub fn view<'a>(
             configuration_server,
             metrics_server,
             central_net_host,
+            advanced_options_expanded,
         } => ui::view_edit_configuration(
             *payment_network,
             subnet.clone(),
@@ -46,6 +47,7 @@ pub fn view<'a>(
             configuration_server.clone(),
             metrics_server.clone(),
             central_net_host.clone(),
+            *advanced_options_expanded,
             &preset_manager.presets,
             preset_manager.selected_preset,
             &preset_manager.new_preset_name,

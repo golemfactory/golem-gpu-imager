@@ -241,6 +241,7 @@ pub fn view_edit_configuration<'a>(
     configuration_server: String,
     metrics_server: String,
     central_net_host: String,
+    advanced_options_expanded: bool,
     configuration_presets: &'a [crate::models::ConfigurationPreset],
     selected_preset: Option<usize>,
     new_preset_name: &'a str,
@@ -259,6 +260,7 @@ pub fn view_edit_configuration<'a>(
         configuration_server,
         metrics_server,
         central_net_host,
+        advanced_options_expanded,
         "Edit Configuration",
         "Edit the configuration settings for your device:",
         Message::Edit(EditMessage::BackToDeviceSelection), // Back to device selection
@@ -303,6 +305,9 @@ pub fn view_edit_configuration<'a>(
                 }
                 ConfigMessage::SetCentralNetHost(host) => {
                     Message::Edit(EditMessage::SetCentralNetHost(host))
+                }
+                ConfigMessage::ToggleAdvancedOptions => {
+                    Message::Edit(EditMessage::ToggleAdvancedOptions)
                 }
             }
         },

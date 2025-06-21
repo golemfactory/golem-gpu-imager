@@ -175,33 +175,8 @@ pub fn handle_message(
             Task::none()
         }
 
-        PresetManagerMessage::SetPaymentNetwork(network) => {
-            if let Some(editor) = &mut state.editor {
-                editor.payment_network = network;
-            }
-            Task::none()
-        }
-
-        PresetManagerMessage::SetNetworkType(network_type) => {
-            if let Some(editor) = &mut state.editor {
-                editor.network_type = network_type;
-            }
-            Task::none()
-        }
-
-        PresetManagerMessage::SetSubnet(subnet) => {
-            if let Some(editor) = &mut state.editor {
-                editor.subnet = subnet;
-            }
-            Task::none()
-        }
-
-        PresetManagerMessage::SetWalletAddress(address) => {
-            if let Some(editor) = &mut state.editor {
-                editor.wallet_address = address;
-            }
-            Task::none()
-        }
+        // These messages are no longer used - configuration changes are handled
+        // through PresetEditorMessage::Configuration(ConfigurationMessage)
 
         PresetManagerMessage::DuplicatePreset(index) => {
             if let Some(preset) = state.presets.get(index) {
@@ -216,11 +191,6 @@ pub fn handle_message(
 
                 info!("Duplicated preset: {}", duplicated.name);
             }
-            Task::none()
-        }
-
-        _ => {
-            debug!("Unhandled preset manager message: {:?}", message);
             Task::none()
         }
     }
@@ -274,30 +244,10 @@ fn handle_editor_message(
             Task::none()
         }
 
-        PresetEditorMessage::UpdatePaymentNetwork(network) => {
+        PresetEditorMessage::Configuration(config_msg) => {
             if let Some(editor) = &mut state.editor {
-                editor.payment_network = network;
-            }
-            Task::none()
-        }
-
-        PresetEditorMessage::UpdateSubnet(subnet) => {
-            if let Some(editor) = &mut state.editor {
-                editor.subnet = subnet;
-            }
-            Task::none()
-        }
-
-        PresetEditorMessage::UpdateNetworkType(network_type) => {
-            if let Some(editor) = &mut state.editor {
-                editor.network_type = network_type;
-            }
-            Task::none()
-        }
-
-        PresetEditorMessage::UpdateWalletAddress(address) => {
-            if let Some(editor) = &mut state.editor {
-                editor.wallet_address = address;
+                // Delegate configuration changes to the configuration handler
+                let _ = crate::ui::configuration::handle_message(&mut editor.configuration, &state.presets, config_msg);
             }
             Task::none()
         }

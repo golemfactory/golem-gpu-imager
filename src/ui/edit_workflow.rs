@@ -14,6 +14,7 @@ use iced::Element;
 pub fn view<'a>(
     edit_state: &'a EditState,
     device_selection: &'a crate::ui::device_selection::DeviceSelectionState,
+    configuration: &'a crate::ui::configuration::ConfigurationState,
     preset_manager: &'a crate::ui::preset_manager::PresetManagerState,
 ) -> Element<'a, crate::ui::messages::Message> {
     match &edit_state.workflow_state {
@@ -24,35 +25,10 @@ pub fn view<'a>(
         EditWorkflowState::LoadingConfiguration => {
             ui::view_loading_configuration().map(crate::ui::messages::Message::Edit)
         }
-        EditWorkflowState::EditConfiguration {
-            payment_network,
-            subnet,
-            network_type,
-            wallet_address,
-            is_wallet_valid,
-            non_interactive_install,
-            ssh_keys,
-            configuration_server,
-            metrics_server,
-            central_net_host,
-            advanced_options_expanded,
-        } => ui::view_edit_configuration(
-            *payment_network,
-            subnet.clone(),
-            *network_type,
-            wallet_address.clone(),
-            *is_wallet_valid,
-            *non_interactive_install,
-            ssh_keys.clone(),
-            configuration_server.clone(),
-            metrics_server.clone(),
-            central_net_host.clone(),
-            *advanced_options_expanded,
+        EditWorkflowState::EditConfiguration => ui::view_edit_configuration(
+            configuration,
             &preset_manager.presets,
-            preset_manager.selected_preset,
             &preset_manager.new_preset_name,
-            preset_manager.show_manager,
-            preset_manager.editor.as_ref(),
         ),
         EditWorkflowState::Completion(success) => {
             ui::view_edit_completion(*success).map(crate::ui::messages::Message::Edit)

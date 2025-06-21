@@ -1239,85 +1239,25 @@ pub fn view_writing_process(progress: f32, title: &'static str) -> Element<'stat
 }
 
 pub fn view_flash_configure_settings<'a>(
-    payment_network: crate::models::PaymentNetwork,
-    subnet: String,
-    network_type: crate::models::NetworkType,
-    wallet_address: String,
-    is_wallet_valid: bool,
-    non_interactive_install: bool,
-    ssh_keys: String,
-    configuration_server: String,
-    metrics_server: String,
-    central_net_host: String,
-    advanced_options_expanded: bool,
+    configuration: &'a crate::ui::configuration::ConfigurationState,
     configuration_presets: &'a [crate::models::ConfigurationPreset],
-    selected_preset: Option<usize>,
     new_preset_name: &'a str,
-    show_preset_manager: bool,
-    preset_editor: Option<&'a crate::ui::preset_manager::PresetEditor>,
+    _show_preset_manager: bool,
+    _preset_editor: Option<&'a crate::ui::preset_manager::PresetEditor>,
 ) -> Element<'a, crate::ui::messages::Message> {
     // Use the shared configuration editor from the shared module
     crate::ui::shared::configuration::view_configuration_editor(
-        payment_network,
-        subnet,
-        network_type,
-        wallet_address,
-        is_wallet_valid,
-        non_interactive_install,
-        ssh_keys,
-        configuration_server,
-        metrics_server,
-        central_net_host,
-        advanced_options_expanded,
+        configuration,
         "Configure Settings",
         "Configure your Golem Network settings before flashing:",
         crate::ui::messages::Message::Flash(FlashMessage::BackToSelectTargetDevice),
-        crate::ui::messages::Message::Flash(FlashMessage::WriteImage),
-        "Back to Device Selection",
+        Some(crate::ui::messages::Message::Flash(FlashMessage::WriteImage)),
+        "Back to Device Selection", 
         "Start Flashing",
         configuration_presets,
-        selected_preset,
         new_preset_name,
-        show_preset_manager,
-        preset_editor,
-        crate::ui::messages::Message::Flash(FlashMessage::BackToSelectTargetDevice),
         crate::ui::messages::Message::ManagePresets,
-        |config_msg| match config_msg {
-            crate::ui::shared::configuration::ConfigMessage::SetPaymentNetwork(network) => {
-                crate::ui::messages::Message::Flash(FlashMessage::SetPaymentNetwork(network))
-            }
-            crate::ui::shared::configuration::ConfigMessage::SetNetworkType(network_type) => {
-                crate::ui::messages::Message::Flash(FlashMessage::SetNetworkType(network_type))
-            }
-            crate::ui::shared::configuration::ConfigMessage::SetSubnet(subnet) => {
-                crate::ui::messages::Message::Flash(FlashMessage::SetSubnet(subnet))
-            }
-            crate::ui::shared::configuration::ConfigMessage::SetWalletAddress(address) => {
-                crate::ui::messages::Message::Flash(FlashMessage::SetWalletAddress(address))
-            }
-            crate::ui::shared::configuration::ConfigMessage::SelectPreset(index) => {
-                crate::ui::messages::Message::Flash(FlashMessage::SelectPreset(index))
-            }
-            // Handle the new configuration messages properly
-            crate::ui::shared::configuration::ConfigMessage::SetNonInteractiveInstall(enabled) => {
-                crate::ui::messages::Message::Flash(FlashMessage::SetNonInteractiveInstall(enabled))
-            }
-            crate::ui::shared::configuration::ConfigMessage::SetSSHKeys(keys) => {
-                crate::ui::messages::Message::Flash(FlashMessage::SetSSHKeys(keys))
-            }
-            crate::ui::shared::configuration::ConfigMessage::SetConfigurationServer(server) => {
-                crate::ui::messages::Message::Flash(FlashMessage::SetConfigurationServer(server))
-            }
-            crate::ui::shared::configuration::ConfigMessage::SetMetricsServer(server) => {
-                crate::ui::messages::Message::Flash(FlashMessage::SetMetricsServer(server))
-            }
-            crate::ui::shared::configuration::ConfigMessage::SetCentralNetHost(host) => {
-                crate::ui::messages::Message::Flash(FlashMessage::SetCentralNetHost(host))
-            }
-            crate::ui::shared::configuration::ConfigMessage::ToggleAdvancedOptions => {
-                crate::ui::messages::Message::Flash(FlashMessage::ToggleAdvancedOptions)
-            }
-        },
+        |config_msg| crate::ui::messages::Message::Configuration(config_msg),
     )
 }
 
@@ -1541,7 +1481,7 @@ pub fn view_flash_completion(
             .spacing(8)
             .align_y(Alignment::Center),
     )
-    .on_press(FlashMessage::Exit)
+    .on_press(FlashMessage::BackToMainMenu)
     .padding(12)
     .width(180)
     .style(button::secondary);

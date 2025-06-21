@@ -1,4 +1,4 @@
-use crate::models::{NetworkType, PaymentNetwork};
+use crate::ui::configuration::ConfigurationMessage;
 
 #[derive(Debug, Clone)]
 pub enum PresetEditorMessage {
@@ -6,10 +6,7 @@ pub enum PresetEditorMessage {
     Cancel,
     Save,
     UpdateName(String),
-    UpdatePaymentNetwork(PaymentNetwork),
-    UpdateSubnet(String),
-    UpdateNetworkType(NetworkType),
-    UpdateWalletAddress(String),
+    Configuration(ConfigurationMessage), // Delegate all configuration changes to the configuration module
 }
 
 #[derive(Debug, Clone)]
@@ -18,25 +15,16 @@ pub enum PresetManagerMessage {
     SelectPreset(usize),           // Select a preset by index
     DeletePreset(usize),           // Delete a preset by index
     SetDefaultPreset(usize),       // Set a preset as default
-    EditPresetName(usize, String), // Edit a preset name
     Editor(PresetEditorMessage),   // All preset editor operations
     SavePresetsToStorage,          // Save presets to persistent storage
     LoadPresetsFromStorage,        // Load presets from persistent storage
     SetPresetName(String),         // Set name for new preset
     ToggleManager,                 // Toggle preset management UI visibility
     BackToMainMenu,                // Return to main menu
-
-    // New messages for preset manager UI
-    SetNewPresetName(String),          // Set name for new preset
-    CreatePreset,                      // Create new preset
-    EditPreset(usize),                 // Edit existing preset
-    SavePreset,                        // Save preset being edited
-    CancelEdit,                        // Cancel editing
-    SetPaymentNetwork(PaymentNetwork), // Set payment network in editor
-    SetNetworkType(NetworkType),       // Set network type in editor
-    SetSubnet(String),                 // Set subnet in editor
-    SetWalletAddress(String),          // Set wallet address in editor
-
-    // Additional actions
-    DuplicatePreset(usize), // Duplicate an existing preset
+    SetNewPresetName(String),      // Set name for new preset
+    CreatePreset,                  // Create new preset
+    EditPreset(usize),             // Edit existing preset
+    SavePreset,                    // Save preset being edited
+    CancelEdit,                    // Cancel editing
+    DuplicatePreset(usize),        // Duplicate an existing preset
 }

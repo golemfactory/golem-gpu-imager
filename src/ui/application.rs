@@ -191,6 +191,7 @@ impl GolemGpuImager {
                         flash_state,
                         &self.image_repo,
                         &self.device_selection,
+                        &self.configuration,
                         flash_msg,
                     )
                 } else {
@@ -270,166 +271,43 @@ impl GolemGpuImager {
                 if let Some(preset) = self.preset_manager.presets.get(index) {
                     self.preset_manager.selected_preset = Some(index);
 
-                    // Apply preset to flash workflow if active
+                    // Apply preset to the central configuration if flash workflow is active
                     if let Some(flash_state) = &mut self.flash_workflow {
-                        if let FlashWorkflowState::ConfigureSettings {
-                            payment_network,
-                            subnet,
-                            network_type,
-                            wallet_address,
-                            is_wallet_valid,
-                            ..
-                        } = &mut flash_state.workflow_state
-                        {
-                            *payment_network = preset.payment_network;
-                            *subnet = preset.subnet.clone();
-                            *network_type = preset.network_type;
-                            *wallet_address = preset.wallet_address.clone();
-                            *is_wallet_valid = preset.wallet_address.is_empty()
-                                || crate::utils::eth::is_valid_eth_address(&preset.wallet_address);
+                        if let FlashWorkflowState::ConfigureSettings = &flash_state.workflow_state {
+                            self.configuration = crate::ui::configuration::ConfigurationState::from_preset(preset);
+                            self.configuration.selected_preset = Some(index);
                         }
                     }
 
                     // Apply preset to edit workflow if active
                     if let Some(edit_state) = &mut self.edit_workflow {
-                        if let EditWorkflowState::EditConfiguration {
-                            payment_network,
-                            subnet,
-                            network_type,
-                            wallet_address,
-                            is_wallet_valid,
-                            ..
-                        } = &mut edit_state.workflow_state
-                        {
-                            *payment_network = preset.payment_network;
-                            *subnet = preset.subnet.clone();
-                            *network_type = preset.network_type;
-                            *wallet_address = preset.wallet_address.clone();
-                            *is_wallet_valid = preset.wallet_address.is_empty()
-                                || crate::utils::eth::is_valid_eth_address(&preset.wallet_address);
+                        if let EditWorkflowState::EditConfiguration = &edit_state.workflow_state {
+                            self.configuration = crate::ui::configuration::ConfigurationState::from_preset(preset);
+                            self.configuration.selected_preset = Some(index);
                         }
                     }
                 }
                 Task::none()
             }
 
-            Message::DeletePreset(index) => {
-                // TODO: Delete preset by index
-                Task::none()
-            }
-
-            Message::SetDefaultPreset(index) => {
-                // TODO: Set preset as default
-                Task::none()
-            }
-
-            Message::SetPresetName(name) => {
-                // TODO: Set new preset name
-                Task::none()
-            }
-
-            // Configuration settings - delegate to current workflow
-            Message::SetPaymentNetwork(network) => match &mut self.flash_workflow {
-                Some(flash_state) => crate::ui::flash_workflow::handler::handle_message(
-                    flash_state,
-                    &self.image_repo,
-                    &self.device_selection,
-                    FlashMessage::SetPaymentNetwork(network),
-                ),
-                None => Task::none(),
-            },
-
-            Message::SetNetworkType(network_type) => match &mut self.flash_workflow {
-                Some(flash_state) => crate::ui::flash_workflow::handler::handle_message(
-                    flash_state,
-                    &self.image_repo,
-                    &self.device_selection,
-                    FlashMessage::SetNetworkType(network_type),
-                ),
-                None => Task::none(),
-            },
-
-            Message::SetSubnet(subnet) => match &mut self.flash_workflow {
-                Some(flash_state) => crate::ui::flash_workflow::handler::handle_message(
-                    flash_state,
-                    &self.image_repo,
-                    &self.device_selection,
-                    FlashMessage::SetSubnet(subnet),
-                ),
-                None => Task::none(),
-            },
-
-            Message::SetWalletAddress(address) => match &mut self.flash_workflow {
-                Some(flash_state) => crate::ui::flash_workflow::handler::handle_message(
-                    flash_state,
-                    &self.image_repo,
-                    &self.device_selection,
-                    FlashMessage::SetWalletAddress(address),
-                ),
-                None => Task::none(),
-            },
-
             Message::InitializeFlashConfiguration => {
                 if let Some(flash_state) = &mut self.flash_workflow {
-                    // Get the default preset values if a default preset is selected
-                    let (payment_network, subnet, network_type, wallet_address, non_interactive_install, ssh_keys, configuration_server, metrics_server, central_net_host) =
-                        if let Some(selected_index) = self.preset_manager.selected_preset {
-                            if let Some(preset) = self.preset_manager.presets.get(selected_index) {
-                                (
-                                    preset.payment_network,
-                                    preset.subnet.clone(),
-                                    preset.network_type,
-                                    preset.wallet_address.clone(),
-                                    preset.non_interactive_install,
-                                    preset.ssh_keys.join("\n"),
-                                    preset.configuration_server.clone().unwrap_or_default(),
-                                    preset.metrics_server.clone().unwrap_or_default(),
-                                    preset.central_net_host.clone().unwrap_or_default(),
-                                )
-                            } else {
-                                // Fallback to defaults if preset not found
-                                (
-                                    crate::models::PaymentNetwork::Testnet,
-                                    "public".to_string(),
-                                    crate::models::NetworkType::Central,
-                                    String::new(),
-                                    false,
-                                    String::new(),
-                                    String::new(),
-                                    String::new(),
-                                    String::new(),
-                                )
-                            }
+                    // Initialize the central configuration state with the default preset if available
+                    if let Some(selected_index) = self.preset_manager.selected_preset {
+                        if let Some(preset) = self.preset_manager.presets.get(selected_index) {
+                            self.configuration = crate::ui::configuration::ConfigurationState::from_preset(preset);
+                            self.configuration.selected_preset = Some(selected_index);
                         } else {
-                            // No default preset selected, use hardcoded defaults
-                            (
-                                crate::models::PaymentNetwork::Testnet,
-                                "public".to_string(),
-                                crate::models::NetworkType::Central,
-                                String::new(),
-                                false,
-                                String::new(),
-                                String::new(),
-                                String::new(),
-                                String::new(),
-                            )
-                        };
+                            // Fallback to defaults if preset not found
+                            self.configuration = crate::ui::configuration::ConfigurationState::new();
+                        }
+                    } else {
+                        // No default preset selected, use hardcoded defaults
+                        self.configuration = crate::ui::configuration::ConfigurationState::new();
+                    }
 
-                    // Initialize the configuration state with the default values
-                    flash_state.workflow_state = FlashWorkflowState::ConfigureSettings {
-                        payment_network,
-                        subnet,
-                        network_type,
-                        wallet_address: wallet_address.clone(),
-                        is_wallet_valid: wallet_address.is_empty()
-                            || crate::utils::eth::is_valid_eth_address(&wallet_address),
-                        non_interactive_install,
-                        ssh_keys,
-                        configuration_server,
-                        metrics_server,
-                        central_net_host,
-                        advanced_options_expanded: false,
-                    };
+                    // Set the workflow state to configuration
+                    flash_state.workflow_state = FlashWorkflowState::ConfigureSettings;
                 }
                 Task::none()
             }
@@ -448,6 +326,7 @@ impl GolemGpuImager {
                     crate::ui::flash_workflow::view(
                         flash_state,
                         &self.device_selection,
+                        &self.configuration,
                         &self.preset_manager,
                         self.is_loading_repo,
                     )
@@ -464,6 +343,7 @@ impl GolemGpuImager {
                     crate::ui::edit_workflow::view(
                         edit_state,
                         &self.device_selection,
+                        &self.configuration,
                         &self.preset_manager,
                     )
                 } else {

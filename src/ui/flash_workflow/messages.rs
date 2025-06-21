@@ -1,4 +1,4 @@
-use crate::models::{ImageMetadata, NetworkType, PaymentNetwork};
+use crate::models::ImageMetadata;
 
 #[derive(Debug, Clone)]
 pub enum FlashMessage {
@@ -17,34 +17,15 @@ pub enum FlashMessage {
     ProcessingFailed(String, String), // Version ID and error message
     GotoSelectTargetDevice, // Go to storage device selection screen
     GotoConfigureSettings, // Go to image configuration screen
-    SetPaymentNetwork(PaymentNetwork),
-    SetSubnet(String),
-    SetNetworkType(NetworkType),
-    SetWalletAddress(String),
-    SetNonInteractiveInstall(bool),
-    SetSSHKeys(String),
-    SetConfigurationServer(String),
-    SetMetricsServer(String),
-    SetCentralNetHost(String),
-    ToggleAdvancedOptions,
-    SelectPreset(usize), // Select a configuration preset
     SelectTargetDevice(usize),
     RefreshTargetDevices, // Delegate device refresh to DeviceSelection module
     WriteImage,
     CancelWrite,
     FlashAnother,
-    DeviceLockedForWriting(crate::disk::Disk, String), // Device locked for writing with image path
-    ClearPartitionsProgress(f32),                      // Update partition clearing progress
-    ClearPartitionsCompleted,                          // Partition clearing completed successfully
-    ClearPartitionsFailed(String), // Partition clearing failed with error message
     WriteImageProgress(f32),       // Update the image writing progress
     VerificationProgress(f32),     // Update the verification progress
     WriteImageCompleted,           // Image write completed successfully
     WriteImageFailed(String),      // Image write failed with error message
-    WriteConfigProgress(f32),      // Update the config writing progress
-    WriteConfigCompleted,          // Config write completed successfully
-    WriteConfigFailed(String),     // Config write failed with error message
-    PollWriteProgress,             // Poll for progress updates from the subscription
     BackToSelectOsImage,           // Go back to the OS image selection screen
     BackToSelectTargetDevice,      // Go back to target device selection screen
     BackToMainMenu,                // Navigation: go back to main menu

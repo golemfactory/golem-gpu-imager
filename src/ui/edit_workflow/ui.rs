@@ -229,88 +229,25 @@ pub fn view_edit_completion(success: bool) -> Element<'static, EditMessage> {
     .into()
 }
 
-/// Edit configuration view - delegates to shared configuration editor
+/// Edit configuration view - now uses centralized configuration system
 pub fn view_edit_configuration<'a>(
-    payment_network: PaymentNetwork,
-    subnet: String,
-    network_type: NetworkType,
-    wallet_address: String,
-    is_wallet_valid: bool,
-    non_interactive_install: bool,
-    ssh_keys: String,
-    configuration_server: String,
-    metrics_server: String,
-    central_net_host: String,
-    advanced_options_expanded: bool,
+    configuration: &'a crate::ui::configuration::ConfigurationState,
     configuration_presets: &'a [crate::models::ConfigurationPreset],
-    selected_preset: Option<usize>,
     new_preset_name: &'a str,
-    show_preset_manager: bool,
-    preset_editor: Option<&'a crate::ui::preset_manager::PresetEditor>,
 ) -> Element<'a, Message> {
-    // Use the shared configuration editor
+    // Use the shared configuration editor from the shared module
     crate::ui::shared::configuration::view_configuration_editor(
-        payment_network,
-        subnet,
-        network_type,
-        wallet_address,
-        is_wallet_valid,
-        non_interactive_install,
-        ssh_keys,
-        configuration_server,
-        metrics_server,
-        central_net_host,
-        advanced_options_expanded,
+        configuration,
         "Edit Configuration",
         "Edit the configuration settings for your device:",
-        Message::Edit(EditMessage::BackToDeviceSelection), // Back to device selection
-        Message::Edit(EditMessage::SaveConfiguration),
+        Message::Edit(EditMessage::BackToDeviceSelection),
+        Some(Message::Edit(EditMessage::SaveConfiguration)),
         "Back to Devices",
         "Save Changes",
         configuration_presets,
-        selected_preset,
         new_preset_name,
-        show_preset_manager,
-        preset_editor,
-        Message::Edit(EditMessage::BackToDeviceSelection),
         Message::ManagePresets,
-        |config_msg| {
-            use crate::ui::shared::configuration::ConfigMessage;
-            match config_msg {
-                ConfigMessage::SetPaymentNetwork(network) => {
-                    Message::Edit(EditMessage::SetPaymentNetwork(network))
-                }
-                ConfigMessage::SetNetworkType(network_type) => {
-                    Message::Edit(EditMessage::SetNetworkType(network_type))
-                }
-                ConfigMessage::SetSubnet(subnet) => Message::Edit(EditMessage::SetSubnet(subnet)),
-                ConfigMessage::SetWalletAddress(address) => {
-                    Message::Edit(EditMessage::SetWalletAddress(address))
-                }
-                ConfigMessage::SelectPreset(index) => {
-                    Message::Edit(EditMessage::SelectPreset(index))
-                }
-                // Handle the new configuration messages properly
-                ConfigMessage::SetNonInteractiveInstall(enabled) => {
-                    Message::Edit(EditMessage::SetNonInteractiveInstall(enabled))
-                }
-                ConfigMessage::SetSSHKeys(keys) => {
-                    Message::Edit(EditMessage::SetSSHKeys(keys))
-                }
-                ConfigMessage::SetConfigurationServer(server) => {
-                    Message::Edit(EditMessage::SetConfigurationServer(server))
-                }
-                ConfigMessage::SetMetricsServer(server) => {
-                    Message::Edit(EditMessage::SetMetricsServer(server))
-                }
-                ConfigMessage::SetCentralNetHost(host) => {
-                    Message::Edit(EditMessage::SetCentralNetHost(host))
-                }
-                ConfigMessage::ToggleAdvancedOptions => {
-                    Message::Edit(EditMessage::ToggleAdvancedOptions)
-                }
-            }
-        },
+        |config_msg| Message::Configuration(config_msg),
     )
 }
 

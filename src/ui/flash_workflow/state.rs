@@ -1,4 +1,4 @@
-pub use crate::models::{CancelToken, NetworkType, PaymentNetwork};
+pub use crate::models::CancelToken;
 
 #[derive(Debug, Clone)]
 pub struct OsImage {
@@ -38,23 +38,9 @@ pub enum FlashWorkflowState {
         uncompressed_size: Option<u64>,
     },
     SelectTargetDevice,
-    ConfigureSettings {
-        payment_network: PaymentNetwork,
-        subnet: String,
-        network_type: NetworkType,
-        wallet_address: String,
-        is_wallet_valid: bool,
-        non_interactive_install: bool,
-        ssh_keys: String,
-        configuration_server: String,
-        metrics_server: String,
-        central_net_host: String,
-        advanced_options_expanded: bool,
-    },
-    ClearingPartitions(f32), // Progress 0.0 - 1.0 for partition clearing
+    ConfigureSettings,
     WritingImage(f32),       // Progress 0.0 - 1.0 for image writing
     VerifyingImage(f32),     // Progress 0.0 - 1.0 for image verification
-    WritingConfig(f32),      // Progress 0.0 - 1.0 for config writing
     Completion(bool),        // Success or failure
 }
 

@@ -11,6 +11,7 @@ pub fn handle_message(
     state: &mut FlashState,
     image_repo: &Arc<ImageRepo>,
     device_selection: &crate::ui::device_selection::DeviceSelectionState,
+    configuration: &crate::ui::configuration::ConfigurationState,
     message: FlashMessage,
 ) -> Task<crate::ui::messages::Message> {
     match message {
@@ -67,122 +68,6 @@ pub fn handle_message(
             Task::done(crate::ui::messages::Message::InitializeFlashConfiguration)
         }
 
-        FlashMessage::SetPaymentNetwork(network) => {
-            if let FlashWorkflowState::ConfigureSettings {
-                payment_network, ..
-            } = &mut state.workflow_state
-            {
-                *payment_network = network;
-            }
-            Task::none()
-        }
-
-        FlashMessage::SetSubnet(subnet) => {
-            if let FlashWorkflowState::ConfigureSettings {
-                subnet: current_subnet,
-                ..
-            } = &mut state.workflow_state
-            {
-                *current_subnet = subnet;
-            }
-            Task::none()
-        }
-
-        FlashMessage::SetNetworkType(network_type) => {
-            if let FlashWorkflowState::ConfigureSettings {
-                network_type: current_type,
-                ..
-            } = &mut state.workflow_state
-            {
-                *current_type = network_type;
-            }
-            Task::none()
-        }
-
-        FlashMessage::SetWalletAddress(address) => {
-            if let FlashWorkflowState::ConfigureSettings {
-                wallet_address,
-                is_wallet_valid,
-                ..
-            } = &mut state.workflow_state
-            {
-                *wallet_address = address.clone();
-                *is_wallet_valid =
-                    address.is_empty() || crate::utils::eth::is_valid_eth_address(&address);
-            }
-            Task::none()
-        }
-
-        FlashMessage::SetNonInteractiveInstall(enabled) => {
-            if let FlashWorkflowState::ConfigureSettings {
-                non_interactive_install,
-                ..
-            } = &mut state.workflow_state
-            {
-                *non_interactive_install = enabled;
-            }
-            Task::none()
-        }
-
-        FlashMessage::SetSSHKeys(keys) => {
-            if let FlashWorkflowState::ConfigureSettings {
-                ssh_keys,
-                ..
-            } = &mut state.workflow_state
-            {
-                *ssh_keys = keys;
-            }
-            Task::none()
-        }
-
-        FlashMessage::SetConfigurationServer(server) => {
-            if let FlashWorkflowState::ConfigureSettings {
-                configuration_server,
-                ..
-            } = &mut state.workflow_state
-            {
-                *configuration_server = server;
-            }
-            Task::none()
-        }
-
-        FlashMessage::SetMetricsServer(server) => {
-            if let FlashWorkflowState::ConfigureSettings {
-                metrics_server,
-                ..
-            } = &mut state.workflow_state
-            {
-                *metrics_server = server;
-            }
-            Task::none()
-        }
-
-        FlashMessage::SetCentralNetHost(host) => {
-            if let FlashWorkflowState::ConfigureSettings {
-                central_net_host,
-                ..
-            } = &mut state.workflow_state
-            {
-                *central_net_host = host;
-            }
-            Task::none()
-        }
-
-        FlashMessage::ToggleAdvancedOptions => {
-            if let FlashWorkflowState::ConfigureSettings {
-                advanced_options_expanded,
-                ..
-            } = &mut state.workflow_state
-            {
-                *advanced_options_expanded = !*advanced_options_expanded;
-            }
-            Task::none()
-        }
-
-        FlashMessage::SelectPreset(index) => {
-            // Forward to the application level to handle preset selection
-            Task::done(crate::ui::messages::Message::SelectPreset(index))
-        }
 
         FlashMessage::SelectTargetDevice(index) => {
             state.selected_device = Some(index);
@@ -780,128 +665,85 @@ pub fn handle_message(
                 ));
             }
 
-            // Extract needed data from the current workflow state
-            let config_data = if let FlashWorkflowState::ConfigureSettings {
-                payment_network,
-                subnet,
-                network_type,
-                wallet_address,
-                is_wallet_valid,
-                non_interactive_install,
-                ssh_keys,
-                configuration_server,
-                metrics_server,
-                central_net_host,
-                ..
-            } = &state.workflow_state
+            // Validate configuration from the central configuration state
+            // Check if wallet address is valid before proceeding
+            if !configuration.wallet_address.is_empty() && !configuration.is_wallet_valid {
+                warn!(
+                    "Cannot proceed, wallet address is invalid: {}",
+                    configuration.wallet_address
+                );
+                return Task::done(crate::ui::messages::Message::ShowError(
+                    "Invalid wallet address".to_string(),
+                ));
+            }
+
+            // Validate SSH keys
+            let ssh_key_errors = validate_ssh_keys(&configuration.ssh_keys);
+            if !ssh_key_errors.is_empty() {
+                warn!("Cannot proceed, SSH keys are invalid: {:?}", ssh_key_errors);
+                return Task::done(crate::ui::messages::Message::ShowError(
+                    format!("Invalid SSH keys: {}", ssh_key_errors.join(", "))
+                ));
+            }
+
+            // Validate URLs
+            if !is_valid_url(&configuration.configuration_server) {
+                warn!("Cannot proceed, configuration server URL is invalid: {}", configuration.configuration_server);
+                return Task::done(crate::ui::messages::Message::ShowError(
+                    "Invalid configuration server URL".to_string(),
+                ));
+            }
+
+            if !is_valid_url(&configuration.metrics_server) {
+                warn!("Cannot proceed, metrics server URL is invalid: {}", configuration.metrics_server);
+                return Task::done(crate::ui::messages::Message::ShowError(
+                    "Invalid metrics server URL".to_string(),
+                ));
+            }
+
+            if !is_valid_url(&configuration.central_net_host) {
+                warn!("Cannot proceed, central net host URL is invalid: {}", configuration.central_net_host);
+                return Task::done(crate::ui::messages::Message::ShowError(
+                    "Invalid central net host URL".to_string(),
+                ));
+            }
+
+            // Get the selected OS image and device
+            if let (Some(image), Some(device_idx)) =
+                (selected_image_option, state.selected_device)
             {
-                // Check if wallet address is valid before proceeding
-                if !wallet_address.is_empty() && !*is_wallet_valid {
-                    warn!(
-                        "Cannot proceed, wallet address is invalid: {}",
-                        wallet_address
-                    );
-                    return Task::done(crate::ui::messages::Message::ShowError(
-                        "Invalid wallet address".to_string(),
-                    ));
-                }
+                if let Some(device) = device_selection.devices.get(device_idx) {
+                    // Make sure the image is downloaded
+                    if let Some(image_path) = &image.path {
+                        // Start the write process with initial 0% progress for image writing
+                        state.workflow_state = FlashWorkflowState::WritingImage(0.0);
 
-                // Validate SSH keys
-                let ssh_key_errors = validate_ssh_keys(ssh_keys);
-                if !ssh_key_errors.is_empty() {
-                    warn!("Cannot proceed, SSH keys are invalid: {:?}", ssh_key_errors);
-                    return Task::done(crate::ui::messages::Message::ShowError(
-                        format!("Invalid SSH keys: {}", ssh_key_errors.join(", "))
-                    ));
-                }
+                        // Get device path, image path, and metadata
+                        let device_path = device.path.clone();
+                        let image_path_val = image_path.clone();
+                        let image_metadata = image.metadata.clone();
+                        // Create a clone of the cancel token that we can pass to the task
+                        let cancel_token_clone = state.cancel_token.clone();
 
-                // Validate URLs
-                if !is_valid_url(configuration_server) {
-                    warn!("Cannot proceed, configuration server URL is invalid: {}", configuration_server);
-                    return Task::done(crate::ui::messages::Message::ShowError(
-                        "Invalid configuration server URL".to_string(),
-                    ));
-                }
+                        // Extract configuration before creating async closure
+                        let config = Some(crate::disk::ImageConfiguration::new_with_options(
+                            configuration.payment_network,
+                            configuration.network_type,
+                            configuration.subnet.clone(),
+                            configuration.wallet_address.clone(),
+                            configuration.non_interactive_install,
+                            configuration.ssh_keys.clone(),
+                            configuration.configuration_server.clone(),
+                            configuration.metrics_server.clone(),
+                            configuration.central_net_host.clone(),
+                        ));
 
-                if !is_valid_url(metrics_server) {
-                    warn!("Cannot proceed, metrics server URL is invalid: {}", metrics_server);
-                    return Task::done(crate::ui::messages::Message::ShowError(
-                        "Invalid metrics server URL".to_string(),
-                    ));
-                }
-
-                if !is_valid_url(central_net_host) {
-                    warn!("Cannot proceed, central net host URL is invalid: {}", central_net_host);
-                    return Task::done(crate::ui::messages::Message::ShowError(
-                        "Invalid central net host URL".to_string(),
-                    ));
-                }
-
-                // Collect the data we need for the task
-                Some((
-                    *payment_network,
-                    *network_type,
-                    subnet.clone(),
-                    wallet_address.clone(),
-                    *non_interactive_install,
-                    ssh_keys.clone(),
-                    configuration_server.clone(),
-                    metrics_server.clone(),
-                    central_net_host.clone(),
-                ))
-            } else {
-                None
-            };
-
-            // Only proceed if we have valid configuration data
-            if let Some((
-                payment_network_val,
-                network_type_val,
-                subnet_val,
-                wallet_address_val,
-                non_interactive_install_val,
-                ssh_keys_val,
-                configuration_server_val,
-                metrics_server_val,
-                central_net_host_val,
-            )) = config_data
-            {
-                // Get the selected OS image and device
-                if let (Some(image), Some(device_idx)) =
-                    (selected_image_option, state.selected_device)
-                {
-                    if let Some(device) = device_selection.devices.get(device_idx) {
-                        // Make sure the image is downloaded
-                        if let Some(image_path) = &image.path {
-                            // Start the write process with initial 0% progress for image writing
-                            state.workflow_state = FlashWorkflowState::WritingImage(0.0);
-
-                            // Get device path, image path, and metadata
-                            let device_path = device.path.clone();
-                            let image_path_val = image_path.clone();
-                            let image_metadata = image.metadata.clone();
-                            // Create a clone of the cancel token that we can pass to the task
-                            let cancel_token_clone = state.cancel_token.clone();
-
-                            // Extract configuration before creating async closure
-                            let config = Some(crate::disk::ImageConfiguration::new_with_options(
-                                payment_network_val,
-                                network_type_val,
-                                subnet_val.clone(),
-                                wallet_address_val.clone(),
-                                non_interactive_install_val,
-                                ssh_keys_val.clone(),
-                                configuration_server_val.clone(),
-                                metrics_server_val.clone(),
-                                central_net_host_val.clone(),
-                            ));
-
-                            info!(
-                                "Starting flash with config: {:?} {:?} {} {} to device {}",
-                                payment_network_val,
-                                network_type_val,
-                                subnet_val,
-                                wallet_address_val,
+                        info!(
+                            "Starting flash with config: {:?} {:?} {} {} to device {}",
+                            configuration.payment_network,
+                            configuration.network_type,
+                            configuration.subnet,
+                            configuration.wallet_address,
                                 device_path
                             );
 
@@ -940,9 +782,10 @@ pub fn handle_message(
                                                     FlashMessage::WriteImageProgress(0.0),
                                                 )
                                             }
-                                            WriteProgress::ClearingPartitions { progress } => {
+                                            WriteProgress::ClearingPartitions { progress: _ } => {
+                                                // ClearPartitions progress removed - use generic write progress
                                                 crate::ui::messages::Message::Flash(
-                                                    FlashMessage::ClearPartitionsProgress(progress),
+                                                    FlashMessage::WriteImageProgress(0.0),
                                                 )
                                             }
                                             WriteProgress::Write {
@@ -1046,20 +889,6 @@ pub fn handle_message(
                         "No OS image or device selected".to_string(),
                     ))
                 }
-            } else {
-                // No configuration data
-                error!("No configuration data available");
-                state.workflow_state = FlashWorkflowState::Completion(false);
-                Task::done(crate::ui::messages::Message::ShowError(
-                    "No configuration data available".to_string(),
-                ))
-            }
-        }
-
-        FlashMessage::ClearPartitionsCompleted => {
-            debug!("Partition clearing completed, starting image write");
-            state.workflow_state = FlashWorkflowState::WritingImage(0.0);
-            Task::none()
         }
 
         FlashMessage::WriteImageCompleted => {
@@ -1069,20 +898,7 @@ pub fn handle_message(
             Task::none()
         }
 
-        FlashMessage::WriteConfigCompleted => {
-            debug!("Configuration writing completed, flashing successful");
-            state.workflow_state = FlashWorkflowState::Completion(true);
-            Task::none()
-        }
 
-        FlashMessage::ClearPartitionsFailed(error) => {
-            error!("Partition clearing failed: {}", error);
-            state.workflow_state = FlashWorkflowState::Completion(false);
-            Task::done(crate::ui::messages::Message::ShowError(format!(
-                "Failed to clear partitions: {}",
-                error
-            )))
-        }
 
         FlashMessage::WriteImageFailed(error) => {
             error!("Image writing failed: {}", error);
@@ -1091,23 +907,6 @@ pub fn handle_message(
                 "Failed to write image: {}",
                 error
             )))
-        }
-
-        FlashMessage::WriteConfigFailed(error) => {
-            error!("Configuration writing failed: {}", error);
-            state.workflow_state = FlashWorkflowState::Completion(false);
-            Task::done(crate::ui::messages::Message::ShowError(format!(
-                "Failed to write configuration: {}",
-                error
-            )))
-        }
-
-        FlashMessage::ClearPartitionsProgress(progress) => {
-            if let FlashWorkflowState::ClearingPartitions(_) = &mut state.workflow_state {
-                debug!("Partition clearing progress: {:.1}%", progress * 100.0);
-                state.workflow_state = FlashWorkflowState::ClearingPartitions(progress);
-            }
-            Task::none()
         }
 
         FlashMessage::WriteImageProgress(progress) => {
@@ -1135,13 +934,6 @@ pub fn handle_message(
             Task::none()
         }
 
-        FlashMessage::WriteConfigProgress(progress) => {
-            if let FlashWorkflowState::WritingConfig(_) = &mut state.workflow_state {
-                debug!("Config write progress: {:.1}%", progress * 100.0);
-                state.workflow_state = FlashWorkflowState::WritingConfig(progress);
-            }
-            Task::none()
-        }
 
         FlashMessage::CancelWrite => {
             debug!("Cancel write requested");
@@ -1159,9 +951,7 @@ pub fn handle_message(
                     info!("Download/analysis cancelled, returning to image selection");
                 }
                 FlashWorkflowState::WritingImage(_)
-                | FlashWorkflowState::VerifyingImage(_)
-                | FlashWorkflowState::ClearingPartitions(_)
-                | FlashWorkflowState::WritingConfig(_) => {
+                | FlashWorkflowState::VerifyingImage(_) => {
                     // Cancel write process - go to completion with failed status
                     state.workflow_state = FlashWorkflowState::Completion(false);
                     info!("Write process cancelled");
@@ -1180,10 +970,5 @@ pub fn handle_message(
             Task::none()
         }
 
-        // Add more message handlers as needed
-        _ => {
-            debug!("Unhandled flash message: {:?}", message);
-            Task::none()
-        }
     }
 }

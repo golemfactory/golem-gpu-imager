@@ -115,23 +115,3 @@ impl std::fmt::Display for NetworkType {
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum Message {
-    // App-level messages
-    FlashNewImage,
-    EditExistingDisk,
-    ManagePresets,
-    BackToMainMenu,
-    Exit,
-    ShowError(String),
-
-    // Repository management
-    RepoDataLoaded(String),      // Simplified for now
-    RepoGroupDataLoaded(String), // Simplified for now
-    RepoLoadFailed,
-    RefreshRepoData,
-
-    // Elevation management (Windows)
-    RequestElevation,
-    CheckElevationStatus,
-}

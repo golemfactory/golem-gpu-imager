@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use iced::Font;
 use iced::widget::text;
 

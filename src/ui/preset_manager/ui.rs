@@ -1,8 +1,8 @@
-use super::{PresetEditor, PresetManagerMessage};
+use super::{PresetEditor, PresetManagerMessage, PresetEditorMessage};
 use crate::models::{ConfigurationPreset, NetworkType, PaymentNetwork};
 use crate::style;
 use crate::ui::icons;
-use iced::widget::{button, column, container, pick_list, row, scrollable, text, text_input};
+use iced::widget::{button, column, container, row, scrollable, text, text_input};
 use iced::{Alignment, Border, Color, Element, Length};
 
 /// Main preset manager view
@@ -283,7 +283,7 @@ fn create_compact_preset_card<'a>(
         .into()
 }
 
-/// Enhanced preset editor view
+/// Enhanced preset editor view using modular configuration components
 fn view_preset_editor<'a>(editor: &'a PresetEditor) -> Element<'a, PresetManagerMessage> {
     let title = text(if editor.editing_index.is_some() {
         "Edit Preset"
@@ -292,61 +292,35 @@ fn view_preset_editor<'a>(editor: &'a PresetEditor) -> Element<'a, PresetManager
     })
     .size(20);
 
+    // Preset name input
     let name_input = column![
         text("Preset Name").size(14),
         text_input("Enter preset name...", &editor.name)
-            .on_input(PresetManagerMessage::SetPresetName)
+            .on_input(|name| PresetManagerMessage::Editor(
+                PresetEditorMessage::UpdateName(name)
+            ))
             .padding(8)
             .width(Length::Fill)
+            .style(style::default_text_input)
     ]
     .spacing(5);
 
-    let payment_network_input = column![
-        text("Payment Network").size(14),
-        pick_list(
-            &[PaymentNetwork::Testnet, PaymentNetwork::Mainnet][..],
-            Some(editor.payment_network),
-            PresetManagerMessage::SetPaymentNetwork
+    // Use the modular configuration form directly (without header)
+    let configuration_form = crate::ui::configuration::view_configuration_form(
+        &editor.configuration,
+        |config_msg| crate::ui::messages::Message::PresetManager(
+            PresetManagerMessage::Editor(
+                PresetEditorMessage::Configuration(config_msg)
+            )
         )
-        .padding(8)
-        .width(Length::Fill)
-    ]
-    .spacing(5);
+    ).map(|msg| {
+        match msg {
+            crate::ui::messages::Message::PresetManager(preset_msg) => preset_msg,
+            _ => PresetManagerMessage::CancelEdit, // Fallback, should not happen
+        }
+    });
 
-    let network_type_input = column![
-        text("Network Type").size(14),
-        pick_list(
-            &[NetworkType::Central, NetworkType::Hybrid][..],
-            Some(editor.network_type),
-            PresetManagerMessage::SetNetworkType
-        )
-        .padding(8)
-        .width(Length::Fill)
-    ]
-    .spacing(5);
-
-    let subnet_input = column![
-        text("Subnet").size(14),
-        text_input("Enter subnet...", &editor.subnet)
-            .on_input(PresetManagerMessage::SetSubnet)
-            .padding(8)
-            .width(Length::Fill)
-    ]
-    .spacing(5);
-
-    let wallet_input = column![
-        text("Wallet Address").size(14),
-        text_input("Enter wallet address...", &editor.wallet_address)
-            .on_input(PresetManagerMessage::SetWalletAddress)
-            .padding(8)
-            .width(Length::Fill)
-    ]
-    .spacing(5);
-
-    let default_checkbox = row![text("Set as default preset").size(14),]
-        .spacing(8)
-        .align_y(Alignment::Center);
-
+    // Navigation buttons
     let actions = row![
         button("Cancel")
             .on_press(PresetManagerMessage::CancelEdit)
@@ -359,25 +333,29 @@ fn view_preset_editor<'a>(editor: &'a PresetEditor) -> Element<'a, PresetManager
         })
         .on_press(PresetManagerMessage::SavePreset)
         .padding(8)
-        .style(button::primary)
+        .style(if editor.is_valid() {
+            button::primary
+        } else {
+            button::secondary
+        })
     ]
     .spacing(10);
 
-    let form = column![
+    // Create scrollable content area
+    let content = column![
+        title,
         name_input,
-        payment_network_input,
-        network_type_input,
-        subnet_input,
-        wallet_input,
-        default_checkbox,
+        scrollable(configuration_form)
+            .height(Length::Fill),
         container(actions).width(Length::Fill)
     ]
     .spacing(15)
     .width(Length::Fill);
 
-    container(column![title, form].spacing(20))
+    container(content)
         .style(style::bordered_box)
         .padding(20)
         .width(Length::Fill)
+        .height(Length::Fill)
         .into()
 }

@@ -14,6 +14,7 @@ use iced::Element;
 pub fn view<'a>(
     flash_state: &'a FlashState,
     device_selection: &'a crate::ui::device_selection::DeviceSelectionState,
+    configuration: &'a crate::ui::configuration::ConfigurationState,
     preset_manager: &'a crate::ui::preset_manager::PresetManagerState,
     is_loading_repo: bool,
 ) -> Element<'a, crate::ui::messages::Message> {
@@ -59,43 +60,16 @@ pub fn view<'a>(
             ui::view_select_target_device(&device_selection.devices, flash_state.selected_device)
                 .map(crate::ui::messages::Message::Flash)
         }
-        FlashWorkflowState::ConfigureSettings {
-            payment_network,
-            subnet,
-            network_type,
-            wallet_address,
-            is_wallet_valid,
-            non_interactive_install,
-            ssh_keys,
-            configuration_server,
-            metrics_server,
-            central_net_host,
-            advanced_options_expanded,
-        } => {
+        FlashWorkflowState::ConfigureSettings => {
             // Use shared configuration editor with preset support
             // Return app messages directly (no mapping) to match edit workflow pattern
             ui::view_flash_configure_settings(
-                *payment_network,
-                subnet.clone(),
-                *network_type,
-                wallet_address.clone(),
-                *is_wallet_valid,
-                *non_interactive_install,
-                ssh_keys.clone(),
-                configuration_server.clone(),
-                metrics_server.clone(),
-                central_net_host.clone(),
-                *advanced_options_expanded,
+                configuration,
                 &preset_manager.presets,
-                preset_manager.selected_preset,
                 &preset_manager.new_preset_name,
                 preset_manager.show_manager,
                 preset_manager.editor.as_ref(),
             )
-        }
-        FlashWorkflowState::ClearingPartitions(progress) => {
-            ui::view_writing_process(*progress, "Clearing Partitions")
-                .map(crate::ui::messages::Message::Flash)
         }
         FlashWorkflowState::WritingImage(progress) => {
             ui::view_writing_process(*progress, "Writing Image")
@@ -103,10 +77,6 @@ pub fn view<'a>(
         }
         FlashWorkflowState::VerifyingImage(progress) => {
             ui::view_writing_process(*progress, "Verifying Image")
-                .map(crate::ui::messages::Message::Flash)
-        }
-        FlashWorkflowState::WritingConfig(progress) => {
-            ui::view_writing_process(*progress, "Writing Configuration")
                 .map(crate::ui::messages::Message::Flash)
         }
         FlashWorkflowState::Completion(success) => {

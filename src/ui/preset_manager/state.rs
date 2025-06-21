@@ -1,13 +1,11 @@
 use crate::models::{ConfigurationPreset, NetworkType, PaymentNetwork};
+use crate::ui::configuration::ConfigurationState;
 
 #[derive(Debug, Clone)]
 pub struct PresetEditor {
     pub editing_index: Option<usize>, // None for new preset, Some(index) for editing existing
     pub name: String,
-    pub payment_network: PaymentNetwork,
-    pub subnet: String,
-    pub network_type: NetworkType,
-    pub wallet_address: String,
+    pub configuration: ConfigurationState,
     pub is_default: bool,
 }
 
@@ -16,10 +14,7 @@ impl PresetEditor {
         Self {
             editing_index: Some(preset_index),
             name: preset.name.clone(),
-            payment_network: preset.payment_network,
-            subnet: preset.subnet.clone(),
-            network_type: preset.network_type,
-            wallet_address: preset.wallet_address.clone(),
+            configuration: ConfigurationState::from_preset(preset),
             is_default: preset.is_default,
         }
     }
@@ -28,32 +23,17 @@ impl PresetEditor {
         Self {
             editing_index: None,
             name: String::new(),
-            payment_network: PaymentNetwork::Testnet,
-            subnet: "public".to_string(),
-            network_type: NetworkType::Central,
-            wallet_address: String::new(),
+            configuration: ConfigurationState::new(),
             is_default: false,
         }
     }
 
     pub fn to_preset(&self) -> ConfigurationPreset {
-        ConfigurationPreset {
-            name: self.name.clone(),
-            payment_network: self.payment_network,
-            subnet: self.subnet.clone(),
-            network_type: self.network_type,
-            wallet_address: self.wallet_address.clone(),
-            is_default: self.is_default,
-            non_interactive_install: false, // Default value
-            ssh_keys: Vec::new(),           // Default value
-            configuration_server: None,     // Default value
-            metrics_server: None,           // Default value
-            central_net_host: None,         // Default value
-        }
+        self.configuration.to_preset(self.name.clone(), self.is_default)
     }
 
     pub fn is_valid(&self) -> bool {
-        !self.name.trim().is_empty() && !self.subnet.trim().is_empty()
+        !self.name.trim().is_empty() && self.configuration.is_valid()
     }
 }
 

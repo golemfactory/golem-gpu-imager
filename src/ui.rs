@@ -28,7 +28,7 @@ pub use flash_workflow::{
 #[allow(unused_imports)]
 use iced::Font;
 #[allow(unused_imports)]
-pub use shared::{view_configuration_editor, view_preset_editor};
+pub use shared::view_configuration_editor;
 pub use start_screen::view_start_screen;
 
 // Include the logo SVG data

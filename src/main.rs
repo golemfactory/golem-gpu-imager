@@ -1,3 +1,5 @@
+#![allow(unused_imports)]
+
 use directories::ProjectDirs;
 use iced::window::{Settings, icon};
 use std::path::PathBuf;

@@ -12,6 +12,8 @@ pub struct ConfigurationState {
     pub configuration_server: String,
     pub metrics_server: String,
     pub central_net_host: String,
+    pub advanced_options_expanded: bool,
+    pub selected_preset: Option<usize>,
 }
 
 impl ConfigurationState {
@@ -27,6 +29,8 @@ impl ConfigurationState {
             configuration_server: String::new(),
             metrics_server: String::new(),
             central_net_host: String::new(),
+            advanced_options_expanded: false,
+            selected_preset: None,
         }
     }
 
@@ -43,6 +47,8 @@ impl ConfigurationState {
             configuration_server: preset.configuration_server.clone().unwrap_or_default(),
             metrics_server: preset.metrics_server.clone().unwrap_or_default(),
             central_net_host: preset.central_net_host.clone().unwrap_or_default(),
+            advanced_options_expanded: false,
+            selected_preset: None, // Will be set by the caller when loading from a specific preset
         }
     }
 

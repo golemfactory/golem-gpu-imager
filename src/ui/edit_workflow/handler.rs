@@ -82,25 +82,14 @@ pub fn handle_message(
         }
 
         EditMessage::DeviceConfigurationLoaded(config) => {
-            // Convert loaded configuration to UI state
-            let is_wallet_valid = config.wallet_address.is_empty()
-                || crate::utils::eth::is_valid_eth_address(&config.wallet_address);
+            // Set the workflow state to configuration mode
+            state.workflow_state = EditWorkflowState::EditConfiguration;
 
-            state.workflow_state = EditWorkflowState::EditConfiguration {
-                payment_network: config.payment_network,
-                subnet: config.subnet,
-                network_type: config.network_type,
-                wallet_address: config.wallet_address,
-                is_wallet_valid,
-                non_interactive_install: config.non_interactive_install,
-                ssh_keys: config.ssh_keys.join("\n"),
-                configuration_server: config.configuration_server.unwrap_or_default(),
-                metrics_server: config.metrics_server.unwrap_or_default(),
-                central_net_host: config.central_net_host.unwrap_or_default(),
-                advanced_options_expanded: false,
-            };
+            // Send the loaded configuration to the central configuration state
             info!("Configuration loaded from device successfully");
-            Task::none()
+            Task::done(crate::ui::messages::Message::Configuration(
+                crate::ui::configuration::ConfigurationMessage::LoadFromDevice(config),
+            ))
         }
 
         EditMessage::DeviceConfigurationLoadFailed(error) => {
@@ -109,131 +98,27 @@ pub fn handle_message(
                 "Failed to load device configuration, using defaults: {}",
                 error
             );
-            state.workflow_state = EditWorkflowState::EditConfiguration {
-                payment_network: crate::models::PaymentNetwork::Testnet,
-                subnet: "public".to_string(),
-                network_type: crate::models::NetworkType::Central,
-                wallet_address: String::new(),
-                is_wallet_valid: true,
-                non_interactive_install: false,
-                ssh_keys: String::new(),
-                configuration_server: String::new(),
-                metrics_server: String::new(),
-                central_net_host: String::new(),
-                advanced_options_expanded: false,
-            };
-            Task::none()
+            state.workflow_state = EditWorkflowState::EditConfiguration;
+
+            // Reset configuration to defaults
+            Task::done(crate::ui::messages::Message::Configuration(
+                crate::ui::configuration::ConfigurationMessage::Reset,
+            ))
         }
 
-        EditMessage::SetPaymentNetwork(network) => {
-            if let EditWorkflowState::EditConfiguration {
-                payment_network, ..
-            } = &mut state.workflow_state
-            {
-                *payment_network = network;
-            }
-            Task::none()
-        }
-
-        EditMessage::SetSubnet(subnet) => {
-            if let EditWorkflowState::EditConfiguration {
-                subnet: current_subnet,
-                ..
-            } = &mut state.workflow_state
-            {
-                *current_subnet = subnet;
-            }
-            Task::none()
-        }
-
-        EditMessage::SetNetworkType(network_type) => {
-            if let EditWorkflowState::EditConfiguration {
-                network_type: current_type,
-                ..
-            } = &mut state.workflow_state
-            {
-                *current_type = network_type;
-            }
-            Task::none()
-        }
-
-        EditMessage::SetWalletAddress(address) => {
-            if let EditWorkflowState::EditConfiguration {
-                wallet_address,
-                is_wallet_valid,
-                ..
-            } = &mut state.workflow_state
-            {
-                *wallet_address = address.clone();
-                *is_wallet_valid =
-                    address.is_empty() || crate::utils::eth::is_valid_eth_address(&address);
-            }
-            Task::none()
-        }
-
-        EditMessage::SetNonInteractiveInstall(enabled) => {
-            if let EditWorkflowState::EditConfiguration {
-                non_interactive_install,
-                ..
-            } = &mut state.workflow_state
-            {
-                *non_interactive_install = enabled;
-            }
-            Task::none()
-        }
-
-        EditMessage::SetSSHKeys(keys) => {
-            if let EditWorkflowState::EditConfiguration {
-                ssh_keys,
-                ..
-            } = &mut state.workflow_state
-            {
-                *ssh_keys = keys;
-            }
-            Task::none()
-        }
-
-        EditMessage::SetConfigurationServer(server) => {
-            if let EditWorkflowState::EditConfiguration {
-                configuration_server,
-                ..
-            } = &mut state.workflow_state
-            {
-                *configuration_server = server;
-            }
-            Task::none()
-        }
-
-        EditMessage::SetMetricsServer(server) => {
-            if let EditWorkflowState::EditConfiguration {
-                metrics_server,
-                ..
-            } = &mut state.workflow_state
-            {
-                *metrics_server = server;
-            }
-            Task::none()
-        }
-
-        EditMessage::SetCentralNetHost(host) => {
-            if let EditWorkflowState::EditConfiguration {
-                central_net_host,
-                ..
-            } = &mut state.workflow_state
-            {
-                *central_net_host = host;
-            }
-            Task::none()
-        }
-
+        // These messages are no longer needed as they're handled by the central configuration
+        EditMessage::SetPaymentNetwork(_) |
+        EditMessage::SetSubnet(_) |
+        EditMessage::SetNetworkType(_) |
+        EditMessage::SetWalletAddress(_) |
+        EditMessage::SetNonInteractiveInstall(_) |
+        EditMessage::SetSSHKeys(_) |
+        EditMessage::SetConfigurationServer(_) |
+        EditMessage::SetMetricsServer(_) |
+        EditMessage::SetCentralNetHost(_) |
         EditMessage::ToggleAdvancedOptions => {
-            if let EditWorkflowState::EditConfiguration {
-                advanced_options_expanded,
-                ..
-            } = &mut state.workflow_state
-            {
-                *advanced_options_expanded = !*advanced_options_expanded;
-            }
+            // These are now handled by the central configuration system
+            debug!("Configuration message forwarded to central configuration system");
             Task::none()
         }
 
@@ -271,91 +156,19 @@ pub fn handle_message(
         }
 
         EditMessage::SaveConfiguration => {
-            // Save configuration to the selected device
-            if let (
-                Some(device_index),
-                EditWorkflowState::EditConfiguration {
-                    payment_network,
-                    subnet,
-                    network_type,
-                    wallet_address,
-                    non_interactive_install,
-                    ssh_keys,
-                    configuration_server,
-                    metrics_server,
-                    central_net_host,
-                    ..
-                },
-            ) = (state.selected_device, &state.workflow_state)
-            {
+            // Save configuration to the selected device using central configuration
+            if let Some(device_index) = state.selected_device {
                 // Get the device path from the device selection state
                 if let Some(device) = device_selection.devices.get(device_index) {
                     debug!(
-                        "Saving configuration to device: {} ({})",
+                        "Initiating configuration save to device: {} ({})",
                         device.name, device.path
                     );
 
-                    let device_path = device.path.clone();
-                    let payment_network = *payment_network;
-                    let subnet = subnet.clone();
-                    let network_type = *network_type;
-                    let wallet_address = wallet_address.clone();
-                    let non_interactive_install = *non_interactive_install;
-                    let ssh_keys = ssh_keys.clone();
-                    let configuration_server = configuration_server.clone();
-                    let metrics_server = metrics_server.clone();
-                    let central_net_host = central_net_host.clone();
-
-                    Task::perform(
-                        async move {
-                            use crate::disk::Disk;
-                            use crate::disk::ImageConfiguration;
-
-                            info!("Starting configuration save to device: {}", device_path);
-
-                            // Create configuration from current settings using new_with_options
-                            let config = ImageConfiguration::new_with_options(
-                                payment_network,
-                                network_type,
-                                subnet,
-                                wallet_address,
-                                non_interactive_install,
-                                ssh_keys,
-                                configuration_server,
-                                metrics_server,
-                                central_net_host,
-                            );
-
-                            // Attempt to write configuration to the device
-                            match Disk::write_configuration_to_disk(&device_path, config).await {
-                                Ok(()) => {
-                                    info!(
-                                        "Configuration successfully saved to device: {}",
-                                        device_path
-                                    );
-                                    Ok(())
-                                }
-                                Err(e) => {
-                                    error!(
-                                        "Failed to save configuration to device {}: {}",
-                                        device_path, e
-                                    );
-                                    Err(format!("Failed to save configuration: {}", e))
-                                }
-                            }
-                        },
-                        |result: Result<(), String>| match result {
-                            Ok(()) => {
-                                crate::ui::messages::Message::Edit(EditMessage::ConfigurationSaved)
-                            }
-                            Err(err) => {
-                                error!("Configuration save failed: {}", err);
-                                crate::ui::messages::Message::Edit(
-                                    EditMessage::ConfigurationSaveFailed,
-                                )
-                            }
-                        },
-                    )
+                    // Forward to central configuration handler which has access to the configuration state
+                    Task::done(crate::ui::messages::Message::Configuration(
+                        crate::ui::configuration::ConfigurationMessage::SaveToDevice(device.path.clone()),
+                    ))
                 } else {
                     error!(
                         "Cannot save configuration: device index {} not found",
@@ -367,7 +180,7 @@ pub fn handle_message(
                 }
             } else {
                 error!(
-                    "Cannot save configuration: no device selected or not in edit configuration state"
+                    "Cannot save configuration: no device selected"
                 );
                 Task::done(crate::ui::messages::Message::Edit(
                     EditMessage::ConfigurationSaveFailed,

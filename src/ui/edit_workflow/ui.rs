@@ -236,7 +236,7 @@ pub fn view_edit_configuration<'a>(
     new_preset_name: &'a str,
 ) -> Element<'a, Message> {
     // Use the shared configuration editor from the shared module
-    crate::ui::shared::configuration::view_configuration_editor(
+    crate::ui::configuration::view::view_configuration_editor(
         configuration,
         "Edit Configuration",
         "Edit the configuration settings for your device:",

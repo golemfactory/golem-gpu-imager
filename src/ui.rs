@@ -10,8 +10,6 @@ pub mod edit_workflow;
 pub mod flash_workflow;
 pub mod preset_manager;
 
-// Shared UI components
-pub mod shared;
 
 // Unified message system
 pub mod messages;
@@ -28,7 +26,7 @@ pub use flash_workflow::{
 #[allow(unused_imports)]
 use iced::Font;
 #[allow(unused_imports)]
-pub use shared::view_configuration_editor;
+pub use configuration::view::view_configuration_editor;
 pub use start_screen::view_start_screen;
 
 // Include the logo SVG data

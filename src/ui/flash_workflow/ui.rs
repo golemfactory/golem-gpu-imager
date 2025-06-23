@@ -1246,7 +1246,7 @@ pub fn view_flash_configure_settings<'a>(
     _preset_editor: Option<&'a crate::ui::preset_manager::PresetEditor>,
 ) -> Element<'a, crate::ui::messages::Message> {
     // Use the shared configuration editor from the shared module
-    crate::ui::shared::configuration::view_configuration_editor(
+    crate::ui::configuration::view::view_configuration_editor(
         configuration,
         "Configure Settings",
         "Configure your Golem Network settings before flashing:",

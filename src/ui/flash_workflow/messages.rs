@@ -22,13 +22,12 @@ pub enum FlashMessage {
     WriteImage,
     CancelWrite,
     FlashAnother,
-    WriteImageProgress(f32),       // Update the image writing progress
-    VerificationProgress(f32),     // Update the verification progress
-    WriteImageCompleted,           // Image write completed successfully
-    WriteImageFailed(String),      // Image write failed with error message
-    BackToSelectOsImage,           // Go back to the OS image selection screen
-    BackToSelectTargetDevice,      // Go back to target device selection screen
-    BackToMainMenu,                // Navigation: go back to main menu
-    Exit,                          // App action: exit application
-    RefreshRepoData,               // App action: refresh repository data
+    WriteImageProgress(f32),   // Update the image writing progress
+    VerificationProgress(f32), // Update the verification progress
+    WriteImageCompleted,       // Image write completed successfully
+    WriteImageFailed(String),  // Image write failed with error message
+    BackToSelectOsImage,       // Go back to the OS image selection screen
+    BackToSelectTargetDevice,  // Go back to target device selection screen
+    BackToMainMenu,            // Navigation: go back to main menu
+    RefreshRepoData,           // App action: refresh repository data
 }

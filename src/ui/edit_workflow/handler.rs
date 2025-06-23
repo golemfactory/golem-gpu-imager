@@ -106,54 +106,6 @@ pub fn handle_message(
             ))
         }
 
-        // These messages are no longer needed as they're handled by the central configuration
-        EditMessage::SetPaymentNetwork(_) |
-        EditMessage::SetSubnet(_) |
-        EditMessage::SetNetworkType(_) |
-        EditMessage::SetWalletAddress(_) |
-        EditMessage::SetNonInteractiveInstall(_) |
-        EditMessage::SetSSHKeys(_) |
-        EditMessage::SetConfigurationServer(_) |
-        EditMessage::SetMetricsServer(_) |
-        EditMessage::SetCentralNetHost(_) |
-        EditMessage::ToggleAdvancedOptions => {
-            // These are now handled by the central configuration system
-            debug!("Configuration message forwarded to central configuration system");
-            Task::none()
-        }
-
-        EditMessage::SelectPreset(index) => {
-            // Forward to the application level to handle preset selection
-            Task::done(crate::ui::messages::Message::SelectPreset(index))
-        }
-
-        EditMessage::RefreshDevices => {
-            debug!("Delegating device refresh to DeviceSelection module");
-            Task::done(crate::ui::messages::Message::DeviceSelection(
-                crate::ui::device_selection::DeviceMessage::RefreshDevices,
-            ))
-        }
-
-        EditMessage::DevicesLoaded(_devices) => {
-            // This message is no longer used - devices are handled by DeviceSelection module
-            debug!("DevicesLoaded message deprecated - using shared device selection state");
-            Task::none()
-        }
-
-        EditMessage::DeviceLoadFailed(error) => {
-            // Set error message in edit state for display
-            state.error_message = Some(error.clone());
-            error!("Device loading failed: {}", error);
-            Task::none()
-        }
-
-        EditMessage::DeviceLocked(disk) => {
-            state.locked_disk = disk;
-            if state.locked_disk.is_some() {
-                info!("Device locked for editing");
-            }
-            Task::none()
-        }
 
         EditMessage::SaveConfiguration => {
             // Save configuration to the selected device using central configuration
@@ -167,7 +119,9 @@ pub fn handle_message(
 
                     // Forward to central configuration handler which has access to the configuration state
                     Task::done(crate::ui::messages::Message::Configuration(
-                        crate::ui::configuration::ConfigurationMessage::SaveToDevice(device.path.clone()),
+                        crate::ui::configuration::ConfigurationMessage::SaveToDevice(
+                            device.path.clone(),
+                        ),
                     ))
                 } else {
                     error!(
@@ -179,9 +133,7 @@ pub fn handle_message(
                     ))
                 }
             } else {
-                error!(
-                    "Cannot save configuration: no device selected"
-                );
+                error!("Cannot save configuration: no device selected");
                 Task::done(crate::ui::messages::Message::Edit(
                     EditMessage::ConfigurationSaveFailed,
                 ))
@@ -212,6 +164,13 @@ pub fn handle_message(
         EditMessage::EditAnother => {
             *state = EditState::new();
             Task::none()
+        }
+
+        EditMessage::RefreshDevices => {
+            debug!("Delegating device refresh to DeviceSelection module");
+            Task::done(crate::ui::messages::Message::DeviceSelection(
+                crate::ui::device_selection::DeviceMessage::RefreshDevices,
+            ))
         }
     }
 }

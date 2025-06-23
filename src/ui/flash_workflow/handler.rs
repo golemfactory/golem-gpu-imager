@@ -2,7 +2,7 @@ use super::{FlashMessage, FlashState, FlashWorkflowState};
 use crate::disk::{Disk, WriteProgress};
 use crate::models::CancelToken;
 use crate::utils::repo::ImageRepo;
-use crate::utils::validation::{validate_ssh_keys, is_valid_url};
+use crate::utils::validation::{is_valid_url, validate_ssh_keys};
 use iced::Task;
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
@@ -67,7 +67,6 @@ pub fn handle_message(
             // Request application to initialize configuration with default preset
             Task::done(crate::ui::messages::Message::InitializeFlashConfiguration)
         }
-
 
         FlashMessage::SelectTargetDevice(index) => {
             state.selected_device = Some(index);
@@ -189,7 +188,6 @@ pub fn handle_message(
         // App-level navigation messages that need to be forwarded
         FlashMessage::BackToMainMenu => Task::done(crate::ui::messages::Message::BackToMainMenu),
 
-        FlashMessage::Exit => Task::done(crate::ui::messages::Message::Exit),
 
         FlashMessage::RefreshRepoData => Task::done(crate::ui::messages::Message::RefreshRepoData),
 
@@ -678,39 +676,49 @@ pub fn handle_message(
             }
 
             // Validate SSH keys
-            let ssh_key_errors = validate_ssh_keys(&configuration.ssh_keys);
+            let ssh_keys_string = configuration.ssh_keys.join("\n");
+            let ssh_key_errors = validate_ssh_keys(&ssh_keys_string);
             if !ssh_key_errors.is_empty() {
                 warn!("Cannot proceed, SSH keys are invalid: {:?}", ssh_key_errors);
-                return Task::done(crate::ui::messages::Message::ShowError(
-                    format!("Invalid SSH keys: {}", ssh_key_errors.join(", "))
-                ));
+                return Task::done(crate::ui::messages::Message::ShowError(format!(
+                    "Invalid SSH keys: {}",
+                    ssh_key_errors.join(", ")
+                )));
             }
 
             // Validate URLs
             if !is_valid_url(&configuration.configuration_server) {
-                warn!("Cannot proceed, configuration server URL is invalid: {}", configuration.configuration_server);
+                warn!(
+                    "Cannot proceed, configuration server URL is invalid: {}",
+                    configuration.configuration_server
+                );
                 return Task::done(crate::ui::messages::Message::ShowError(
                     "Invalid configuration server URL".to_string(),
                 ));
             }
 
             if !is_valid_url(&configuration.metrics_server) {
-                warn!("Cannot proceed, metrics server URL is invalid: {}", configuration.metrics_server);
+                warn!(
+                    "Cannot proceed, metrics server URL is invalid: {}",
+                    configuration.metrics_server
+                );
                 return Task::done(crate::ui::messages::Message::ShowError(
                     "Invalid metrics server URL".to_string(),
                 ));
             }
 
             if !is_valid_url(&configuration.central_net_host) {
-                warn!("Cannot proceed, central net host URL is invalid: {}", configuration.central_net_host);
+                warn!(
+                    "Cannot proceed, central net host URL is invalid: {}",
+                    configuration.central_net_host
+                );
                 return Task::done(crate::ui::messages::Message::ShowError(
                     "Invalid central net host URL".to_string(),
                 ));
             }
 
             // Get the selected OS image and device
-            if let (Some(image), Some(device_idx)) =
-                (selected_image_option, state.selected_device)
+            if let (Some(image), Some(device_idx)) = (selected_image_option, state.selected_device)
             {
                 if let Some(device) = device_selection.devices.get(device_idx) {
                     // Make sure the image is downloaded
@@ -732,7 +740,7 @@ pub fn handle_message(
                             configuration.subnet.clone(),
                             configuration.wallet_address.clone(),
                             configuration.non_interactive_install,
-                            configuration.ssh_keys.clone(),
+                            configuration.ssh_keys.join("\n"),
                             configuration.configuration_server.clone(),
                             configuration.metrics_server.clone(),
                             configuration.central_net_host.clone(),
@@ -744,151 +752,148 @@ pub fn handle_message(
                             configuration.network_type,
                             configuration.subnet,
                             configuration.wallet_address,
-                                device_path
-                            );
+                            device_path
+                        );
 
-                            // Pass the cancel token clone into the future task
-                            return Task::future(async move {
-                                info!("Starting disk image write to {}", device_path);
-                                // Store the device_path for use throughout the process
-                                // When writing an image, set edit_mode to false to allow disk cleaning
-                                let locked_disk = Disk::lock_path(&device_path, false).await;
-                                // Log whether we successfully locked the disk
-                                match &locked_disk {
-                                    Ok(_) => info!("Successfully locked disk: {}", device_path),
-                                    Err(e) => {
-                                        error!("Failed to lock disk {}: {}", device_path, e)
-                                    }
+                        // Pass the cancel token clone into the future task
+                        return Task::future(async move {
+                            info!("Starting disk image write to {}", device_path);
+                            // Store the device_path for use throughout the process
+                            // When writing an image, set edit_mode to false to allow disk cleaning
+                            let locked_disk = Disk::lock_path(&device_path, false).await;
+                            // Log whether we successfully locked the disk
+                            match &locked_disk {
+                                Ok(_) => info!("Successfully locked disk: {}", device_path),
+                                Err(e) => {
+                                    error!("Failed to lock disk {}: {}", device_path, e)
                                 }
-                                locked_disk
-                            })
-                            .and_then(move |disk| {
-                                // Now write the image and handle progress
-                                // Note: write_image now takes ownership of disk
-                                // Clone the cancel token again for this specific closure
-                                let task_cancel_token = cancel_token_clone.clone();
+                            }
+                            locked_disk
+                        })
+                        .and_then(move |disk| {
+                            // Now write the image and handle progress
+                            // Note: write_image now takes ownership of disk
+                            // Clone the cancel token again for this specific closure
+                            let task_cancel_token = cancel_token_clone.clone();
 
-                                let write_task = match &image_metadata {
-                                    Some(metadata) => Task::sip(
-                                        disk.write_image(
-                                            &image_path_val,
-                                            metadata.clone(),
-                                            task_cancel_token,
-                                            config.clone(),
-                                        ),
-                                        |message| match message {
-                                            WriteProgress::Start => {
-                                                crate::ui::messages::Message::Flash(
-                                                    FlashMessage::WriteImageProgress(0.0),
-                                                )
-                                            }
-                                            WriteProgress::ClearingPartitions { progress: _ } => {
-                                                // ClearPartitions progress removed - use generic write progress
-                                                crate::ui::messages::Message::Flash(
-                                                    FlashMessage::WriteImageProgress(0.0),
-                                                )
-                                            }
-                                            WriteProgress::Write {
-                                                total_written,
-                                                total_size,
-                                            } => {
-                                                // Calculate progress based on actual metadata size or fallback to 16GB
-                                                let size_for_calculation = if total_size > 0 {
-                                                    total_size as f32
-                                                } else {
-                                                    16.0 * 1024.0 * 1024.0 * 1024.0 // 16GB fallback
-                                                };
-
-                                                // Calculate progress percentage (0.0-1.0)
-                                                let progress =
-                                                    total_written as f32 / size_for_calculation;
-
-                                                // Clamp to make sure we don't go over 100%
-                                                let clamped_progress = progress.min(1.0);
-
-                                                crate::ui::messages::Message::Flash(
-                                                    FlashMessage::WriteImageProgress(
-                                                        clamped_progress,
-                                                    ),
-                                                )
-                                            }
-                                            WriteProgress::Verifying {
-                                                verified_bytes,
-                                                total_size,
-                                            } => {
-                                                // Calculate verification progress (0.0-1.0)
-                                                let progress = if total_size > 0 {
-                                                    verified_bytes as f32 / total_size as f32
-                                                } else {
-                                                    0.0
-                                                };
-
-                                                // Use a separate message for verification progress
-                                                crate::ui::messages::Message::Flash(
-                                                    FlashMessage::VerificationProgress(
-                                                        progress.min(1.0),
-                                                    ),
-                                                )
-                                            }
-                                            WriteProgress::Finish => {
-                                                crate::ui::messages::Message::Flash(
-                                                    FlashMessage::WriteImageProgress(1.0),
-                                                )
-                                            }
-                                        },
-                                        |result| match result {
-                                            Ok(WriteProgress::Finish) => {
-                                                // When image writing is complete, we'll need to reacquire the disk
-                                                // because write_image now consumes the disk
-                                                crate::ui::messages::Message::Flash(
-                                                    FlashMessage::WriteImageCompleted,
-                                                )
-                                            }
-                                            Ok(_) => crate::ui::messages::Message::Flash(
-                                                FlashMessage::WriteImageCompleted,
-                                            ),
-                                            Err(e) => crate::ui::messages::Message::Flash(
-                                                FlashMessage::WriteImageFailed(format!("{:?}", e)),
-                                            ),
-                                        },
+                            let write_task = match &image_metadata {
+                                Some(metadata) => Task::sip(
+                                    disk.write_image(
+                                        &image_path_val,
+                                        metadata.clone(),
+                                        task_cancel_token,
+                                        config.clone(),
                                     ),
-                                    None => {
-                                        // This should never happen in practice, but handle gracefully
-                                        Task::done(crate::ui::messages::Message::Flash(
-                                            FlashMessage::WriteImageFailed(
-                                                "Image metadata is required for writing"
-                                                    .to_string(),
-                                            ),
-                                        ))
-                                    }
-                                };
+                                    |message| match message {
+                                        WriteProgress::Start => {
+                                            crate::ui::messages::Message::Flash(
+                                                FlashMessage::WriteImageProgress(0.0),
+                                            )
+                                        }
+                                        WriteProgress::ClearingPartitions { progress: _ } => {
+                                            // ClearPartitions progress removed - use generic write progress
+                                            crate::ui::messages::Message::Flash(
+                                                FlashMessage::WriteImageProgress(0.0),
+                                            )
+                                        }
+                                        WriteProgress::Write {
+                                            total_written,
+                                            total_size,
+                                        } => {
+                                            // Calculate progress based on actual metadata size or fallback to 16GB
+                                            let size_for_calculation = if total_size > 0 {
+                                                total_size as f32
+                                            } else {
+                                                16.0 * 1024.0 * 1024.0 * 1024.0 // 16GB fallback
+                                            };
 
-                                write_task
-                            });
-                        } else {
-                            // Image not downloaded
-                            error!("Cannot write - image not downloaded: {}", image.name);
-                            state.workflow_state = FlashWorkflowState::Completion(false);
-                            Task::done(crate::ui::messages::Message::ShowError(
-                                "Image not downloaded".to_string(),
-                            ))
-                        }
+                                            // Calculate progress percentage (0.0-1.0)
+                                            let progress =
+                                                total_written as f32 / size_for_calculation;
+
+                                            // Clamp to make sure we don't go over 100%
+                                            let clamped_progress = progress.min(1.0);
+
+                                            crate::ui::messages::Message::Flash(
+                                                FlashMessage::WriteImageProgress(clamped_progress),
+                                            )
+                                        }
+                                        WriteProgress::Verifying {
+                                            verified_bytes,
+                                            total_size,
+                                        } => {
+                                            // Calculate verification progress (0.0-1.0)
+                                            let progress = if total_size > 0 {
+                                                verified_bytes as f32 / total_size as f32
+                                            } else {
+                                                0.0
+                                            };
+
+                                            // Use a separate message for verification progress
+                                            crate::ui::messages::Message::Flash(
+                                                FlashMessage::VerificationProgress(
+                                                    progress.min(1.0),
+                                                ),
+                                            )
+                                        }
+                                        WriteProgress::Finish => {
+                                            crate::ui::messages::Message::Flash(
+                                                FlashMessage::WriteImageProgress(1.0),
+                                            )
+                                        }
+                                    },
+                                    |result| match result {
+                                        Ok(WriteProgress::Finish) => {
+                                            // When image writing is complete, we'll need to reacquire the disk
+                                            // because write_image now consumes the disk
+                                            crate::ui::messages::Message::Flash(
+                                                FlashMessage::WriteImageCompleted,
+                                            )
+                                        }
+                                        Ok(_) => crate::ui::messages::Message::Flash(
+                                            FlashMessage::WriteImageCompleted,
+                                        ),
+                                        Err(e) => crate::ui::messages::Message::Flash(
+                                            FlashMessage::WriteImageFailed(format!("{:?}", e)),
+                                        ),
+                                    },
+                                ),
+                                None => {
+                                    // This should never happen in practice, but handle gracefully
+                                    Task::done(crate::ui::messages::Message::Flash(
+                                        FlashMessage::WriteImageFailed(
+                                            "Image metadata is required for writing".to_string(),
+                                        ),
+                                    ))
+                                }
+                            };
+
+                            write_task
+                        });
                     } else {
-                        // Invalid device index
-                        error!("Invalid device index");
+                        // Image not downloaded
+                        error!("Cannot write - image not downloaded: {}", image.name);
                         state.workflow_state = FlashWorkflowState::Completion(false);
                         Task::done(crate::ui::messages::Message::ShowError(
-                            "Invalid device index".to_string(),
+                            "Image not downloaded".to_string(),
                         ))
                     }
                 } else {
-                    // No image or device selected
-                    error!("No OS image or device selected");
+                    // Invalid device index
+                    error!("Invalid device index");
                     state.workflow_state = FlashWorkflowState::Completion(false);
                     Task::done(crate::ui::messages::Message::ShowError(
-                        "No OS image or device selected".to_string(),
+                        "Invalid device index".to_string(),
                     ))
                 }
+            } else {
+                // No image or device selected
+                error!("No OS image or device selected");
+                state.workflow_state = FlashWorkflowState::Completion(false);
+                Task::done(crate::ui::messages::Message::ShowError(
+                    "No OS image or device selected".to_string(),
+                ))
+            }
         }
 
         FlashMessage::WriteImageCompleted => {
@@ -897,8 +902,6 @@ pub fn handle_message(
             state.workflow_state = FlashWorkflowState::Completion(true);
             Task::none()
         }
-
-
 
         FlashMessage::WriteImageFailed(error) => {
             error!("Image writing failed: {}", error);
@@ -934,7 +937,6 @@ pub fn handle_message(
             Task::none()
         }
 
-
         FlashMessage::CancelWrite => {
             debug!("Cancel write requested");
 
@@ -950,8 +952,7 @@ pub fn handle_message(
                     state.downloads_in_progress.clear();
                     info!("Download/analysis cancelled, returning to image selection");
                 }
-                FlashWorkflowState::WritingImage(_)
-                | FlashWorkflowState::VerifyingImage(_) => {
+                FlashWorkflowState::WritingImage(_) | FlashWorkflowState::VerifyingImage(_) => {
                     // Cancel write process - go to completion with failed status
                     state.workflow_state = FlashWorkflowState::Completion(false);
                     info!("Write process cancelled");
@@ -969,6 +970,5 @@ pub fn handle_message(
 
             Task::none()
         }
-
     }
 }

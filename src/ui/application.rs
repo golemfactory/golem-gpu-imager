@@ -274,7 +274,8 @@ impl GolemGpuImager {
                     // Apply preset to the central configuration if flash workflow is active
                     if let Some(flash_state) = &mut self.flash_workflow {
                         if let FlashWorkflowState::ConfigureSettings = &flash_state.workflow_state {
-                            self.configuration = crate::ui::configuration::ConfigurationState::from_preset(preset);
+                            self.configuration =
+                                crate::ui::configuration::ConfigurationState::from_preset(preset);
                             self.configuration.selected_preset = Some(index);
                         }
                     }
@@ -282,7 +283,8 @@ impl GolemGpuImager {
                     // Apply preset to edit workflow if active
                     if let Some(edit_state) = &mut self.edit_workflow {
                         if let EditWorkflowState::EditConfiguration = &edit_state.workflow_state {
-                            self.configuration = crate::ui::configuration::ConfigurationState::from_preset(preset);
+                            self.configuration =
+                                crate::ui::configuration::ConfigurationState::from_preset(preset);
                             self.configuration.selected_preset = Some(index);
                         }
                     }
@@ -295,11 +297,13 @@ impl GolemGpuImager {
                     // Initialize the central configuration state with the default preset if available
                     if let Some(selected_index) = self.preset_manager.selected_preset {
                         if let Some(preset) = self.preset_manager.presets.get(selected_index) {
-                            self.configuration = crate::ui::configuration::ConfigurationState::from_preset(preset);
+                            self.configuration =
+                                crate::ui::configuration::ConfigurationState::from_preset(preset);
                             self.configuration.selected_preset = Some(selected_index);
                         } else {
                             // Fallback to defaults if preset not found
-                            self.configuration = crate::ui::configuration::ConfigurationState::new();
+                            self.configuration =
+                                crate::ui::configuration::ConfigurationState::new();
                         }
                     } else {
                         // No default preset selected, use hardcoded defaults

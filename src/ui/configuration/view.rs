@@ -1,10 +1,12 @@
-use iced::widget::{button, checkbox, column, container, pick_list, row, scrollable, text, text_input};
+use iced::widget::{
+    button, checkbox, column, container, keyed_column, pick_list, row, scrollable, text, text_input,
+};
 use iced::{Alignment, Color, Element, Length};
 
+use super::{ConfigurationMessage, ConfigurationState};
 use crate::models::{NetworkType, PaymentNetwork};
 use crate::style;
 use crate::ui::{icons, messages::Message};
-use super::{ConfigurationMessage, ConfigurationState};
 
 /// Main configuration view - reusable across all contexts
 pub fn view_configuration<'a, F>(
@@ -18,26 +20,17 @@ where
 {
     let header = view_header(title, description);
     let form = view_configuration_form(state, message_factory);
-    
-    column![header, form]
-        .spacing(20)
-        .width(Length::Fill)
-        .into()
+
+    column![header, form].spacing(20).width(Length::Fill).into()
 }
 
 /// Configuration header component
 pub fn view_header<'a>(title: &'a str, description: &'a str) -> Element<'a, Message> {
-    container(
-        column![
-            text(title).size(28),
-            text(description).size(16),
-        ]
-        .spacing(5)
-    )
-    .width(Length::Fill)
-    .padding(15)
-    .style(style::bordered_box)
-    .into()
+    container(column![text(title).size(28), text(description).size(16),].spacing(5))
+        .width(Length::Fill)
+        .padding(15)
+        .style(style::bordered_box)
+        .into()
 }
 
 /// Main configuration form component
@@ -50,18 +43,12 @@ where
 {
     let basic_form = view_basic_configuration(state, message_factory);
     let advanced_form = view_advanced_configuration(state, message_factory);
-    
-    container(
-        column![
-            basic_form,
-            advanced_form,
-        ]
-        .spacing(20)
-    )
-    .width(Length::Fill)
-    .padding(15)
-    .style(style::bordered_box)
-    .into()
+
+    container(column![basic_form, advanced_form,].spacing(20))
+        .width(Length::Fill)
+        .padding(15)
+        .style(style::bordered_box)
+        .into()
 }
 
 /// Basic configuration fields
@@ -83,22 +70,22 @@ where
                 .color(Color::from_rgb(0.6, 0.6, 0.6)),
         ]
         .spacing(5),
-        
+
         // Payment Network
         view_payment_network_field(state.payment_network, message_factory),
-        
+
         // Network Type
         view_network_type_field(state.network_type, message_factory),
-        
+
         // Subnet
         view_subnet_field(&state.subnet, message_factory),
-        
+
         // Wallet Address
         view_wallet_address_field(&state.wallet_address, state.is_wallet_valid, message_factory),
-        
+
         // SSH Keys
-        view_ssh_keys_field(&state.ssh_keys, message_factory),
-        
+        view_ssh_keys_field(&state.ssh_keys, &state.ssh_key_errors, message_factory),
+
         // Configuration Server
         view_configuration_server_field(&state.configuration_server, message_factory),
     ]
@@ -114,8 +101,9 @@ pub fn view_advanced_configuration<'a, F>(
 where
     F: Fn(ConfigurationMessage) -> Message + Copy + 'a,
 {
-    let toggle_button = view_advanced_options_toggle(state.advanced_options_expanded, message_factory);
-    
+    let toggle_button =
+        view_advanced_options_toggle(state.advanced_options_expanded, message_factory);
+
     let advanced_fields = if state.advanced_options_expanded {
         column![
             view_metrics_server_field(&state.metrics_server, message_factory),
@@ -125,10 +113,8 @@ where
     } else {
         column![]
     };
-    
-    column![toggle_button, advanced_fields]
-        .spacing(15)
-        .into()
+
+    column![toggle_button, advanced_fields].spacing(15).into()
 }
 
 /// Advanced options toggle button
@@ -144,22 +130,22 @@ where
     } else {
         icons::expand_more()
     };
-    
+
     let toggle_text = if expanded {
         "Hide Advanced Options"
     } else {
         "Show Advanced Options"
     };
-    
+
     container(
         button(
             row![expand_icon, text(toggle_text).size(16)]
                 .spacing(8)
-                .align_y(Alignment::Center)
+                .align_y(Alignment::Center),
         )
         .on_press(message_factory(ConfigurationMessage::ToggleAdvancedOptions))
         .padding(8)
-        .style(button::text)
+        .style(button::text),
     )
     .width(Length::Fill)
     .style(style::bordered_box)
@@ -223,10 +209,7 @@ where
 }
 
 /// Subnet field component
-pub fn view_subnet_field<'a, F>(
-    subnet: &'a str,
-    message_factory: F,
-) -> Element<'a, Message>
+pub fn view_subnet_field<'a, F>(subnet: &'a str, message_factory: F) -> Element<'a, Message>
 where
     F: Fn(ConfigurationMessage) -> Message + Copy + 'a,
 {
@@ -261,7 +244,7 @@ where
                     text("Valid Ethereum address").color(style::SUCCESS)
                 ]
                 .spacing(5)
-                .align_y(Alignment::Center)
+                .align_y(Alignment::Center),
             )
             .style(style::valid_message_container)
         } else {
@@ -271,7 +254,7 @@ where
                     text("Invalid Ethereum address format").color(style::ERROR)
                 ]
                 .spacing(5)
-                .align_y(Alignment::Center)
+                .align_y(Alignment::Center),
             )
             .style(style::invalid_message_container)
         }
@@ -279,14 +262,16 @@ where
         container(
             text("Leave empty to use the node's default wallet")
                 .size(12)
-                .color(Color::from_rgb(0.6, 0.6, 0.6))
+                .color(Color::from_rgb(0.6, 0.6, 0.6)),
         )
     };
-    
+
     column![
         text("Wallet Address (Optional)").size(16),
         text_input("Enter Ethereum wallet address (0x...)", wallet_address)
-            .on_input(move |address| message_factory(ConfigurationMessage::SetWalletAddress(address)))
+            .on_input(
+                move |address| message_factory(ConfigurationMessage::SetWalletAddress(address))
+            )
             .width(Length::Fill)
             .style(if wallet_address.is_empty() {
                 style::default_text_input
@@ -301,26 +286,99 @@ where
     .into()
 }
 
-/// SSH keys field component
+fn add_ssh_key_button_text() -> iced::widget::Text<'static> {
+    text("Add SSH Key")
+}
+
+fn remove_button_text() -> iced::widget::Text<'static> {
+    text("✕")
+}
+
+/// SSH keys field component with individual key management
 pub fn view_ssh_keys_field<'a, F>(
-    ssh_keys: &'a str,
+    ssh_keys: &'a [String],
+    ssh_key_errors: &'a [Option<String>],
     message_factory: F,
 ) -> Element<'a, Message>
 where
     F: Fn(ConfigurationMessage) -> Message + Copy + 'a,
 {
-    column![
-        text("SSH Public Keys").size(16),
-        text_input("Enter SSH public keys (one per line or comma separated)", ssh_keys)
-            .on_input(move |keys| message_factory(ConfigurationMessage::SetSSHKeys(keys)))
-            .width(Length::Fill)
-            .style(style::default_text_input),
+    let title = text("SSH Public Keys").size(16);
+    let description =
         text("Public keys in OpenSSH format for user 'golem' - leave empty if not needed")
             .size(12)
-            .color(Color::from_rgb(0.6, 0.6, 0.6)),
-    ]
-    .spacing(5)
-    .into()
+            .color(Color::from_rgb(0.6, 0.6, 0.6));
+
+    let ssh_keys_list: Element<'a, Message> = if ssh_keys.is_empty() {
+        column![
+            button(add_ssh_key_button_text())
+                .on_press(message_factory(ConfigurationMessage::AddSSHKey))
+                .style(style::default_button)
+        ]
+        .into()
+    } else {
+        let key_fields = keyed_column(ssh_keys.iter().enumerate().map(|(index, key)| {
+            let key_input = text_input("Enter SSH public key (ssh-rsa, ssh-ed25519, etc.)", key)
+                .on_input(move |new_key| {
+                    message_factory(ConfigurationMessage::UpdateSSHKey(index, new_key))
+                })
+                .width(Length::Fill)
+                .style(
+                    if ssh_key_errors.get(index).and_then(|e| e.as_ref()).is_some() {
+                        style::error_text_input
+                    } else {
+                        style::default_text_input
+                    },
+                );
+
+            let remove_button = if ssh_keys.len() > 1 {
+                Some(
+                    button(
+                        row![icons::delete(), "Remove"]
+                            .spacing(5)
+                            .align_y(Alignment::Center),
+                    )
+                    .on_press(message_factory(ConfigurationMessage::RemoveSSHKey(index)))
+                    .style(style::cancel_button_danger)
+                    .padding(8),
+                )
+            } else {
+                None
+            };
+
+            let key_row = if let Some(remove_btn) = remove_button {
+                row![key_input, remove_btn]
+                    .spacing(10)
+                    .align_y(Alignment::Center)
+            } else {
+                row![key_input]
+            };
+
+            let mut key_column = column![key_row].spacing(5);
+
+            // Add error message if validation failed
+            if let Some(Some(error)) = ssh_key_errors.get(index) {
+                key_column =
+                    key_column.push(text(error).size(12).color(Color::from_rgb(0.8, 0.2, 0.2)));
+            }
+
+            (index, key_column.into())
+        }))
+        .spacing(10);
+
+        column![
+            key_fields,
+            button(add_ssh_key_button_text())
+                .on_press(message_factory(ConfigurationMessage::AddSSHKey))
+                .style(style::default_button)
+        ]
+        .spacing(10)
+        .into()
+    };
+
+    column![title, description, ssh_keys_list]
+        .spacing(10)
+        .into()
 }
 
 /// Configuration server field component
@@ -334,7 +392,9 @@ where
     column![
         text("Configuration Server (Optional)").size(16),
         text_input("Enter configuration server URL", configuration_server)
-            .on_input(move |server| message_factory(ConfigurationMessage::SetConfigurationServer(server)))
+            .on_input(
+                move |server| message_factory(ConfigurationMessage::SetConfigurationServer(server))
+            )
             .width(Length::Fill)
             .style(style::default_text_input),
         text("URL to server where to look for configuration updates")
@@ -400,55 +460,43 @@ pub fn view_navigation<'a>(
     let back_button = button(
         row![icons::navigate_before(), text(back_label)]
             .spacing(5)
-            .align_y(Alignment::Center)
+            .align_y(Alignment::Center),
     )
     .on_press(back_action)
-    .padding(8)
-    .width(220)
-    .style(button::secondary);
-    
+    .padding(12)
+    .style(style::navigation_back_button);
+
     let next_button = if let Some(action) = next_action {
         if can_proceed {
             button(
-                container(
-                    row![text(next_label), icons::navigate_next()]
-                        .spacing(5)
-                        .align_y(Alignment::Center)
-                )
-                .center_x(Length::Fill)
+                row![text(next_label), icons::navigate_next()]
+                    .spacing(5)
+                    .align_y(Alignment::Center),
             )
             .on_press(action)
-            .padding(8)
-            .width(220)
-            .style(button::primary)
+            .padding(12)
+            .style(style::navigation_action_button)
         } else {
             button(
-                container(
-                    row![
-                        text("Complete configuration to continue"),
-                        icons::navigate_next()
-                    ]
-                    .spacing(5)
-                    .align_y(Alignment::Center)
-                )
-                .center_x(Length::Fill)
+                row![
+                    text("Complete configuration to continue"),
+                    icons::navigate_next()
+                ]
+                .spacing(5)
+                .align_y(Alignment::Center),
             )
-            .padding(8)
-            .width(220)
+            .padding(12)
             .style(button::secondary)
         }
     } else {
-        button(text(""))
-            .padding(8)
-            .width(220)
-            .style(button::secondary)
+        button(text("")).padding(12).style(button::secondary)
     };
-    
+
     container(
         row![back_button, next_button]
             .spacing(15)
             .width(Length::Fill)
-            .align_y(Alignment::Center)
+            .align_y(Alignment::Center),
     )
     .width(Length::Fill)
     .padding(15)
@@ -474,8 +522,14 @@ where
     F: Fn(ConfigurationMessage) -> Message + Copy + 'a,
 {
     let header = view_header(title, description);
-    let preset_section = view_preset_section(configuration_presets, configuration_state.selected_preset, preset_manager_action, message_factory);
-    let configuration_form = view_configuration(configuration_state, "Configuration", "", message_factory);
+    let preset_section = view_preset_section(
+        configuration_presets,
+        configuration_state.selected_preset,
+        preset_manager_action,
+        message_factory,
+    );
+    let configuration_form =
+        view_configuration(configuration_state, "Configuration", "", message_factory);
     let save_preset_section = view_save_preset_section(new_preset_name, configuration_state);
     let navigation = view_navigation(
         back_action,
@@ -611,7 +665,6 @@ fn view_save_preset_section<'a>(
         .style(style::bordered_box)
         .into()
     } else {
-        container(column![])
-            .into()
+        container(column![]).into()
     }
 }

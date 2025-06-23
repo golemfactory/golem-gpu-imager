@@ -43,9 +43,21 @@ pub fn handle_message(
             Task::none()
         }
 
-        ConfigurationMessage::SetSSHKeys(keys) => {
-            state.ssh_keys = keys;
-            debug!("Set SSH keys");
+        ConfigurationMessage::AddSSHKey => {
+            state.add_ssh_key();
+            debug!("Added new SSH key field");
+            Task::none()
+        }
+
+        ConfigurationMessage::RemoveSSHKey(index) => {
+            state.remove_ssh_key(index);
+            debug!("Removed SSH key at index: {}", index);
+            Task::none()
+        }
+
+        ConfigurationMessage::UpdateSSHKey(index, key) => {
+            state.update_ssh_key(index, key);
+            debug!("Updated SSH key at index: {}", index);
             Task::none()
         }
 
@@ -69,7 +81,10 @@ pub fn handle_message(
 
         ConfigurationMessage::ToggleAdvancedOptions => {
             state.advanced_options_expanded = !state.advanced_options_expanded;
-            debug!("Toggled advanced options: {}", state.advanced_options_expanded);
+            debug!(
+                "Toggled advanced options: {}",
+                state.advanced_options_expanded
+            );
             Task::none()
         }
 
@@ -99,7 +114,12 @@ pub fn handle_message(
             state.is_wallet_valid = config.wallet_address.is_empty()
                 || crate::utils::eth::is_valid_eth_address(&config.wallet_address);
             state.non_interactive_install = config.non_interactive_install;
-            state.ssh_keys = config.ssh_keys.join("\n");
+            state.ssh_keys = if config.ssh_keys.is_empty() {
+                vec![String::new()]
+            } else {
+                config.ssh_keys
+            };
+            state.ssh_key_errors = vec![None; state.ssh_keys.len()];
             state.configuration_server = config.configuration_server.unwrap_or_default();
             state.metrics_server = config.metrics_server.unwrap_or_default();
             state.central_net_host = config.central_net_host.unwrap_or_default();
@@ -114,7 +134,13 @@ pub fn handle_message(
             let network_type = state.network_type;
             let wallet_address = state.wallet_address.clone();
             let non_interactive_install = state.non_interactive_install;
-            let ssh_keys = state.ssh_keys.clone();
+            let ssh_keys = state
+                .ssh_keys
+                .iter()
+                .filter(|key| !key.trim().is_empty())
+                .cloned()
+                .collect::<Vec<String>>()
+                .join("\n");
             let configuration_server = state.configuration_server.clone();
             let metrics_server = state.metrics_server.clone();
             let central_net_host = state.central_net_host.clone();
@@ -141,11 +167,17 @@ pub fn handle_message(
                     // Write configuration to device
                     match Disk::write_configuration_to_disk(&device_path, config).await {
                         Ok(()) => {
-                            debug!("Configuration successfully saved to device: {}", device_path);
+                            debug!(
+                                "Configuration successfully saved to device: {}",
+                                device_path
+                            );
                             Ok(())
                         }
                         Err(e) => {
-                            debug!("Failed to save configuration to device {}: {}", device_path, e);
+                            debug!(
+                                "Failed to save configuration to device {}: {}",
+                                device_path, e
+                            );
                             Err(format!("Failed to save configuration: {}", e))
                         }
                     }

@@ -106,7 +106,6 @@ pub fn handle_message(
             ))
         }
 
-
         EditMessage::SaveConfiguration => {
             // Save configuration to the selected device using central configuration
             if let Some(device_index) = state.selected_device {

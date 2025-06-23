@@ -10,10 +10,16 @@ pub fn view_select_existing_device<'a>(
     storage_devices: &'a [StorageDevice],
     selected_device: Option<usize>,
 ) -> Element<'a, EditMessage> {
-    let title = container(text("Select Device to Edit").size(28))
-        .width(Length::Fill)
-        .padding(15)
-        .style(crate::style::bordered_box);
+    let title = container(
+        column![
+            text("Select Device to Edit").size(28),
+            text("Select an existing device to edit its configuration").size(16)
+        ]
+        .spacing(5),
+    )
+    .width(Length::Fill)
+    .padding(15)
+    .style(crate::style::page_header);
 
     let device_list: Element<'a, EditMessage> = if storage_devices.is_empty() {
         container(
@@ -131,14 +137,22 @@ pub fn view_select_existing_device<'a>(
     };
 
     let next_button = if selected_device.is_some() {
-        button("Next: Edit Configuration")
-            .on_press(EditMessage::GotoEditConfiguration)
-            .padding(8)
-            .style(button::primary)
+        button(
+            row!["Edit Configuration", icons::navigate_next()]
+                .spacing(5)
+                .align_y(Alignment::Center),
+        )
+        .on_press(EditMessage::GotoEditConfiguration)
+        .padding(12)
+        .style(crate::style::navigation_action_button)
     } else {
-        button("Select a device to continue")
-            .padding(8)
-            .style(button::secondary)
+        button(
+            row!["Select a device to continue", icons::navigate_next()]
+                .spacing(5)
+                .align_y(Alignment::Center),
+        )
+        .padding(12)
+        .style(button::secondary)
     };
 
     let back_button = button(
@@ -147,8 +161,8 @@ pub fn view_select_existing_device<'a>(
             .align_y(Alignment::Center),
     )
     .on_press(EditMessage::BackToMainMenu)
-    .padding(8)
-    .style(button::secondary);
+    .padding(12)
+    .style(crate::style::navigation_back_button);
 
     // Add a spacer to push buttons to the bottom
     let spacer = Container::new(Column::new())
@@ -201,15 +215,23 @@ pub fn view_edit_completion(success: bool) -> Element<'static, EditMessage> {
         icons::error()
     };
 
-    let edit_another_button = button("Edit Another Device")
-        .on_press(EditMessage::EditAnother)
-        .padding(8)
-        .style(button::primary);
+    let edit_another_button = button(
+        row![icons::edit(), "Edit Another Device"]
+            .spacing(5)
+            .align_y(Alignment::Center),
+    )
+    .on_press(EditMessage::EditAnother)
+    .padding(12)
+    .style(button::primary);
 
-    let back_button = button("Back to Main Menu")
-        .on_press(EditMessage::BackToMainMenu)
-        .padding(8)
-        .style(button::secondary);
+    let back_button = button(
+        row![icons::house(), "Back"]
+            .spacing(5)
+            .align_y(Alignment::Center),
+    )
+    .on_press(EditMessage::BackToMainMenu)
+    .padding(12)
+    .style(crate::style::navigation_back_button);
 
     let buttons = row![edit_another_button, back_button].spacing(15);
 

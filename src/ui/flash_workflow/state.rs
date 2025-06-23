@@ -39,9 +39,9 @@ pub enum FlashWorkflowState {
     },
     SelectTargetDevice,
     ConfigureSettings,
-    WritingImage(f32),       // Progress 0.0 - 1.0 for image writing
-    VerifyingImage(f32),     // Progress 0.0 - 1.0 for image verification
-    Completion(bool),        // Success or failure
+    WritingImage(f32),   // Progress 0.0 - 1.0 for image writing
+    VerifyingImage(f32), // Progress 0.0 - 1.0 for image verification
+    Completion(bool),    // Success or failure
 }
 
 #[derive(Debug, Clone)]

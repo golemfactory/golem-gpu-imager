@@ -47,7 +47,11 @@ impl PresetEditorHandler {
             PresetEditorMessage::Configuration(config_msg) => {
                 if let Some(editor_instance) = editor {
                     // Delegate configuration messages to the configuration handler
-                    let _ = crate::ui::configuration::handle_message(&mut editor_instance.configuration, presets, config_msg);
+                    let _ = crate::ui::configuration::handle_message(
+                        &mut editor_instance.configuration,
+                        presets,
+                        config_msg,
+                    );
                 }
             }
         }

@@ -111,9 +111,17 @@ impl ImageConfiguration {
         let ssh_keys_vec: Vec<String> = if ssh_keys.trim().is_empty() {
             Vec::new()
         } else if ssh_keys.contains('\n') {
-            ssh_keys.lines().map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()
+            ssh_keys
+                .lines()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect()
         } else {
-            ssh_keys.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()
+            ssh_keys
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect()
         };
 
         Self {
@@ -124,9 +132,21 @@ impl ImageConfiguration {
             glm_per_hour: "0.25".to_string(),
             non_interactive_install,
             ssh_keys: ssh_keys_vec,
-            configuration_server: if configuration_server.trim().is_empty() { None } else { Some(configuration_server) },
-            metrics_server: if metrics_server.trim().is_empty() { None } else { Some(metrics_server) },
-            central_net_host: if central_net_host.trim().is_empty() { None } else { Some(central_net_host) },
+            configuration_server: if configuration_server.trim().is_empty() {
+                None
+            } else {
+                Some(configuration_server)
+            },
+            metrics_server: if metrics_server.trim().is_empty() {
+                None
+            } else {
+                Some(metrics_server)
+            },
+            central_net_host: if central_net_host.trim().is_empty() {
+                None
+            } else {
+                Some(central_net_host)
+            },
         }
     }
 }

@@ -188,7 +188,6 @@ pub fn handle_message(
         // App-level navigation messages that need to be forwarded
         FlashMessage::BackToMainMenu => Task::done(crate::ui::messages::Message::BackToMainMenu),
 
-
         FlashMessage::RefreshRepoData => Task::done(crate::ui::messages::Message::RefreshRepoData),
 
         FlashMessage::DownloadOsImage(image_index) => {

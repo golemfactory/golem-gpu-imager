@@ -10,12 +10,13 @@ pub mod edit_workflow;
 pub mod flash_workflow;
 pub mod preset_manager;
 
-
 // Unified message system
 pub mod messages;
 
 #[allow(unused_imports)]
 pub use application::GolemGpuImager;
+#[allow(unused_imports)]
+pub use configuration::view::view_configuration_editor;
 pub use edit_workflow::{
     view_edit_completion, view_edit_configuration, view_select_existing_device,
 };
@@ -25,8 +26,6 @@ pub use flash_workflow::{
 };
 #[allow(unused_imports)]
 use iced::Font;
-#[allow(unused_imports)]
-pub use configuration::view::view_configuration_editor;
 pub use start_screen::view_start_screen;
 
 // Include the logo SVG data

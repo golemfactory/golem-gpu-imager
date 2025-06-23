@@ -29,7 +29,8 @@ impl PresetEditor {
     }
 
     pub fn to_preset(&self) -> ConfigurationPreset {
-        self.configuration.to_preset(self.name.clone(), self.is_default)
+        self.configuration
+            .to_preset(self.name.clone(), self.is_default)
     }
 
     pub fn is_valid(&self) -> bool {
@@ -44,6 +45,7 @@ pub struct PresetManagerState {
     pub new_preset_name: String,
     pub show_manager: bool,
     pub editor: Option<PresetEditor>,
+    pub deletion_confirmation: Option<(usize, String)>, // (Index, name) of preset being confirmed for deletion
 }
 
 impl PresetManagerState {
@@ -54,6 +56,7 @@ impl PresetManagerState {
             new_preset_name: String::new(),
             show_manager: false,
             editor: None,
+            deletion_confirmation: None,
         }
     }
 

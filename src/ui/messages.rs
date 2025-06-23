@@ -40,4 +40,3 @@ pub enum Message {
     DeviceSelection(DeviceMessage),
     Configuration(ConfigurationMessage),
 }
-

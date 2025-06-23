@@ -194,3 +194,11 @@ pub fn shield() -> iced::widget::Text<'static> {
 pub fn security() -> iced::widget::Text<'static> {
     icon('\u{E32A}') // Material Icons security
 }
+
+pub fn file_download() -> iced::widget::Text<'static> {
+    icon('\u{E2C4}') // Material Icons file_download
+}
+
+pub fn file_upload() -> iced::widget::Text<'static> {
+    icon('\u{E2C6}') // Material Icons file_upload
+}

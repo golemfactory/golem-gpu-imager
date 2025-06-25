@@ -2,6 +2,7 @@ use super::{PresetEditor, PresetEditorMessage, PresetManagerMessage, PresetManag
 use crate::models::ConfigurationPreset;
 use crate::utils::PresetManager;
 use iced::Task;
+use std::path::PathBuf;
 use tracing::{debug, error, info};
 
 pub fn handle_message(
@@ -43,8 +44,24 @@ pub fn handle_message(
                     }
                 }
 
+                // Clear deletion confirmation
+                state.deletion_confirmation = None;
+
                 info!("Deleted preset: {}", preset_name);
             }
+            Task::none()
+        }
+
+        PresetManagerMessage::ConfirmDeletePreset(index) => {
+            if index < state.presets.len() {
+                let preset_name = state.presets[index].name.clone();
+                state.deletion_confirmation = Some((index, preset_name));
+            }
+            Task::none()
+        }
+
+        PresetManagerMessage::CancelDeleteConfirmation => {
+            state.deletion_confirmation = None;
             Task::none()
         }
 
@@ -73,18 +90,12 @@ pub fn handle_message(
             Task::none()
         }
 
-        PresetManagerMessage::SaveAsPreset => {
+        PresetManagerMessage::SaveAsPreset(mut new_preset) => {
+            // Handle both manual creation (with new_preset_name) and import (with preset.name)
             if !state.new_preset_name.trim().is_empty() {
-                // This would need current configuration from the calling context
-                // For now, create a placeholder
-                let new_preset = ConfigurationPreset {
-                    name: state.new_preset_name.clone(),
-                    payment_network: crate::models::PaymentNetwork::Testnet,
-                    subnet: "public".to_string(),
-                    network_type: crate::models::NetworkType::Central,
-                    wallet_address: String::new(),
-                    is_default: false,
-                };
+                // Manual creation: Use the user-entered name
+                new_preset.name = state.new_preset_name.clone();
+                new_preset.is_default = false; // New presets are not default by default
 
                 let preset_name = new_preset.name.clone();
                 state.presets.push(new_preset.clone());
@@ -96,6 +107,19 @@ pub fn handle_message(
 
                 state.new_preset_name.clear();
                 info!("Created new preset: {}", preset_name);
+            } else if !new_preset.name.trim().is_empty() {
+                // Import: Use the preset's existing name
+                new_preset.is_default = false; // Imported presets are not default by default
+
+                let preset_name = new_preset.name.clone();
+                state.presets.push(new_preset.clone());
+
+                // Update preset manager if available
+                if let Some(manager) = preset_manager {
+                    let _ = manager.add_preset(new_preset);
+                }
+
+                info!("Added imported preset: {}", preset_name);
             }
             Task::none()
         }
@@ -182,34 +206,8 @@ pub fn handle_message(
             Task::none()
         }
 
-        PresetManagerMessage::SetPaymentNetwork(network) => {
-            if let Some(editor) = &mut state.editor {
-                editor.payment_network = network;
-            }
-            Task::none()
-        }
-
-        PresetManagerMessage::SetNetworkType(network_type) => {
-            if let Some(editor) = &mut state.editor {
-                editor.network_type = network_type;
-            }
-            Task::none()
-        }
-
-        PresetManagerMessage::SetSubnet(subnet) => {
-            if let Some(editor) = &mut state.editor {
-                editor.subnet = subnet;
-            }
-            Task::none()
-        }
-
-        PresetManagerMessage::SetWalletAddress(address) => {
-            if let Some(editor) = &mut state.editor {
-                editor.wallet_address = address;
-            }
-            Task::none()
-        }
-
+        // These messages are no longer used - configuration changes are handled
+        // through PresetEditorMessage::Configuration(ConfigurationMessage)
         PresetManagerMessage::DuplicatePreset(index) => {
             if let Some(preset) = state.presets.get(index) {
                 let mut duplicated = preset.clone();
@@ -226,9 +224,80 @@ pub fn handle_message(
             Task::none()
         }
 
-        _ => {
-            debug!("Unhandled preset manager message: {:?}", message);
-            Task::none()
+        PresetManagerMessage::ExportPreset(index) => {
+            if let Some(preset) = state.presets.get(index) {
+                let preset_name = preset.name.clone();
+                debug!("Starting export for preset: {}", preset_name);
+
+                Task::perform(export_preset_dialog(preset_name), move |path_opt| {
+                    if let Some(path) = path_opt {
+                        crate::ui::messages::Message::PresetManager(
+                            PresetManagerMessage::ExportPresetToFile(index, path),
+                        )
+                    } else {
+                        crate::ui::messages::Message::PresetManager(
+                            PresetManagerMessage::CancelEdit,
+                        ) // No-op message
+                    }
+                })
+            } else {
+                Task::none()
+            }
+        }
+
+        PresetManagerMessage::ImportPreset => {
+            debug!("Starting preset import");
+            Task::perform(import_preset_dialog(), |path_opt| {
+                if let Some(path) = path_opt {
+                    crate::ui::messages::Message::PresetManager(
+                        PresetManagerMessage::ImportPresetFromFile(path),
+                    )
+                } else {
+                    crate::ui::messages::Message::PresetManager(PresetManagerMessage::CancelEdit) // No-op message
+                }
+            })
+        }
+
+        PresetManagerMessage::ExportPresetToFile(index, path) => {
+            if let Some(preset) = state.presets.get(index) {
+                Task::perform(save_preset_to_file(preset.clone(), path), |result| {
+                    match result {
+                        Ok(_) => {
+                            info!("Preset exported successfully");
+                            crate::ui::messages::Message::PresetManager(
+                                PresetManagerMessage::CancelEdit,
+                            ) // No-op message
+                        }
+                        Err(e) => {
+                            error!("Failed to export preset: {}", e);
+                            crate::ui::messages::Message::PresetManager(
+                                PresetManagerMessage::CancelEdit,
+                            ) // No-op message
+                        }
+                    }
+                })
+            } else {
+                Task::none()
+            }
+        }
+
+        PresetManagerMessage::ImportPresetFromFile(path) => {
+            Task::perform(load_preset_from_file(path), |result| {
+                match result {
+                    Ok(preset) => {
+                        info!("Preset imported successfully: {}", preset.name);
+                        crate::ui::messages::Message::PresetManager(
+                            PresetManagerMessage::SaveAsPreset(preset),
+                        )
+                    }
+                    Err(e) => {
+                        error!("Failed to import preset: {}", e);
+                        crate::ui::messages::Message::PresetManager(
+                            PresetManagerMessage::CancelEdit,
+                        ) // No-op message
+                    }
+                }
+            })
         }
     }
 }
@@ -281,32 +350,78 @@ fn handle_editor_message(
             Task::none()
         }
 
-        PresetEditorMessage::UpdatePaymentNetwork(network) => {
+        PresetEditorMessage::Configuration(config_msg) => {
             if let Some(editor) = &mut state.editor {
-                editor.payment_network = network;
-            }
-            Task::none()
-        }
-
-        PresetEditorMessage::UpdateSubnet(subnet) => {
-            if let Some(editor) = &mut state.editor {
-                editor.subnet = subnet;
-            }
-            Task::none()
-        }
-
-        PresetEditorMessage::UpdateNetworkType(network_type) => {
-            if let Some(editor) = &mut state.editor {
-                editor.network_type = network_type;
-            }
-            Task::none()
-        }
-
-        PresetEditorMessage::UpdateWalletAddress(address) => {
-            if let Some(editor) = &mut state.editor {
-                editor.wallet_address = address;
+                // Delegate configuration changes to the configuration handler
+                let _ = crate::ui::configuration::handle_message(
+                    &mut editor.configuration,
+                    &state.presets,
+                    config_msg,
+                );
             }
             Task::none()
         }
     }
+}
+
+// Preset export/import file format
+#[derive(serde::Serialize, serde::Deserialize)]
+struct PresetFileFormat {
+    version: String,
+    exported_at: String,
+    preset: ConfigurationPreset,
+}
+
+// Async functions for file operations
+async fn export_preset_dialog(preset_name: String) -> Option<PathBuf> {
+    let suggested_filename = format!("{}.json", preset_name.replace(' ', "_"));
+
+    rfd::AsyncFileDialog::new()
+        .set_title("Export Preset")
+        .set_file_name(&suggested_filename)
+        .add_filter("JSON files", &["json"])
+        .save_file()
+        .await
+        .map(|handle| handle.path().to_path_buf())
+}
+
+async fn import_preset_dialog() -> Option<PathBuf> {
+    rfd::AsyncFileDialog::new()
+        .set_title("Import Preset")
+        .add_filter("JSON files", &["json"])
+        .pick_file()
+        .await
+        .map(|handle| handle.path().to_path_buf())
+}
+
+async fn save_preset_to_file(
+    preset: ConfigurationPreset,
+    path: PathBuf,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let preset_file = PresetFileFormat {
+        version: "1.0".to_string(),
+        exported_at: chrono::Utc::now().to_rfc3339(),
+        preset,
+    };
+
+    let json_content = serde_json::to_string_pretty(&preset_file)?;
+    tokio::fs::write(&path, json_content).await?;
+
+    Ok(())
+}
+
+async fn load_preset_from_file(
+    path: PathBuf,
+) -> Result<ConfigurationPreset, Box<dyn std::error::Error + Send + Sync>> {
+    let file_content = tokio::fs::read_to_string(&path).await?;
+    let preset_file: PresetFileFormat = serde_json::from_str(&file_content)?;
+
+    // Handle name conflicts by appending " (Imported)"
+    let mut preset = preset_file.preset;
+    if !preset.name.ends_with(" (Imported)") {
+        preset.name = format!("{} (Imported)", preset.name);
+    }
+    preset.is_default = false; // Imported presets are never default
+
+    Ok(preset)
 }

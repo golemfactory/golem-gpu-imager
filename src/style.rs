@@ -1,4 +1,4 @@
-use iced::widget::{container, text_input};
+use iced::widget::{button, container, text_input};
 use iced::{Border, Color, Theme};
 use std::sync::Arc;
 
@@ -338,5 +338,164 @@ pub fn search_input(theme: &Theme) -> iced::widget::text_input::Style {
         placeholder: palette.background.strong.color,
         value: TEXT,
         selection: palette.primary.weak.color,
+    }
+}
+
+// Error text input style for invalid SSH keys
+pub fn error_text_input(
+    theme: &Theme,
+    _status: iced::widget::text_input::Status,
+) -> text_input::Style {
+    let palette = theme.extended_palette();
+
+    text_input::Style {
+        background: palette.background.weak.color.into(),
+        border: Border {
+            radius: 5.0.into(),
+            width: 2.0,
+            color: ERROR,
+        },
+        icon: TEXT,
+        placeholder: palette.background.strong.color,
+        value: TEXT,
+        selection: palette.primary.weak.color,
+    }
+}
+
+// Default button style
+pub fn default_button(theme: &Theme, _status: button::Status) -> button::Style {
+    let palette = theme.extended_palette();
+
+    button::Style {
+        background: Some(palette.primary.base.color.into()),
+        text_color: palette.primary.base.text,
+        border: Border {
+            radius: 5.0.into(),
+            width: 0.0,
+            color: Color::TRANSPARENT,
+        },
+        shadow: iced::Shadow::default(),
+    }
+}
+
+// Danger button style for remove actions
+pub fn danger_button(theme: &Theme, _status: button::Status) -> button::Style {
+    let _palette = theme.extended_palette();
+
+    button::Style {
+        background: Some(ERROR.into()),
+        text_color: Color::WHITE,
+        border: Border {
+            radius: 5.0.into(),
+            width: 0.0,
+            color: Color::TRANSPARENT,
+        },
+        shadow: iced::Shadow::default(),
+    }
+}
+
+// Standardized page header container
+pub fn page_header(theme: &Theme) -> container::Style {
+    let palette = theme.extended_palette();
+
+    container::Style {
+        background: Some(palette.background.weakest.color.into()),
+        border: Border {
+            width: 1.0,
+            radius: 5.0.into(),
+            color: palette.background.strong.color,
+        },
+        ..container::Style::default()
+    }
+}
+
+// Standardized navigation back button (flexible width)
+pub fn navigation_back_button(theme: &Theme, _status: button::Status) -> button::Style {
+    let palette = theme.extended_palette();
+
+    button::Style {
+        background: Some(palette.background.weak.color.into()),
+        text_color: palette.background.strong.text,
+        border: Border {
+            radius: 5.0.into(),
+            width: 1.0,
+            color: palette.background.strong.color,
+        },
+        shadow: iced::Shadow::default(),
+    }
+}
+
+// Standardized navigation action button (flexible width)
+pub fn navigation_action_button(theme: &Theme, _status: button::Status) -> button::Style {
+    let palette = theme.extended_palette();
+
+    button::Style {
+        background: Some(palette.primary.base.color.into()),
+        text_color: palette.primary.base.text,
+        border: Border {
+            radius: 5.0.into(),
+            width: 0.0,
+            color: Color::TRANSPARENT,
+        },
+        shadow: iced::Shadow::default(),
+    }
+}
+
+// Standardized secondary cancel button for forms
+pub fn cancel_button_secondary(theme: &Theme, _status: button::Status) -> button::Style {
+    let palette = theme.extended_palette();
+
+    button::Style {
+        background: Some(palette.background.weak.color.into()),
+        text_color: palette.background.strong.text,
+        border: Border {
+            radius: 5.0.into(),
+            width: 1.0,
+            color: palette.background.strong.color,
+        },
+        shadow: iced::Shadow::default(),
+    }
+}
+
+// Standardized danger cancel button for destructive actions
+pub fn cancel_button_danger(theme: &Theme, _status: button::Status) -> button::Style {
+    button::Style {
+        background: Some(ERROR.into()),
+        text_color: Color::WHITE,
+        border: Border {
+            radius: 5.0.into(),
+            width: 0.0,
+            color: Color::TRANSPARENT,
+        },
+        shadow: iced::Shadow::default(),
+    }
+}
+
+// Modal overlay - semi-transparent background covering the entire screen
+pub fn modal_overlay(_theme: &Theme) -> container::Style {
+    container::Style {
+        background: Some(Color::from_rgba(0.0, 0.0, 0.0, 0.5).into()),
+        ..container::Style::default()
+    }
+}
+
+// Confirmation dialog - centered dialog box with border and background
+pub fn confirmation_dialog(theme: &Theme) -> container::Style {
+    let palette = theme.extended_palette();
+
+    container::Style {
+        background: Some(palette.background.weak.color.into()),
+        border: Border {
+            width: 2.0,
+            radius: 10.0.into(),
+            color: palette.background.strong.color,
+        },
+        text_color: Some(TEXT),
+        shadow: iced::Shadow {
+            color: Color::from_rgba(0.0, 0.0, 0.0, 0.8),
+            offset: iced::Vector::new(0.0, 4.0),
+            blur_radius: 10.0,
+        },
+        ..container::Style::default()
     }
 }

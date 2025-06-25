@@ -15,10 +15,16 @@ pub fn view_select_os_image<'a>(
     is_loading: bool,
 ) -> Element<'a, FlashMessage> {
     // Page header
-    let header = container(text("Select OS Image").size(28))
-        .width(Length::Fill)
-        .padding(15)
-        .style(crate::style::bordered_box);
+    let header = container(
+        column![
+            text("Select OS Image").size(28),
+            text("Choose an OS image to flash to your device").size(16)
+        ]
+        .spacing(5),
+    )
+    .width(Length::Fill)
+    .padding(15)
+    .style(crate::style::page_header);
 
     // Create OS image cards or loading/empty state
     let scrollable_content = if is_loading {
@@ -185,24 +191,31 @@ pub fn view_select_os_image<'a>(
     // Navigation buttons
     let next_button = if selected_os_image.is_some() {
         button(
-            container(row!["Select Target Device", icons::navigate_next()]).center_x(Length::Fill),
+            row!["Select Target Device", icons::navigate_next()]
+                .spacing(5)
+                .align_y(Alignment::Center),
         )
         .on_press(FlashMessage::GotoSelectTargetDevice)
         .padding(12)
-        .width(220)
-        .style(button::primary)
+        .style(style::navigation_action_button)
     } else {
-        button("Next: Select Target Device")
-            .padding(12)
-            .width(220)
-            .style(button::primary)
+        button(
+            row!["Select Target Device", icons::navigate_next()]
+                .spacing(5)
+                .align_y(Alignment::Center),
+        )
+        .padding(12)
+        .style(button::secondary)
     };
 
-    let back_button = button(iced::widget::row![icons::navigate_before(), "Back"])
-        .on_press(FlashMessage::BackToMainMenu)
-        .padding(12)
-        .width(100)
-        .style(button::secondary);
+    let back_button = button(
+        row![icons::navigate_before(), "Back"]
+            .spacing(5)
+            .align_y(Alignment::Center),
+    )
+    .on_press(FlashMessage::BackToMainMenu)
+    .padding(12)
+    .style(style::navigation_back_button);
 
     let navigation = container(
         row![back_button, next_button]
@@ -627,24 +640,31 @@ pub fn view_select_os_image_groups<'a>(
     let has_selection = selected_os_image_group.is_some();
     let next_button = if has_selection {
         button(
-            container(row!["Select Target Device", icons::navigate_next()]).center_x(Length::Fill),
+            row!["Select Target Device", icons::navigate_next()]
+                .spacing(5)
+                .align_y(Alignment::Center),
         )
         .on_press(FlashMessage::GotoSelectTargetDevice)
         .padding(12)
-        .width(220)
-        .style(button::primary)
+        .style(style::navigation_action_button)
     } else {
-        button("Next: Select Target Device")
-            .padding(12)
-            .width(220)
-            .style(button::primary)
+        button(
+            row!["Select Target Device", icons::navigate_next()]
+                .spacing(5)
+                .align_y(Alignment::Center),
+        )
+        .padding(12)
+        .style(button::secondary)
     };
 
-    let back_button = button(iced::widget::row![icons::navigate_before(), "Back"])
-        .on_press(FlashMessage::BackToMainMenu)
-        .padding(12)
-        .width(100)
-        .style(button::secondary);
+    let back_button = button(
+        row![icons::navigate_before(), "Back"]
+            .spacing(5)
+            .align_y(Alignment::Center),
+    )
+    .on_press(FlashMessage::BackToMainMenu)
+    .padding(12)
+    .style(style::navigation_back_button);
 
     let navigation = container(
         row![back_button, next_button]
@@ -821,7 +841,9 @@ pub fn view_processing_image(
         .align_y(Alignment::Center),
     )
     .on_press(FlashMessage::CancelWrite)
-    .padding(10);
+    .padding(12)
+    .width(180)
+    .style(style::cancel_button_danger);
 
     let content = column![
         title,
@@ -994,47 +1016,32 @@ pub fn view_select_target_device<'a>(
         .width(Length::Fill);
 
     let back_button = button(
-        row![icons::navigate_before(), "Back to OS Images"]
+        row![icons::navigate_before(), "Back"]
             .spacing(5)
             .align_y(Alignment::Center),
     )
     .on_press(FlashMessage::BackToSelectOsImage)
-    .padding(10)
-    .style(button::secondary);
+    .padding(12)
+    .style(style::navigation_back_button);
 
     // Only enable the next button if a device is selected
     let next_button = if selected_device.is_some() {
         button(
-            row![text("Next: Configure Settings"), icons::navigate_next()]
+            row![text("Configure Settings"), icons::navigate_next()]
                 .spacing(5)
                 .align_y(Alignment::Center),
         )
         .on_press(FlashMessage::GotoConfigureSettings)
-        .padding(10)
-        .style(button::primary)
+        .padding(12)
+        .style(style::navigation_action_button)
     } else {
         button(
             row![text("Select a device to continue"), icons::navigate_next()]
                 .spacing(5)
                 .align_y(Alignment::Center),
         )
-        .padding(10)
-        // Use a custom style for disabled buttons
-        .style(|theme, _| {
-            let palette = theme.extended_palette();
-
-            button::Style {
-                background: Some(palette.background.weak.color.into()),
-                text_color: palette.background.strong.text,
-                border: iced::Border {
-                    color: palette.background.weak.color,
-                    width: 1.0,
-                    radius: 2.0.into(),
-                },
-                shadow: iced::Shadow::default(),
-                ..button::Style::default()
-            }
-        })
+        .padding(12)
+        .style(button::secondary)
     };
 
     let buttons = row![back_button, next_button,]
@@ -1198,14 +1205,14 @@ pub fn view_writing_process(progress: f32, title: &'static str) -> Element<'stat
 
     // Cancel button with improved styling
     let cancel_button = button(
-        row![icons::cancel(), text("Cancel Installation").size(14)]
-            .spacing(8)
+        row![icons::cancel(), text("Cancel Installation")]
+            .spacing(5)
             .align_y(Alignment::Center),
     )
     .on_press(FlashMessage::CancelWrite)
-    .padding(8)
+    .padding(12)
     .width(180)
-    .style(button::danger);
+    .style(style::cancel_button_danger);
 
     // Button container with warning
     let button_container = container(
@@ -1239,54 +1246,27 @@ pub fn view_writing_process(progress: f32, title: &'static str) -> Element<'stat
 }
 
 pub fn view_flash_configure_settings<'a>(
-    payment_network: crate::models::PaymentNetwork,
-    subnet: String,
-    network_type: crate::models::NetworkType,
-    wallet_address: String,
-    is_wallet_valid: bool,
+    configuration: &'a crate::ui::configuration::ConfigurationState,
     configuration_presets: &'a [crate::models::ConfigurationPreset],
-    selected_preset: Option<usize>,
     new_preset_name: &'a str,
-    show_preset_manager: bool,
-    preset_editor: Option<&'a crate::ui::preset_manager::PresetEditor>,
+    _show_preset_manager: bool,
+    _preset_editor: Option<&'a crate::ui::preset_manager::PresetEditor>,
 ) -> Element<'a, crate::ui::messages::Message> {
     // Use the shared configuration editor from the shared module
-    crate::ui::shared::configuration::view_configuration_editor(
-        payment_network,
-        subnet,
-        network_type,
-        wallet_address,
-        is_wallet_valid,
+    crate::ui::configuration::view::view_configuration_editor(
+        configuration,
         "Configure Settings",
         "Configure your Golem Network settings before flashing:",
         crate::ui::messages::Message::Flash(FlashMessage::BackToSelectTargetDevice),
-        crate::ui::messages::Message::Flash(FlashMessage::WriteImage),
+        Some(crate::ui::messages::Message::Flash(
+            FlashMessage::WriteImage,
+        )),
         "Back to Device Selection",
         "Start Flashing",
         configuration_presets,
-        selected_preset,
         new_preset_name,
-        show_preset_manager,
-        preset_editor,
-        crate::ui::messages::Message::Flash(FlashMessage::BackToSelectTargetDevice),
         crate::ui::messages::Message::ManagePresets,
-        |config_msg| match config_msg {
-            crate::ui::shared::configuration::ConfigMessage::SetPaymentNetwork(network) => {
-                crate::ui::messages::Message::Flash(FlashMessage::SetPaymentNetwork(network))
-            }
-            crate::ui::shared::configuration::ConfigMessage::SetNetworkType(network_type) => {
-                crate::ui::messages::Message::Flash(FlashMessage::SetNetworkType(network_type))
-            }
-            crate::ui::shared::configuration::ConfigMessage::SetSubnet(subnet) => {
-                crate::ui::messages::Message::Flash(FlashMessage::SetSubnet(subnet))
-            }
-            crate::ui::shared::configuration::ConfigMessage::SetWalletAddress(address) => {
-                crate::ui::messages::Message::Flash(FlashMessage::SetWalletAddress(address))
-            }
-            crate::ui::shared::configuration::ConfigMessage::SelectPreset(index) => {
-                crate::ui::messages::Message::Flash(FlashMessage::SelectPreset(index))
-            }
-        },
+        |config_msg| crate::ui::messages::Message::Configuration(config_msg),
     )
 }
 
@@ -1510,7 +1490,7 @@ pub fn view_flash_completion(
             .spacing(8)
             .align_y(Alignment::Center),
     )
-    .on_press(FlashMessage::Exit)
+    .on_press(FlashMessage::BackToMainMenu)
     .padding(12)
     .width(180)
     .style(button::secondary);

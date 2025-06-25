@@ -1,4 +1,4 @@
-use iced::widget::{button, column, container, row, text, Column, Container};
+use iced::widget::{Column, Container, button, column, container, row, text};
 use iced::{Alignment, Color, Element, Length};
 
 use super::EditMessage;
@@ -10,10 +10,16 @@ pub fn view_select_existing_device<'a>(
     storage_devices: &'a [StorageDevice],
     selected_device: Option<usize>,
 ) -> Element<'a, EditMessage> {
-    let title = container(text("Select Device to Edit").size(28))
-        .width(Length::Fill)
-        .padding(15)
-        .style(crate::style::bordered_box);
+    let title = container(
+        column![
+            text("Select Device to Edit").size(28),
+            text("Select an existing device to edit its configuration").size(16)
+        ]
+        .spacing(5),
+    )
+    .width(Length::Fill)
+    .padding(15)
+    .style(crate::style::page_header);
 
     let device_list: Element<'a, EditMessage> = if storage_devices.is_empty() {
         container(
@@ -131,14 +137,22 @@ pub fn view_select_existing_device<'a>(
     };
 
     let next_button = if selected_device.is_some() {
-        button("Next: Edit Configuration")
-            .on_press(EditMessage::GotoEditConfiguration)
-            .padding(8)
-            .style(button::primary)
+        button(
+            row!["Edit Configuration", icons::navigate_next()]
+                .spacing(5)
+                .align_y(Alignment::Center),
+        )
+        .on_press(EditMessage::GotoEditConfiguration)
+        .padding(12)
+        .style(crate::style::navigation_action_button)
     } else {
-        button("Select a device to continue")
-            .padding(8)
-            .style(button::secondary)
+        button(
+            row!["Select a device to continue", icons::navigate_next()]
+                .spacing(5)
+                .align_y(Alignment::Center),
+        )
+        .padding(12)
+        .style(button::secondary)
     };
 
     let back_button = button(
@@ -147,8 +161,8 @@ pub fn view_select_existing_device<'a>(
             .align_y(Alignment::Center),
     )
     .on_press(EditMessage::BackToMainMenu)
-    .padding(8)
-    .style(button::secondary);
+    .padding(12)
+    .style(crate::style::navigation_back_button);
 
     // Add a spacer to push buttons to the bottom
     let spacer = Container::new(Column::new())
@@ -201,15 +215,23 @@ pub fn view_edit_completion(success: bool) -> Element<'static, EditMessage> {
         icons::error()
     };
 
-    let edit_another_button = button("Edit Another Device")
-        .on_press(EditMessage::EditAnother)
-        .padding(8)
-        .style(button::primary);
+    let edit_another_button = button(
+        row![icons::edit(), "Edit Another Device"]
+            .spacing(5)
+            .align_y(Alignment::Center),
+    )
+    .on_press(EditMessage::EditAnother)
+    .padding(12)
+    .style(button::primary);
 
-    let back_button = button("Back to Main Menu")
-        .on_press(EditMessage::BackToMainMenu)
-        .padding(8)
-        .style(button::secondary);
+    let back_button = button(
+        row![icons::house(), "Back"]
+            .spacing(5)
+            .align_y(Alignment::Center),
+    )
+    .on_press(EditMessage::BackToMainMenu)
+    .padding(12)
+    .style(crate::style::navigation_back_button);
 
     let buttons = row![edit_another_button, back_button].spacing(15);
 
@@ -229,57 +251,25 @@ pub fn view_edit_completion(success: bool) -> Element<'static, EditMessage> {
     .into()
 }
 
-/// Edit configuration view - delegates to shared configuration editor
+/// Edit configuration view - now uses centralized configuration system
 pub fn view_edit_configuration<'a>(
-    payment_network: PaymentNetwork,
-    subnet: String,
-    network_type: NetworkType,
-    wallet_address: String,
-    is_wallet_valid: bool,
+    configuration: &'a crate::ui::configuration::ConfigurationState,
     configuration_presets: &'a [crate::models::ConfigurationPreset],
-    selected_preset: Option<usize>,
     new_preset_name: &'a str,
-    show_preset_manager: bool,
-    preset_editor: Option<&'a crate::ui::preset_manager::PresetEditor>,
 ) -> Element<'a, Message> {
-    // Use the shared configuration editor
-    crate::ui::view_configuration_editor(
-        payment_network,
-        subnet,
-        network_type,
-        wallet_address,
-        is_wallet_valid,
+    // Use the shared configuration editor from the shared module
+    crate::ui::configuration::view::view_configuration_editor(
+        configuration,
         "Edit Configuration",
         "Edit the configuration settings for your device:",
-        Message::Edit(EditMessage::BackToDeviceSelection), // Back to device selection
-        Message::Edit(EditMessage::SaveConfiguration),
+        Message::Edit(EditMessage::BackToDeviceSelection),
+        Some(Message::Edit(EditMessage::SaveConfiguration)),
         "Back to Devices",
         "Save Changes",
         configuration_presets,
-        selected_preset,
         new_preset_name,
-        show_preset_manager,
-        preset_editor,
-        Message::Edit(EditMessage::BackToDeviceSelection),
         Message::ManagePresets,
-        |config_msg| {
-            use crate::ui::shared::configuration::ConfigMessage;
-            match config_msg {
-                ConfigMessage::SetPaymentNetwork(network) => {
-                    Message::Edit(EditMessage::SetPaymentNetwork(network))
-                }
-                ConfigMessage::SetNetworkType(network_type) => {
-                    Message::Edit(EditMessage::SetNetworkType(network_type))
-                }
-                ConfigMessage::SetSubnet(subnet) => Message::Edit(EditMessage::SetSubnet(subnet)),
-                ConfigMessage::SetWalletAddress(address) => {
-                    Message::Edit(EditMessage::SetWalletAddress(address))
-                }
-                ConfigMessage::SelectPreset(index) => {
-                    Message::Edit(EditMessage::SelectPreset(index))
-                }
-            }
-        },
+        |config_msg| Message::Configuration(config_msg),
     )
 }
 

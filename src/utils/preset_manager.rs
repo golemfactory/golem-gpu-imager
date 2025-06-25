@@ -166,6 +166,11 @@ impl PresetManager {
                 network_type: NetworkType::Central,
                 wallet_address: "".to_string(),
                 is_default: true,
+                non_interactive_install: false,
+                ssh_keys: Vec::new(),
+                configuration_server: None,
+                metrics_server: None,
+                central_net_host: None,
             },
             ConfigurationPreset {
                 name: "Mainnet Production".to_string(),
@@ -174,6 +179,11 @@ impl PresetManager {
                 network_type: NetworkType::Central,
                 wallet_address: "".to_string(),
                 is_default: false,
+                non_interactive_install: false,
+                ssh_keys: Vec::new(),
+                configuration_server: None,
+                metrics_server: None,
+                central_net_host: None,
             },
         ];
 

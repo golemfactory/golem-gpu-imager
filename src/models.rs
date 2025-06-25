@@ -17,6 +17,16 @@ pub struct ConfigurationPreset {
     pub network_type: NetworkType,
     pub wallet_address: String,
     pub is_default: bool,
+    #[serde(default)]
+    pub non_interactive_install: bool,
+    #[serde(default)]
+    pub ssh_keys: Vec<String>,
+    #[serde(default)]
+    pub configuration_server: Option<String>,
+    #[serde(default)]
+    pub metrics_server: Option<String>,
+    #[serde(default)]
+    pub central_net_host: Option<String>,
 }
 
 // Implement Display trait so pick_list can properly show the preset
@@ -103,25 +113,4 @@ impl std::fmt::Display for NetworkType {
             NetworkType::Central => write!(f, "Central"),
         }
     }
-}
-
-#[derive(Debug, Clone)]
-pub enum Message {
-    // App-level messages
-    FlashNewImage,
-    EditExistingDisk,
-    ManagePresets,
-    BackToMainMenu,
-    Exit,
-    ShowError(String),
-
-    // Repository management
-    RepoDataLoaded(String),      // Simplified for now
-    RepoGroupDataLoaded(String), // Simplified for now
-    RepoLoadFailed,
-    RefreshRepoData,
-
-    // Elevation management (Windows)
-    RequestElevation,
-    CheckElevationStatus,
 }

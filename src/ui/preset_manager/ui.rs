@@ -1,8 +1,8 @@
-use super::{PresetEditor, PresetManagerMessage};
+use super::{PresetEditor, PresetEditorMessage, PresetManagerMessage};
 use crate::models::{ConfigurationPreset, NetworkType, PaymentNetwork};
 use crate::style;
 use crate::ui::icons;
-use iced::widget::{button, column, container, pick_list, row, scrollable, text, text_input};
+use iced::widget::{button, column, container, row, scrollable, stack, text, text_input};
 use iced::{Alignment, Border, Color, Element, Length};
 
 /// Main preset manager view
@@ -11,10 +11,18 @@ pub fn view_preset_manager<'a>(
     selected_preset: Option<usize>,
     new_preset_name: &'a str,
     editor: Option<&'a PresetEditor>,
+    deletion_confirmation: Option<&'a (usize, String)>,
 ) -> Element<'a, PresetManagerMessage> {
-    let title = text("Manage Configuration Presets")
-        .size(28)
-        .width(Length::Fill);
+    let header = container(
+        column![
+            text("Manage Configuration Presets").size(28),
+            text("Create, edit, and manage your Golem Network configuration presets").size(16)
+        ]
+        .spacing(5),
+    )
+    .width(Length::Fill)
+    .padding(15)
+    .style(style::page_header);
 
     let content = if let Some(preset_editor) = editor {
         // Show preset editor
@@ -24,23 +32,52 @@ pub fn view_preset_manager<'a>(
         view_preset_list(presets, selected_preset, new_preset_name)
     };
 
-    let back_button = button(
-        row![icons::navigate_before(), "Back to Main Menu"]
-            .spacing(5)
-            .align_y(Alignment::Center),
-    )
-    .on_press(PresetManagerMessage::BackToMainMenu)
-    .padding(8)
-    .style(button::secondary);
+    let back_button = if editor.is_some() {
+        // In editor mode, Back acts as Cancel
+        button(
+            row![icons::navigate_before(), "Back"]
+                .spacing(5)
+                .align_y(Alignment::Center),
+        )
+        .on_press(PresetManagerMessage::CancelEdit)
+        .padding(12)
+        .style(style::navigation_back_button)
+    } else {
+        // In preset list mode, Back goes to main menu
+        button(
+            row![icons::navigate_before(), "Back"]
+                .spacing(5)
+                .align_y(Alignment::Center),
+        )
+        .on_press(PresetManagerMessage::BackToMainMenu)
+        .padding(12)
+        .style(style::navigation_back_button)
+    };
 
-    column![
-        title,
+    let main_view = column![
+        header,
         content,
-        container(back_button).width(Length::Fill).padding([15, 0])
+        if editor.is_none() {
+            container(back_button).width(Length::Fill).padding([15, 0])
+        } else {
+            container("").height(Length::Fixed(0.0))
+        }
     ]
     .spacing(20)
-    .padding(20)
-    .into()
+    .padding(20);
+
+    // Check if we should show the confirmation dialog
+    if let Some(&(preset_index, ref preset_name)) = deletion_confirmation {
+        // Show main view with modal overlay
+        stack![
+            main_view,
+            view_confirmation_dialog(preset_index, preset_name)
+        ]
+        .into()
+    } else {
+        // Show main view only
+        main_view.into()
+    }
 }
 
 /// Preset list view with grid layout
@@ -67,7 +104,7 @@ fn view_preset_list<'a>(
     .padding(10)
     .width(Length::Fill);
 
-    // Simple create section
+    // Simple create section with import button
     let quick_create = container(
         row![
             text("Create New Preset").size(16),
@@ -78,6 +115,14 @@ fn view_preset_list<'a>(
                     .width(Length::Fill)
             )
             .width(Length::Fill),
+            button(
+                row![icons::file_upload(), "Import"]
+                    .spacing(5)
+                    .align_y(Alignment::Center)
+            )
+            .on_press(PresetManagerMessage::ImportPreset)
+            .padding(8)
+            .style(button::secondary),
             button("Create")
                 .on_press(PresetManagerMessage::CreatePreset)
                 .padding(8)
@@ -239,8 +284,8 @@ fn create_compact_preset_card<'a>(
     ]
     .spacing(2);
 
-    // Compact action buttons
-    let actions = row![
+    // Compact action buttons in two rows
+    let top_actions = row![
         button(icons::edit())
             .on_press(PresetManagerMessage::EditPreset(index))
             .padding(6)
@@ -249,6 +294,14 @@ fn create_compact_preset_card<'a>(
             .on_press(PresetManagerMessage::DuplicatePreset(index))
             .padding(6)
             .style(button::secondary),
+        button(icons::file_download())
+            .on_press(PresetManagerMessage::ExportPreset(index))
+            .padding(6)
+            .style(button::secondary),
+    ]
+    .spacing(4);
+
+    let bottom_actions = row![
         if !preset.is_default {
             button(icons::star_border())
                 .on_press(PresetManagerMessage::SetDefaultPreset(index))
@@ -258,11 +311,13 @@ fn create_compact_preset_card<'a>(
             button(icons::star()).padding(6).style(button::success)
         },
         button(icons::delete())
-            .on_press(PresetManagerMessage::DeletePreset(index))
+            .on_press(PresetManagerMessage::ConfirmDeletePreset(index))
             .padding(6)
             .style(button::danger)
     ]
     .spacing(4);
+
+    let actions = column![top_actions, bottom_actions].spacing(4);
 
     let content = column![
         header,
@@ -283,7 +338,7 @@ fn create_compact_preset_card<'a>(
         .into()
 }
 
-/// Enhanced preset editor view
+/// Enhanced preset editor view using modular configuration components
 fn view_preset_editor<'a>(editor: &'a PresetEditor) -> Element<'a, PresetManagerMessage> {
     let title = text(if editor.editing_index.is_some() {
         "Edit Preset"
@@ -292,92 +347,139 @@ fn view_preset_editor<'a>(editor: &'a PresetEditor) -> Element<'a, PresetManager
     })
     .size(20);
 
+    // Preset name input
     let name_input = column![
         text("Preset Name").size(14),
         text_input("Enter preset name...", &editor.name)
-            .on_input(PresetManagerMessage::SetPresetName)
+            .on_input(|name| PresetManagerMessage::Editor(PresetEditorMessage::UpdateName(name)))
             .padding(8)
             .width(Length::Fill)
+            .style(style::default_text_input)
     ]
     .spacing(5);
 
-    let payment_network_input = column![
-        text("Payment Network").size(14),
-        pick_list(
-            &[PaymentNetwork::Testnet, PaymentNetwork::Mainnet][..],
-            Some(editor.payment_network),
-            PresetManagerMessage::SetPaymentNetwork
-        )
-        .padding(8)
-        .width(Length::Fill)
-    ]
-    .spacing(5);
-
-    let network_type_input = column![
-        text("Network Type").size(14),
-        pick_list(
-            &[NetworkType::Central, NetworkType::Hybrid][..],
-            Some(editor.network_type),
-            PresetManagerMessage::SetNetworkType
-        )
-        .padding(8)
-        .width(Length::Fill)
-    ]
-    .spacing(5);
-
-    let subnet_input = column![
-        text("Subnet").size(14),
-        text_input("Enter subnet...", &editor.subnet)
-            .on_input(PresetManagerMessage::SetSubnet)
-            .padding(8)
-            .width(Length::Fill)
-    ]
-    .spacing(5);
-
-    let wallet_input = column![
-        text("Wallet Address").size(14),
-        text_input("Enter wallet address...", &editor.wallet_address)
-            .on_input(PresetManagerMessage::SetWalletAddress)
-            .padding(8)
-            .width(Length::Fill)
-    ]
-    .spacing(5);
-
-    let default_checkbox = row![text("Set as default preset").size(14),]
-        .spacing(8)
-        .align_y(Alignment::Center);
-
-    let actions = row![
-        button("Cancel")
-            .on_press(PresetManagerMessage::CancelEdit)
-            .padding(8)
-            .style(button::secondary),
-        button(if editor.editing_index.is_some() {
-            "Update Preset"
-        } else {
-            "Save Preset"
+    // Use the modular configuration form directly (without header)
+    let configuration_form =
+        crate::ui::configuration::view_configuration_form(&editor.configuration, |config_msg| {
+            crate::ui::messages::Message::PresetManager(PresetManagerMessage::Editor(
+                PresetEditorMessage::Configuration(config_msg),
+            ))
         })
-        .on_press(PresetManagerMessage::SavePreset)
-        .padding(8)
-        .style(button::primary)
-    ]
-    .spacing(10);
+        .map(|msg| {
+            match msg {
+                crate::ui::messages::Message::PresetManager(preset_msg) => preset_msg,
+                _ => PresetManagerMessage::CancelEdit, // Fallback, should not happen
+            }
+        });
 
-    let form = column![
+    // Navigation buttons at bottom
+    let actions = row![
+        button(
+            row![icons::navigate_before(), "Back"]
+                .spacing(5)
+                .align_y(Alignment::Center)
+        )
+        .on_press(PresetManagerMessage::CancelEdit)
+        .padding(12)
+        .style(style::navigation_back_button),
+        button(
+            row![
+                icons::save(),
+                if editor.editing_index.is_some() {
+                    "Update Preset"
+                } else {
+                    "Save Preset"
+                }
+            ]
+            .spacing(5)
+            .align_y(Alignment::Center)
+        )
+        .on_press(PresetManagerMessage::SavePreset)
+        .padding(12)
+        .style(if editor.is_valid() {
+            button::primary
+        } else {
+            button::secondary
+        })
+    ]
+    .spacing(15);
+
+    // Create main content area without bottom buttons
+    let content_area = column![
+        title,
         name_input,
-        payment_network_input,
-        network_type_input,
-        subnet_input,
-        wallet_input,
-        default_checkbox,
-        container(actions).width(Length::Fill)
+        scrollable(configuration_form).height(Length::Fill)
     ]
     .spacing(15)
     .width(Length::Fill);
 
-    container(column![title, form].spacing(20))
-        .style(style::bordered_box)
-        .padding(20)
+    // Full layout with actions at bottom
+    column![
+        container(content_area)
+            .style(style::bordered_box)
+            .padding(20)
+            .width(Length::Fill)
+            .height(Length::Fill),
+        container(actions).width(Length::Fill).padding([15, 0])
+    ]
+    .spacing(20)
+    .into()
+}
+
+/// Create a modal confirmation dialog for preset deletion
+fn view_confirmation_dialog<'a>(
+    preset_index: usize,
+    preset_name: &'a str,
+) -> Element<'a, PresetManagerMessage> {
+    let dialog_content = column![
+        text("Delete Preset").size(20),
+        text(format!(
+            "Are you sure you want to delete '{}'?",
+            preset_name
+        ))
+        .size(14)
+        .color(Color::from_rgb(0.8, 0.8, 0.8)),
+        text("This action cannot be undone.")
+            .size(12)
+            .color(Color::from_rgb(0.6, 0.6, 0.6)),
+        container(
+            row![
+                button(text("Cancel"))
+                    .on_press(PresetManagerMessage::CancelDeleteConfirmation)
+                    .padding(12)
+                    .style(button::secondary),
+                button(
+                    row![icons::delete(), "Delete"]
+                        .spacing(5)
+                        .align_y(Alignment::Center)
+                )
+                .on_press(PresetManagerMessage::DeletePreset(preset_index))
+                .padding(12)
+                .style(button::danger)
+            ]
+            .spacing(15)
+        )
         .width(Length::Fill)
-        .into()
+        .align_x(Alignment::Center)
+    ]
+    .spacing(15)
+    .width(Length::Fill)
+    .max_width(400)
+    .align_x(Alignment::Center);
+
+    // Center the dialog on screen
+    container(
+        container(dialog_content)
+            .style(style::confirmation_dialog)
+            .padding(25)
+            .width(Length::Shrink)
+            .center_x(Length::Fill)
+            .center_y(Length::Fill),
+    )
+    .style(style::modal_overlay)
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .center_x(Length::Fill)
+    .center_y(Length::Fill)
+    .into()
 }

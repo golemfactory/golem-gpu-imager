@@ -14,8 +14,9 @@ use iced::Element;
 pub fn view<'a>(state: &'a PresetManagerState) -> Element<'a, PresetManagerMessage> {
     ui::view_preset_manager(
         &state.presets,
-        state.selected_preset,
+        None, // Don't show any preset as selected in management view
         &state.new_preset_name,
         state.editor.as_ref(),
+        state.deletion_confirmation.as_ref(),
     )
 }

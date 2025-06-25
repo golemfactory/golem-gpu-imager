@@ -44,24 +44,14 @@ impl PresetEditorHandler {
                     editor_instance.name = name;
                 }
             }
-            PresetEditorMessage::UpdatePaymentNetwork(network) => {
+            PresetEditorMessage::Configuration(config_msg) => {
                 if let Some(editor_instance) = editor {
-                    editor_instance.payment_network = network;
-                }
-            }
-            PresetEditorMessage::UpdateSubnet(subnet) => {
-                if let Some(editor_instance) = editor {
-                    editor_instance.subnet = subnet;
-                }
-            }
-            PresetEditorMessage::UpdateNetworkType(network_type) => {
-                if let Some(editor_instance) = editor {
-                    editor_instance.network_type = network_type;
-                }
-            }
-            PresetEditorMessage::UpdateWalletAddress(address) => {
-                if let Some(editor_instance) = editor {
-                    editor_instance.wallet_address = address;
+                    // Delegate configuration messages to the configuration handler
+                    let _ = crate::ui::configuration::handle_message(
+                        &mut editor_instance.configuration,
+                        presets,
+                        config_msg,
+                    );
                 }
             }
         }

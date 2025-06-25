@@ -4,14 +4,8 @@ use crate::models::{NetworkType, PaymentNetwork};
 pub enum EditWorkflowState {
     SelectDevice,
     LoadingConfiguration, // Loading configuration from selected device
-    EditConfiguration {
-        payment_network: PaymentNetwork,
-        subnet: String,
-        network_type: NetworkType,
-        wallet_address: String,
-        is_wallet_valid: bool,
-    },
-    Completion(bool), // Success or failure
+    EditConfiguration,    // Configuration editing (uses centralized ConfigurationState)
+    Completion(bool),     // Success or failure
 }
 
 #[derive(Debug, Clone)]

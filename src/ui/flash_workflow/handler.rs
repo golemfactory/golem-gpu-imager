@@ -135,16 +135,19 @@ pub fn handle_message(
                 .find(|img| img.version == version_id)
             {
                 image.metadata = Some(metadata.clone());
+                image.downloaded = true;
             }
 
             // Also update in groups
             for group in &mut state.os_image_groups {
                 if group.latest_version.version == version_id {
                     group.latest_version.metadata = Some(metadata.clone());
+                    group.latest_version.downloaded = true;
                 }
                 for older_version in &mut group.older_versions {
                     if older_version.version == version_id {
                         older_version.metadata = Some(metadata.clone());
+                        older_version.downloaded = true;
                     }
                 }
             }
@@ -733,7 +736,7 @@ pub fn handle_message(
                         let cancel_token_clone = state.cancel_token.clone();
 
                         // Extract configuration before creating async closure
-                        let config = Some(crate::disk::ImageConfiguration::new_with_options(
+                        let mut config_instance = crate::disk::ImageConfiguration::new_with_options(
                             configuration.payment_network,
                             configuration.network_type,
                             configuration.subnet.clone(),
@@ -743,7 +746,10 @@ pub fn handle_message(
                             configuration.configuration_server.clone(),
                             configuration.metrics_server.clone(),
                             configuration.central_net_host.clone(),
-                        ));
+                        );
+                        // Ensure accepted_terms is always true for new installations
+                        config_instance.ensure_accepted_terms();
+                        let config = Some(config_instance);
 
                         info!(
                             "Starting flash with config: {:?} {:?} {} {} to device {}",

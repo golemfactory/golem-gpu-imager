@@ -135,16 +135,19 @@ pub fn handle_message(
                 .find(|img| img.version == version_id)
             {
                 image.metadata = Some(metadata.clone());
+                image.downloaded = true;
             }
 
             // Also update in groups
             for group in &mut state.os_image_groups {
                 if group.latest_version.version == version_id {
                     group.latest_version.metadata = Some(metadata.clone());
+                    group.latest_version.downloaded = true;
                 }
                 for older_version in &mut group.older_versions {
                     if older_version.version == version_id {
                         older_version.metadata = Some(metadata.clone());
+                        older_version.downloaded = true;
                     }
                 }
             }

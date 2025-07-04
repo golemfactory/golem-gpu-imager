@@ -1,4 +1,5 @@
 use crate::models::ImageMetadata;
+use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
 pub enum FlashMessage {
@@ -13,7 +14,7 @@ pub enum FlashMessage {
         String,
         crate::utils::streaming_hash_calculator::ProcessingProgress,
     ), // Version ID and unified progress
-    ProcessingCompleted(String, ImageMetadata), // Version ID and final metadata
+    ProcessingCompleted(String, PathBuf, ImageMetadata), // Version ID, path, and final metadata
     ProcessingFailed(String, String), // Version ID and error message
     GotoSelectTargetDevice, // Go to storage device selection screen
     GotoConfigureSettings, // Go to image configuration screen

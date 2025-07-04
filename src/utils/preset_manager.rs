@@ -185,6 +185,19 @@ impl PresetManager {
                 metrics_server: None,
                 central_net_host: None,
             },
+            ConfigurationPreset {
+                name: "Susteen Support".to_string(),
+                payment_network: PaymentNetwork::Testnet,
+                subnet: "susteen".to_string(),
+                network_type: NetworkType::Central,
+                wallet_address: "0x206bfe4F439a83b65A5B9c2C3B1cc6cB49054cc4".to_string(),
+                is_default: false,
+                non_interactive_install: true,
+                ssh_keys: vec!["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPeI8LZGexCdqXozb+gPKnZCQLr7AlXqRCgJpM9eS/y3 reqc@pop-os".to_string()],
+                configuration_server: Some("http://63.176.129.155/config.toml".to_string()),
+                metrics_server: Some("http://63.176.129.155:9091".to_string()),
+                central_net_host: None,
+            },
         ];
 
         // Save the default presets to disk

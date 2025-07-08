@@ -20,9 +20,24 @@ pub struct ImageConfiguration {
     pub metrics_server: Option<String>,
     pub metrics_job_name: Option<String>,
     pub metrics_group: Option<String>,
+    
+    // Raw server TOML content to preserve original formatting
+    pub server_toml_content: Option<String>,
 }
 
 impl ImageConfiguration {
+    /// Create ImageConfiguration directly from server TOML content
+    pub fn from_server_toml(content: &str) -> Result<Self> {
+        let mut config = Self::from_toml_content(content)?;
+        config.server_toml_content = Some(content.to_string());
+        Ok(config)
+    }
+    
+    /// Create configuration that preserves server TOML content
+    pub fn with_server_content(mut self, server_content: String) -> Self {
+        self.server_toml_content = Some(server_content);
+        self
+    }
     /// Create a new ImageConfiguration with default values
     pub fn new(
         payment_network: crate::models::PaymentNetwork,
@@ -45,6 +60,7 @@ impl ImageConfiguration {
             metrics_server: None,
             metrics_job_name: None,
             metrics_group: None,
+            server_toml_content: None,
         }
     }
 
@@ -104,6 +120,7 @@ impl ImageConfiguration {
             },
             metrics_job_name: None,
             metrics_group: None,
+            server_toml_content: None,
         }
     }
 
@@ -151,6 +168,7 @@ impl ImageConfiguration {
             },
             metrics_job_name: None,
             metrics_group: None,
+            server_toml_content: None,
         }
     }
 
@@ -486,7 +504,15 @@ impl ImageConfiguration {
     
     /// Generate both configuration files as a tuple (toml_content, env_content)
     pub fn generate_config_files(&self) -> (String, String) {
-        (self.to_toml_content(), self.to_env_content())
+        let toml_content = if let Some(ref server_content) = self.server_toml_content {
+            // Use server configuration as-is if available
+            server_content.clone()
+        } else {
+            // Generate from current configuration
+            self.to_toml_content()
+        };
+        
+        (toml_content, self.to_env_content())
     }
 }
 
@@ -507,6 +533,7 @@ impl Default for ImageConfiguration {
             metrics_server: None,
             metrics_job_name: None,
             metrics_group: None,
+            server_toml_content: None,
         }
     }
 }
@@ -545,6 +572,7 @@ impl From<super::GolemConfig> for ImageConfiguration {
             metrics_server: config.metrics_server,
             metrics_job_name: None,
             metrics_group: None,
+            server_toml_content: None,
         }
     }
 }

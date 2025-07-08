@@ -87,7 +87,7 @@ where
         view_ssh_keys_field(&state.ssh_keys, &state.ssh_key_errors, message_factory),
 
         // Configuration Server
-        view_configuration_server_field(&state.configuration_server, message_factory),
+        view_configuration_server_field(&state.configuration_server, state, message_factory),
     ]
     .spacing(20)
     .into()
@@ -384,24 +384,203 @@ where
 /// Configuration server field component
 pub fn view_configuration_server_field<'a, F>(
     configuration_server: &'a str,
+    state: &'a ConfigurationState,
     message_factory: F,
 ) -> Element<'a, Message>
 where
     F: Fn(ConfigurationMessage) -> Message + Copy + 'a,
 {
-    column![
-        text("Configuration Server (Optional)").size(16),
+    let server_input_row = row![
         text_input("Enter configuration server URL", configuration_server)
             .on_input(
                 move |server| message_factory(ConfigurationMessage::SetConfigurationServer(server))
             )
             .width(Length::Fill)
             .style(style::default_text_input),
+        if state.server_config_fetching {
+            row![
+                button(
+                    row![icons::refresh(), text("Fetching...")]
+                        .spacing(5)
+                        .align_y(Alignment::Center)
+                )
+                .padding(8)
+                .style(button::secondary),
+                button(
+                    row![icons::cancel(), text("Cancel")]
+                        .spacing(5)
+                        .align_y(Alignment::Center)
+                )
+                .on_press(message_factory(ConfigurationMessage::CancelServerConfigurationFetch))
+                .padding(8)
+                .style(style::cancel_button_danger),
+            ]
+            .spacing(5)
+            .align_y(Alignment::Center)
+        } else {
+            row![
+                button(
+                    row![icons::file_download(), text("Fetch")]
+                        .spacing(5)
+                        .align_y(Alignment::Center)
+                )
+                .on_press(message_factory(ConfigurationMessage::FetchFromConfigurationServer))
+                .padding(8)
+                .style(style::default_button)
+            ]
+            .spacing(5)
+            .align_y(Alignment::Center)
+        }
+    ]
+    .spacing(10)
+    .align_y(Alignment::Center);
+
+    let mut main_column = column![
+        text("Configuration Server (Optional)").size(16),
+        server_input_row,
         text("URL to server where to look for configuration updates")
             .size(12)
             .color(Color::from_rgb(0.6, 0.6, 0.6)),
     ]
-    .spacing(5)
+    .spacing(5);
+
+    // Add error message if present
+    if let Some(error) = &state.server_config_error {
+        main_column = main_column.push(
+            container(
+                row![
+                    icons::error().color(style::ERROR),
+                    text(error).color(style::ERROR)
+                ]
+                .spacing(5)
+                .align_y(Alignment::Center),
+            )
+            .style(style::invalid_message_container)
+        );
+    }
+
+    // Add server configuration preview if present
+    if let Some(content) = &state.server_config_content {
+        main_column = main_column.push(view_server_config_preview(content, message_factory));
+    }
+
+    main_column.into()
+}
+
+/// Server configuration preview component
+fn view_server_config_preview<'a, F>(
+    content: &'a str,
+    message_factory: F,
+) -> Element<'a, Message>
+where
+    F: Fn(ConfigurationMessage) -> Message + Copy + 'a,
+{
+    // Parse the TOML content to display nicely
+    let parsed_config = match toml::from_str::<toml::Value>(content) {
+        Ok(config) => config,
+        Err(_) => {
+            return container(
+                column![
+                    text("Server Configuration Preview").size(16),
+                    text("Unable to parse server configuration").color(style::ERROR),
+                ]
+                .spacing(10)
+            )
+            .width(Length::Fill)
+            .padding(15)
+            .style(style::bordered_box)
+            .into();
+        }
+    };
+
+    let mut preview_items: Vec<Element<'a, Message>> = vec![
+        text("Server Configuration Preview").size(16).into(),
+        text("Configuration fetched from server:").size(14).color(Color::from_rgb(0.6, 0.6, 0.6)).into(),
+    ];
+
+    // Display main configuration fields
+    if let Some(table) = parsed_config.as_table() {
+        for (key, value) in table.iter() {
+            if key == "env" {
+                continue; // Handle env section separately
+            }
+            
+            let value_str = match value {
+                toml::Value::String(s) => s.clone(),
+                toml::Value::Boolean(b) => b.to_string(),
+                toml::Value::Array(arr) => {
+                    format!("[{}]", arr.iter().map(|v| match v {
+                        toml::Value::String(s) => format!("\"{}\"", s),
+                        _ => v.to_string(),
+                    }).collect::<Vec<_>>().join(", "))
+                }
+                _ => value.to_string(),
+            };
+            
+            preview_items.push(
+                row![
+                    text(format!("{}:", key)).size(14),
+                    text(value_str).size(14).color(Color::from_rgb(0.4, 0.4, 0.4)),
+                ]
+                .spacing(10)
+                .align_y(Alignment::Center)
+                .into()
+            );
+        }
+
+        // Display environment variables section
+        if let Some(env_table) = table.get("env").and_then(|v| v.as_table()) {
+            preview_items.push(text("Environment Variables:").size(14).into());
+            for (key, value) in env_table.iter() {
+                let value_str = match value {
+                    toml::Value::String(s) => s.clone(),
+                    _ => value.to_string(),
+                };
+                preview_items.push(
+                    row![
+                        text(format!("  {}:", key)).size(13),
+                        text(value_str).size(13).color(Color::from_rgb(0.4, 0.4, 0.4)),
+                    ]
+                    .spacing(10)
+                    .align_y(Alignment::Center)
+                    .into()
+                );
+            }
+        }
+    }
+
+    preview_items.push(
+        row![
+            button(
+                row![icons::check(), text("Apply Configuration")]
+                    .spacing(5)
+                    .align_y(Alignment::Center)
+            )
+            .on_press(message_factory(ConfigurationMessage::ApplyServerConfiguration))
+            .padding(8)
+            .style(style::default_button),
+            
+            button(
+                row![icons::cancel(), text("Dismiss")]
+                    .spacing(5)
+                    .align_y(Alignment::Center)
+            )
+            .on_press(message_factory(ConfigurationMessage::DismissServerConfiguration))
+            .padding(8)
+            .style(button::secondary),
+        ]
+        .spacing(10)
+        .align_y(Alignment::Center)
+        .into()
+    );
+
+    container(
+        column(preview_items)
+            .spacing(10)
+    )
+    .width(Length::Fill)
+    .padding(15)
+    .style(style::bordered_box)
     .into()
 }
 

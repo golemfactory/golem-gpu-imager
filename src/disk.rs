@@ -1523,6 +1523,7 @@ impl Disk {
             metrics_server: metrics_server.map(|s| s.to_string()),
             metrics_job_name: None,
             metrics_group: None,
+            server_toml_content: None,
         };
 
         // Generate content using our elegant methods

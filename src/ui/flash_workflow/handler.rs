@@ -2,7 +2,7 @@ use super::{FlashMessage, FlashState, FlashWorkflowState};
 use crate::disk::{Disk, WriteProgress};
 use crate::models::CancelToken;
 use crate::utils::repo::ImageRepo;
-use crate::utils::validation::{is_valid_url, validate_ssh_keys};
+use crate::utils::validation::{is_valid_central_net_host, is_valid_url, validate_ssh_keys};
 use iced::Task;
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
@@ -730,13 +730,13 @@ pub fn handle_message(
                 ));
             }
 
-            if !is_valid_url(&configuration.central_net_host) {
+            if !is_valid_central_net_host(&configuration.central_net_host) {
                 warn!(
                     "Cannot proceed, central net host URL is invalid: {}",
                     configuration.central_net_host
                 );
                 return Task::done(crate::ui::messages::Message::ShowError(
-                    "Invalid central net host URL".to_string(),
+                    "Invalid central net host URL. Expected format: <host>:<port> or <hex-key>@<host>:<port>".to_string(),
                 ));
             }
 

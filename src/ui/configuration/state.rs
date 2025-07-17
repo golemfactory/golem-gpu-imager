@@ -13,6 +13,7 @@ pub struct ConfigurationState {
     pub configuration_server: String,
     pub metrics_server: String,
     pub central_net_host: String,
+    pub is_central_net_host_valid: bool,
     pub advanced_options_expanded: bool,
     pub selected_preset: Option<usize>,
     pub server_config_fetching: bool,
@@ -34,6 +35,7 @@ impl ConfigurationState {
             configuration_server: String::new(),
             metrics_server: String::new(),
             central_net_host: String::new(),
+            is_central_net_host_valid: true,
             advanced_options_expanded: false,
             selected_preset: None,
             server_config_fetching: false,
@@ -67,6 +69,9 @@ impl ConfigurationState {
             configuration_server: preset.configuration_server.clone().unwrap_or_default(),
             metrics_server: preset.metrics_server.clone().unwrap_or_default(),
             central_net_host: preset.central_net_host.clone().unwrap_or_default(),
+            is_central_net_host_valid: preset.central_net_host.as_ref().map_or(true, |host| {
+                host.is_empty() || crate::utils::validation::is_valid_central_net_host(host)
+            }),
             advanced_options_expanded: false,
             selected_preset: None, // Will be set by the caller when loading from a specific preset
             server_config_fetching: false,
@@ -111,7 +116,7 @@ impl ConfigurationState {
     }
 
     pub fn is_valid(&self) -> bool {
-        !self.subnet.trim().is_empty() && self.is_wallet_valid && self.are_ssh_keys_valid()
+        !self.subnet.trim().is_empty() && self.is_wallet_valid && self.are_ssh_keys_valid() && self.is_central_net_host_valid
     }
 
     pub fn are_ssh_keys_valid(&self) -> bool {

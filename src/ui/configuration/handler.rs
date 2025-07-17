@@ -74,8 +74,9 @@ pub fn handle_message(
         }
 
         ConfigurationMessage::SetCentralNetHost(host) => {
-            state.central_net_host = host;
-            debug!("Set central net host: {}", state.central_net_host);
+            state.central_net_host = host.clone();
+            state.is_central_net_host_valid = host.is_empty() || crate::utils::validation::is_valid_central_net_host(&host);
+            debug!("Set central net host: {} (valid: {})", host, state.is_central_net_host_valid);
             Task::none()
         }
 
@@ -123,6 +124,7 @@ pub fn handle_message(
             state.configuration_server = config.configuration_server.unwrap_or_default();
             state.metrics_server = config.metrics_server.unwrap_or_default();
             state.central_net_host = config.central_net_host.unwrap_or_default();
+            state.is_central_net_host_valid = state.central_net_host.is_empty() || crate::utils::validation::is_valid_central_net_host(&state.central_net_host);
             debug!("Loaded configuration from device");
             Task::none()
         }
@@ -429,11 +431,14 @@ fn apply_server_configuration_to_state(state: &mut ConfigurationState, config: &
 
             if let Some(central_host) = env_table.get("CENTRAL_NET_HOST").and_then(|v| v.as_str()) {
                 state.central_net_host = central_host.to_string();
+                state.is_central_net_host_valid = central_host.is_empty() || crate::utils::validation::is_valid_central_net_host(central_host);
             }
         }
 
         // Revalidate configuration
         state.is_wallet_valid = state.wallet_address.is_empty()
             || crate::utils::eth::is_valid_eth_address(&state.wallet_address);
+        state.is_central_net_host_valid = state.central_net_host.is_empty()
+            || crate::utils::validation::is_valid_central_net_host(&state.central_net_host);
     }
 }

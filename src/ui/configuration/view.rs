@@ -107,7 +107,7 @@ where
     let advanced_fields = if state.advanced_options_expanded {
         column![
             view_metrics_server_field(&state.metrics_server, message_factory),
-            view_central_net_host_field(&state.central_net_host, message_factory),
+            view_central_net_host_field(&state.central_net_host, state.is_central_net_host_valid, message_factory),
         ]
         .spacing(20)
     } else {
@@ -609,20 +609,55 @@ where
 /// Central net host field component
 pub fn view_central_net_host_field<'a, F>(
     central_net_host: &'a str,
+    is_valid: bool,
     message_factory: F,
 ) -> Element<'a, Message>
 where
     F: Fn(ConfigurationMessage) -> Message + Copy + 'a,
 {
+    let validation_message = if !central_net_host.is_empty() {
+        if is_valid {
+            container(
+                row![
+                    icons::check_circle().color(style::SUCCESS),
+                    text("Valid central net host format").color(style::SUCCESS)
+                ]
+                .spacing(5)
+                .align_y(Alignment::Center),
+            )
+            .style(style::valid_message_container)
+        } else {
+            container(
+                row![
+                    icons::error().color(style::ERROR),
+                    text("Invalid format. Expected: <host>:<port> or <hex-key>@<host>:<port>").color(style::ERROR)
+                ]
+                .spacing(5)
+                .align_y(Alignment::Center),
+            )
+            .style(style::invalid_message_container)
+        }
+    } else {
+        container(
+            text("Central network coordination server address (leave empty by default)")
+                .size(12)
+                .color(Color::from_rgb(0.6, 0.6, 0.6)),
+        )
+    };
+
     column![
         text("Central Net Host").size(16),
         text_input("Enter central net server address", central_net_host)
             .on_input(move |host| message_factory(ConfigurationMessage::SetCentralNetHost(host)))
             .width(Length::Fill)
-            .style(style::default_text_input),
-        text("Central network coordination server address (leave empty by default)")
-            .size(12)
-            .color(Color::from_rgb(0.6, 0.6, 0.6)),
+            .style(if central_net_host.is_empty() {
+                style::default_text_input
+            } else if is_valid {
+                style::valid_wallet_input
+            } else {
+                style::invalid_wallet_input
+            }),
+        validation_message,
     ]
     .spacing(5)
     .into()

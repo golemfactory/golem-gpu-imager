@@ -15,6 +15,9 @@ pub struct ConfigurationState {
     pub central_net_host: String,
     pub advanced_options_expanded: bool,
     pub selected_preset: Option<usize>,
+    pub server_config_fetching: bool,
+    pub server_config_content: Option<String>,
+    pub server_config_error: Option<String>,
 }
 
 impl ConfigurationState {
@@ -33,6 +36,9 @@ impl ConfigurationState {
             central_net_host: String::new(),
             advanced_options_expanded: false,
             selected_preset: None,
+            server_config_fetching: false,
+            server_config_content: None,
+            server_config_error: None,
         }
     }
 
@@ -63,6 +69,9 @@ impl ConfigurationState {
             central_net_host: preset.central_net_host.clone().unwrap_or_default(),
             advanced_options_expanded: false,
             selected_preset: None, // Will be set by the caller when loading from a specific preset
+            server_config_fetching: false,
+            server_config_content: None,
+            server_config_error: None,
         }
     }
 

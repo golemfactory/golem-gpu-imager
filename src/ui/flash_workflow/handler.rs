@@ -122,7 +122,7 @@ pub fn handle_message(
             Task::none()
         }
 
-        FlashMessage::ProcessingCompleted(version_id, metadata) => {
+        FlashMessage::ProcessingCompleted(version_id, path, metadata) => {
             // Remove from downloads in progress
             state
                 .downloads_in_progress
@@ -135,16 +135,22 @@ pub fn handle_message(
                 .find(|img| img.version == version_id)
             {
                 image.metadata = Some(metadata.clone());
+                image.downloaded = true;
+                image.path = Some(path.to_string_lossy().to_string());
             }
 
             // Also update in groups
             for group in &mut state.os_image_groups {
                 if group.latest_version.version == version_id {
                     group.latest_version.metadata = Some(metadata.clone());
+                    group.latest_version.downloaded = true;
+                    group.latest_version.path = Some(path.to_string_lossy().to_string());
                 }
                 for older_version in &mut group.older_versions {
                     if older_version.version == version_id {
                         older_version.metadata = Some(metadata.clone());
+                        older_version.downloaded = true;
+                        older_version.path = Some(path.to_string_lossy().to_string());
                     }
                 }
             }
@@ -252,9 +258,10 @@ pub fn handle_message(
                                 progress
                             ))
                         }
-                        crate::utils::repo::DownloadStatus::Completed { metadata, .. } => {
+                        crate::utils::repo::DownloadStatus::Completed { path, metadata } => {
                             crate::ui::messages::Message::Flash(FlashMessage::ProcessingCompleted(
                                 version_id_2.clone(),
+                                path,
                                 metadata
                             ))
                         }
@@ -332,24 +339,31 @@ pub fn handle_message(
 
                                 calculate_image_metadata(path, compressed_hash, cancel_token_clone)
                             },
-                            move |progress| {
-                                // Convert MetadataProgress to ProcessingProgress for consistency
-                                use crate::utils::streaming_hash_calculator::ProcessingProgress;
+                            {
+                                let image_path_for_completion = image_path.clone();
+                                move |progress| {
+                                    // Convert MetadataProgress to ProcessingProgress for consistency
+                                    use crate::utils::streaming_hash_calculator::ProcessingProgress;
+                                    use std::path::Path;
 
-                                let processing_progress = match progress {
-                                    crate::utils::metadata_calculator::MetadataProgress::Start => {
-                                        ProcessingProgress::new_metadata(0.0, None, None, None)
-                                    },
-                                    crate::utils::metadata_calculator::MetadataProgress::Processing { progress, .. } => {
-                                        ProcessingProgress::new_metadata(progress, None, None, None)
-                                    },
-                                    crate::utils::metadata_calculator::MetadataProgress::Completed { metadata } => {
-                                        return crate::ui::messages::Message::Flash(FlashMessage::ProcessingCompleted(version_id_2.clone(), metadata));
-                                    },
-                                    crate::utils::metadata_calculator::MetadataProgress::Failed { error } => {
-                                        return crate::ui::messages::Message::Flash(FlashMessage::ProcessingFailed(version_id_2.clone(), error));
-                                    },
-                                };
+                                    let processing_progress = match progress {
+                                        crate::utils::metadata_calculator::MetadataProgress::Start => {
+                                            ProcessingProgress::new_metadata(0.0, None, None, None)
+                                        },
+                                        crate::utils::metadata_calculator::MetadataProgress::Processing { progress, .. } => {
+                                            ProcessingProgress::new_metadata(progress, None, None, None)
+                                        },
+                                        crate::utils::metadata_calculator::MetadataProgress::Completed { metadata } => {
+                                            return crate::ui::messages::Message::Flash(FlashMessage::ProcessingCompleted(
+                                                version_id_2.clone(),
+                                                Path::new(&image_path_for_completion).to_path_buf(),
+                                                metadata
+                                            ));
+                                        },
+                                        crate::utils::metadata_calculator::MetadataProgress::Failed { error } => {
+                                            return crate::ui::messages::Message::Flash(FlashMessage::ProcessingFailed(version_id_2.clone(), error));
+                                        },
+                                    };
 
                                 crate::ui::messages::Message::Flash(
                                     FlashMessage::ProcessingProgress(
@@ -357,6 +371,7 @@ pub fn handle_message(
                                         processing_progress,
                                     ),
                                 )
+                                }
                             },
                             move |result| match result {
                                 Ok(_) => {
@@ -468,9 +483,10 @@ pub fn handle_message(
                                     progress
                                 ))
                             }
-                            crate::utils::repo::DownloadStatus::Completed { metadata, .. } => {
+                            crate::utils::repo::DownloadStatus::Completed { path, metadata } => {
                                 crate::ui::messages::Message::Flash(FlashMessage::ProcessingCompleted(
                                     version_id_2.clone(),
+                                    path,
                                     metadata
                                 ))
                             }
@@ -570,24 +586,31 @@ pub fn handle_message(
 
                                 calculate_image_metadata(path, compressed_hash, cancel_token_clone)
                             },
-                            move |progress| {
-                                // Convert MetadataProgress to ProcessingProgress for consistency
-                                use crate::utils::streaming_hash_calculator::ProcessingProgress;
+                            {
+                                let image_path_for_completion = image_path.clone();
+                                move |progress| {
+                                    // Convert MetadataProgress to ProcessingProgress for consistency
+                                    use crate::utils::streaming_hash_calculator::ProcessingProgress;
+                                    use std::path::Path;
 
-                                let processing_progress = match progress {
-                                    crate::utils::metadata_calculator::MetadataProgress::Start => {
-                                        ProcessingProgress::new_metadata(0.0, None, None, None)
-                                    },
-                                    crate::utils::metadata_calculator::MetadataProgress::Processing { progress, .. } => {
-                                        ProcessingProgress::new_metadata(progress, None, None, None)
-                                    },
-                                    crate::utils::metadata_calculator::MetadataProgress::Completed { metadata } => {
-                                        return crate::ui::messages::Message::Flash(FlashMessage::ProcessingCompleted(version_id_2.clone(), metadata));
-                                    },
-                                    crate::utils::metadata_calculator::MetadataProgress::Failed { error } => {
-                                        return crate::ui::messages::Message::Flash(FlashMessage::ProcessingFailed(version_id_2.clone(), error));
-                                    },
-                                };
+                                    let processing_progress = match progress {
+                                        crate::utils::metadata_calculator::MetadataProgress::Start => {
+                                            ProcessingProgress::new_metadata(0.0, None, None, None)
+                                        },
+                                        crate::utils::metadata_calculator::MetadataProgress::Processing { progress, .. } => {
+                                            ProcessingProgress::new_metadata(progress, None, None, None)
+                                        },
+                                        crate::utils::metadata_calculator::MetadataProgress::Completed { metadata } => {
+                                            return crate::ui::messages::Message::Flash(FlashMessage::ProcessingCompleted(
+                                                version_id_2.clone(), 
+                                                Path::new(&image_path_for_completion).to_path_buf(),
+                                                metadata
+                                            ));
+                                        },
+                                        crate::utils::metadata_calculator::MetadataProgress::Failed { error } => {
+                                            return crate::ui::messages::Message::Flash(FlashMessage::ProcessingFailed(version_id_2.clone(), error));
+                                        },
+                                    };
 
                                 crate::ui::messages::Message::Flash(
                                     FlashMessage::ProcessingProgress(
@@ -595,6 +618,7 @@ pub fn handle_message(
                                         processing_progress,
                                     ),
                                 )
+                                }
                             },
                             move |result| match result {
                                 Ok(_) => {
@@ -733,7 +757,7 @@ pub fn handle_message(
                         let cancel_token_clone = state.cancel_token.clone();
 
                         // Extract configuration before creating async closure
-                        let config = Some(crate::disk::ImageConfiguration::new_with_options(
+                        let mut config_instance = crate::disk::ImageConfiguration::new_with_options(
                             configuration.payment_network,
                             configuration.network_type,
                             configuration.subnet.clone(),
@@ -743,7 +767,10 @@ pub fn handle_message(
                             configuration.configuration_server.clone(),
                             configuration.metrics_server.clone(),
                             configuration.central_net_host.clone(),
-                        ));
+                        );
+                        // Ensure accepted_terms is always true for new installations
+                        config_instance.ensure_accepted_terms();
+                        let config = Some(config_instance);
 
                         info!(
                             "Starting flash with config: {:?} {:?} {} {} to device {}",

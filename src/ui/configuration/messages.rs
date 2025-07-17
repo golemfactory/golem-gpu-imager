@@ -20,4 +20,10 @@ pub enum ConfigurationMessage {
     SaveToDevice(String),
     Reset,
     ValidateConfiguration,
+    FetchFromConfigurationServer,
+    ConfigurationServerFetched(String),
+    ConfigurationServerFetchFailed(String),
+    CancelServerConfigurationFetch,
+    ApplyServerConfiguration,
+    DismissServerConfiguration,
 }

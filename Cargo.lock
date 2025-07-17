@@ -1787,7 +1787,7 @@ dependencies = [
 
 [[package]]
 name = "golem-gpu-imager"
-version = "0.1.7"
+version = "0.2.2"
 dependencies = [
  "anyhow",
  "chrono",

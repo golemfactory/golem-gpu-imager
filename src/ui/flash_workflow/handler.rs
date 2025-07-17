@@ -5,6 +5,7 @@ use crate::utils::repo::ImageRepo;
 use crate::utils::validation::{is_valid_central_net_host, is_valid_url, validate_ssh_keys};
 use iced::Task;
 use std::sync::Arc;
+use std::thread::sleep;
 use tracing::{debug, error, info, warn};
 
 pub fn handle_message(
@@ -794,12 +795,15 @@ pub fn handle_message(
                                     error!("Failed to lock disk {}: {}", device_path, e)
                                 }
                             }
+                            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
                             locked_disk
                         })
                         .and_then(move |disk| {
                             // Now write the image and handle progress
                             // Note: write_image now takes ownership of disk
                             // Clone the cancel token again for this specific closure
+
+
                             let task_cancel_token = cancel_token_clone.clone();
 
                             let write_task = match &image_metadata {

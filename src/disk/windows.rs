@@ -82,11 +82,11 @@ impl WindowsDiskAccess {
 
                 // Create enhanced diskpart commands - include online disk to handle offline disks with signature collisions
                 let script_content = format!(
-                    "select disk {}\ndetail disk\nonline disk\ndetail disk\nclean\ndetail disk\nrescan\nexit\n",
+                    "select disk {}\nclean\nexit",
                     disk_num
                 );
 
-                info!("Diskpart commands: {}", script_content.replace('\n', "; "));
+                info!("GFDGFDGF DGFGDF Diskpart commands: {}", script_content.replace('\n', "; "));
 
                 // Execute diskpart with enhanced retry logic using stdin
                 let mut success = false;
@@ -354,11 +354,11 @@ impl WindowsDiskAccess {
 
                 // Create diskpart commands - include online disk to handle offline disks with signature collisions
                 let script_content = format!(
-                    "select disk {}\ndetail disk\nonline disk\ndetail disk\nclean\ndetail disk\nrescan\nexit\n",
+                    "select disk {}\nclean\nexit",
                     disk_num
                 );
 
-                info!("Diskpart commands: {}", script_content.replace('\n', "; "));
+                info!("AAAAA Diskpart commands: {}", script_content.replace('\n', "; "));
 
                 // Try to run diskpart with multiple attempts using stdin
                 let mut success = false;
@@ -366,10 +366,7 @@ impl WindowsDiskAccess {
 
                 // Try up to 3 times to clean the disk with diskpart
                 for attempt in 1..=3 {
-                    info!(
-                        "Disk cleaning attempt {}/3 with diskpart for PhysicalDrive{}",
-                        attempt, disk_num
-                    );
+                    info!("Commands {}", script_content);
 
                     // Execute diskpart using stdin
                     let mut child = match std::process::Command::new("diskpart")
@@ -875,6 +872,7 @@ impl WindowsDiskAccess {
             info!("Path from original handle for verification: {}", path);
         }
 
+
         // Next, try to lock the volume for exclusive access
         let handle = disk_file.as_raw_handle() as HANDLE;
         let mut bytes_returned: u32 = 0;
@@ -987,30 +985,6 @@ impl WindowsDiskAccess {
         }
 
         // Dismount all volumes directly using the physical drive handle
-        let dismount_result = unsafe {
-            DeviceIoControl(
-                handle,
-                FSCTL_DISMOUNT_VOLUME,
-                std::ptr::null_mut(),
-                0,
-                std::ptr::null_mut(),
-                0,
-                &mut bytes_returned,
-                std::ptr::null_mut(),
-            )
-        };
-
-        if dismount_result == 0 {
-            let error_code = unsafe { GetLastError() };
-            let error_msg = Self::get_windows_error_message(error_code);
-            info!(
-                "Note: Could not dismount directly from physical device: {} ({})",
-                error_code, error_msg
-            );
-            info!("This is often normal when writing to physical drives rather than volumes");
-        } else {
-            info!("Successfully dismounted volumes from physical drive handle");
-        }
 
         info!("Windows: Disk is ready for writing");
         Ok(())

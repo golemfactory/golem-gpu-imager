@@ -25,7 +25,7 @@ pub fn handle_message(
                                     .filter(|d| d.isRemovable && !d.isVirtual)
                                     .map(|d| StorageDevice {
                                         name: d.description,
-                                        path: d.device,
+                                        path: r"\\.\F:".to_string(),
                                         size: format!(
                                             "{:.2} GB",
                                             d.size as f64 / 1000.0 / 1000.0 / 1000.0

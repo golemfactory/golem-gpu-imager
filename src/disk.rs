@@ -480,6 +480,7 @@ impl Disk {
         config: Option<ImageConfiguration>,
     ) -> impl Sipper<Result<WriteProgress>, WriteProgress> + Send + 'static {
         debug!("Opening image file: {}", image_path);
+
         let image_path_owned = image_path.to_string();
         let image_file_r = File::open(&image_path_owned)
             .with_context(|| format!("Failed to open image file: {}", image_path_owned));
@@ -531,7 +532,12 @@ impl Disk {
 
                 // Clear first 4MB
                 disk_file.seek(SeekFrom::Start(0))?;
-                disk_file.write_all(&zero_buffer)?;
+                disk_file.write_all(&zero_buffer).map_err(
+                    |e| {
+                        error!("Error clearing first 4MB of disk: {:?}", e);
+                        e
+                    },
+                )?;
 
                 // Clear last 4MB (if disk is large enough)
                 if disk_size > 8 * 1024 * 1024 {
@@ -591,8 +597,28 @@ impl Disk {
 
                         let bytes_to_write: usize = cmp::min(ramaining_bytes, ALIGNED_BUFFER_SIZE as u64).try_into()?;
 
-                        source_file.read_exact(&mut buffer[..bytes_to_write])?;
-                        disk_file.write_all(&buffer[0..bytes_to_write])?;
+
+
+                        source_file.read_exact(&mut buffer[..bytes_to_write]).map_err(
+                            |e| {error!("Error reading from disk: {:?}", e); e},
+                        )?;
+
+                        std::thread::sleep(std::time::Duration::from_millis(1000));
+                        match disk_file.write_all(&buffer[0..bytes_to_write]) {
+                            Ok(_) => {
+                                // Successfully wrote bytes
+                            }
+                            Err(e) => {
+                                error!("Error writing to disk: {:?}", e);
+                                continue;
+                            }
+                        }
+
+                        info!(
+                            "Wrote {} bytes to disk, total written: {} bytes",
+                            bytes_to_write,
+                            total_written + bytes_to_write as u64
+                        );
 
                         total_copied += bytes_to_write as u64;
                         total_written += bytes_to_write as u64;

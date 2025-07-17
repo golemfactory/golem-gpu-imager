@@ -103,6 +103,44 @@ pub fn is_valid_url(url: &str) -> bool {
     after_protocol.contains('.')
 }
 
+/// Validates if a string is a valid central net host URL in the format:
+/// <host>:<port> or <hex-key>@<host>:<port>
+/// Uses the same regex pattern as the server: ^(([0-9a-z]{56})@)?([^:]*)(:[0-9]{1,4})?$
+pub fn is_valid_central_net_host(url: &str) -> bool {
+    let trimmed = url.trim();
+    
+    // Empty URLs are considered valid (optional field)
+    if trimmed.is_empty() {
+        return true;
+    }
+    
+    // Use the same regex pattern as the server
+    let re = regex::Regex::new(r"^(([0-9a-z]{56})@)?([^:]*)(:[0-9]{1,4})?$").unwrap();
+    
+    if let Some(captures) = re.captures(trimmed) {
+        // Extract host - must not be empty
+        let host = captures.get(3).map(|m| m.as_str()).unwrap_or("");
+        if host.is_empty() {
+            return false;
+        }
+        
+        // If port is specified, validate it
+        if let Some(port_match) = captures.get(4) {
+            let port_str = &port_match.as_str()[1..]; // Remove the ':' prefix
+            if let Ok(port_num) = port_str.parse::<u16>() {
+                port_num > 0
+            } else {
+                false
+            }
+        } else {
+            // No port specified, which is valid (server defaults to 7464)
+            true
+        }
+    } else {
+        false
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -143,5 +181,62 @@ mod tests {
         assert!(!is_valid_url("https://"));
         assert!(!is_valid_url("http://no spaces allowed.com"));
         assert!(!is_valid_url("https://nodot"));
+    }
+
+    #[test]
+    fn test_valid_central_net_host() {
+        // Empty URL should be valid
+        assert!(is_valid_central_net_host(""));
+        
+        // Valid host:port formats
+        assert!(is_valid_central_net_host("a.com:5000"));
+        assert!(is_valid_central_net_host("10.0.0.1:5000"));
+        assert!(is_valid_central_net_host("192.168.1.1:8080"));
+        assert!(is_valid_central_net_host("localhost:3000"));
+        assert!(is_valid_central_net_host("example.com:443"));
+        assert!(is_valid_central_net_host("18.185.178.4:7464"));
+        
+        // Valid host without port (defaults to 7464)
+        assert!(is_valid_central_net_host("a.com"));
+        assert!(is_valid_central_net_host("10.0.0.1"));
+        assert!(is_valid_central_net_host("localhost"));
+        
+        // Valid 56-character hex key formats
+        assert!(is_valid_central_net_host("393479950594e7c676ba121033a677a1316f722460827e217c82d2b3@18.185.178.4:7464"));
+        assert!(is_valid_central_net_host("abcdef1234567890abcdef1234567890abcdef1234567890abcdef@da.com:5000"));
+        assert!(is_valid_central_net_host("393479950594e7c676ba121033a677a1316f722460827e217c82d2b3@18.185.178.4"));
+        
+        // Valid port ranges (1-9999 based on regex)
+        assert!(is_valid_central_net_host("host:1"));
+        assert!(is_valid_central_net_host("host:9999"));
+    }
+
+    #[test]
+    fn test_invalid_central_net_host() {
+        // Invalid formats - empty host
+        assert!(!is_valid_central_net_host(":5000"));
+        assert!(!is_valid_central_net_host("@:5000"));
+        
+        // Invalid port formats
+        assert!(!is_valid_central_net_host("host:"));
+        assert!(!is_valid_central_net_host("host:port"));
+        assert!(!is_valid_central_net_host("host:0"));
+        assert!(!is_valid_central_net_host("host:10000")); // Port too high for 4-digit regex
+        
+        // Invalid hex key formats - wrong length (should be 56, not 64)
+        assert!(!is_valid_central_net_host("shortkey@host:5000"));
+        assert!(!is_valid_central_net_host("abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890@host:5000")); // 64 chars
+        
+        // Invalid hex key characters (uppercase not allowed)
+        assert!(!is_valid_central_net_host("393479950594E7C676BA121033A677A1316F722460827E217C82D2B3@host:5000"));
+        
+        // Invalid hex key characters (non-hex)
+        assert!(!is_valid_central_net_host("gggg79950594e7c676ba121033a677a1316f722460827e217c82d2b3@host:5000"));
+        
+        // Multiple @ symbols not allowed by regex
+        assert!(!is_valid_central_net_host("key@host@more:5000"));
+        
+        // Invalid characters in host based on regex
+        assert!(!is_valid_central_net_host("393479950594e7c676ba121033a677a1316f722460827e217c82d2b3@:5000"));
     }
 }

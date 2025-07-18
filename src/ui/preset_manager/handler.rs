@@ -353,13 +353,26 @@ fn handle_editor_message(
         PresetEditorMessage::Configuration(config_msg) => {
             if let Some(editor) = &mut state.editor {
                 // Delegate configuration changes to the configuration handler
-                let _ = crate::ui::configuration::handle_message(
+                let task = crate::ui::configuration::handle_message(
                     &mut editor.configuration,
                     &state.presets,
                     config_msg,
                 );
+                
+                // Map the result messages to the correct context
+                task.map(|msg| match msg {
+                    crate::ui::messages::Message::Configuration(config_msg) => {
+                        crate::ui::messages::Message::PresetManager(
+                            PresetManagerMessage::Editor(
+                                PresetEditorMessage::Configuration(config_msg)
+                            )
+                        )
+                    }
+                    other => other,
+                })
+            } else {
+                Task::none()
             }
-            Task::none()
         }
     }
 }

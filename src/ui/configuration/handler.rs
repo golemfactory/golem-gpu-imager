@@ -273,7 +273,8 @@ pub fn handle_message(
             if let Some(content) = &state.server_config_content {
                 if let Ok(config) = toml::from_str::<toml::Value>(content) {
                     apply_server_configuration_to_state(state, &config);
-                    // Keep the server content for writing to disk later
+                    // Clear the server content to hide the preview UI
+                    state.server_config_content = None;
                     debug!("Applied server configuration to state");
                 }
             }

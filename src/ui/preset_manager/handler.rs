@@ -358,16 +358,14 @@ fn handle_editor_message(
                     &state.presets,
                     config_msg,
                 );
-                
                 // Map the result messages to the correct context
                 task.map(|msg| match msg {
                     crate::ui::messages::Message::Configuration(config_msg) => {
-                        crate::ui::messages::Message::PresetManager(
-                            PresetManagerMessage::Editor(
-                                PresetEditorMessage::Configuration(config_msg)
-                            )
-                        )
+                        crate::ui::messages::Message::PresetManager(PresetManagerMessage::Editor(
+                            PresetEditorMessage::Configuration(config_msg),
+                        ))
                     }
+                    // Forward all other messages unchanged (Edit, Flash, etc.)
                     other => other,
                 })
             } else {

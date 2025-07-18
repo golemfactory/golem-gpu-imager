@@ -6,6 +6,8 @@ use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 
 use crate::models::{ConfigurationPreset, NetworkType, PaymentNetwork};
+#[cfg(feature = "profile-susteen")]
+use reqwest;
 
 /// Struct to hold configuration presets and manage their persistence
 pub struct PresetManager {
@@ -42,7 +44,7 @@ impl PresetManager {
     }
 
     /// Initialize with default presets if no presets exist
-    #[cfg(not(feature = "enterprise"))]
+    #[cfg(not(any(feature = "enterprise", feature = "profile-susteen")))]
     pub fn init_with_defaults(&mut self) -> Result<(), String> {
         // If presets file exists, load it
         if self.presets_file_exists() {
@@ -68,6 +70,7 @@ impl PresetManager {
     }
 
     /// Add a new preset
+    #[cfg(not(feature = "profile-susteen"))]
     pub fn add_preset(&mut self, preset: ConfigurationPreset) -> Result<(), String> {
         // If this is the first preset, make it default
         let is_first = self.presets.is_empty();
@@ -93,6 +96,7 @@ impl PresetManager {
 
     /// Update an existing preset
     #[allow(dead_code)]
+    #[cfg(not(feature = "profile-susteen"))]
     pub fn update_preset(
         &mut self,
         index: usize,
@@ -116,6 +120,7 @@ impl PresetManager {
     }
 
     /// Set a preset as default
+    #[cfg(not(feature = "profile-susteen"))]
     pub fn set_default_preset(&mut self, index: usize) -> Result<(), String> {
         if index >= self.presets.len() {
             return Err("Preset index out of bounds".to_string());
@@ -135,6 +140,7 @@ impl PresetManager {
     }
 
     /// Delete a preset
+    #[cfg(not(feature = "profile-susteen"))]
     pub fn delete_preset(&mut self, index: usize) -> Result<(), String> {
         if index >= self.presets.len() {
             return Err("Preset index out of bounds".to_string());
@@ -232,6 +238,7 @@ impl PresetManager {
     }
 
     /// Save presets to the configuration file
+    #[cfg(not(feature = "profile-susteen"))]
     fn save_presets(&self) -> Result<(), String> {
         let presets_path = self.get_presets_path();
 
@@ -302,5 +309,154 @@ impl PresetManager {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(feature = "profile-susteen")]
+impl PresetManager {
+    /// Create susteen preset from remote configuration
+    async fn create_susteen_preset() -> Result<ConfigurationPreset, String> {
+        let config_url = "http://63.176.129.155/config.toml";
+        
+        // Fetch configuration from remote URL
+        let response = reqwest::get(config_url)
+            .await
+            .map_err(|e| format!("Failed to fetch configuration from {}: {}", config_url, e))?;
+        
+        if !response.status().is_success() {
+            return Err(format!("HTTP error {}: {}", response.status(), response.status().canonical_reason().unwrap_or("Unknown")));
+        }
+        
+        let config_text = response.text()
+            .await
+            .map_err(|e| format!("Failed to read configuration text: {}", e))?;
+        
+        // Parse the TOML configuration
+        let config: toml::Value = toml::from_str(&config_text)
+            .map_err(|e| format!("Failed to parse configuration TOML: {}", e))?;
+        
+        // Extract configuration values with defaults
+        // Extract from env section for environment variables
+        let env_section = config.get("env");
+        
+        let payment_network = env_section
+            .and_then(|env| env.get("YA_PAYMENT_NETWORK_GROUP"))
+            .and_then(|v| v.as_str())
+            .map(|s| match s {
+                "mainnet" => PaymentNetwork::Mainnet,
+                _ => PaymentNetwork::Testnet,
+            })
+            .unwrap_or(PaymentNetwork::Testnet);
+        
+        let network_type = env_section
+            .and_then(|env| env.get("YA_NET_TYPE"))
+            .and_then(|v| v.as_str())
+            .map(|s| match s {
+                "hybrid" => NetworkType::Hybrid,
+                _ => NetworkType::Central,
+            })
+            .unwrap_or(NetworkType::Central);
+        
+        let subnet = env_section
+            .and_then(|env| env.get("SUBNET"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("susteen")
+            .to_string();
+        
+        // Extract from top-level fields
+        let wallet_address = config.get("glm_account")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        
+        let non_interactive_install = config.get("non_interactive_install")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+        
+        let ssh_keys = config.get("ssh_keys")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+            .unwrap_or_default();
+        
+        let configuration_server = config.get("configuration_server")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        
+        let metrics_server = env_section
+            .and_then(|env| env.get("YAGNA_METRICS_URL"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        
+        let central_net_host = env_section
+            .and_then(|env| env.get("CENTRAL_NET_HOST"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        
+        Ok(ConfigurationPreset {
+            name: "susteen".to_string(),
+            payment_network,
+            subnet,
+            network_type,
+            wallet_address,
+            is_default: true,
+            non_interactive_install,
+            ssh_keys,
+            configuration_server,
+            metrics_server,
+            central_net_host,
+        })
+    }
+    
+    /// Create susteen presets from remote configuration (virtual, not saved to disk)
+    async fn create_susteen_presets(&mut self) -> Result<(), String> {
+        let susteen_preset = Self::create_susteen_preset().await?;
+        self.presets = vec![susteen_preset];
+        
+        // Do not save to disk - keep this preset virtual/ephemeral
+        Ok(())
+    }
+    
+    /// Override init_with_defaults to use susteen preset
+    pub fn init_with_defaults(&mut self) -> Result<(), String> {
+        // In profile-susteen mode, never load from disk - always create fresh virtual preset
+        // Use tokio runtime to run async function
+        let rt = tokio::runtime::Runtime::new()
+            .map_err(|e| format!("Failed to create tokio runtime: {}", e))?;
+        
+        rt.block_on(async {
+            self.create_susteen_presets().await
+        })?;
+        
+        Ok(())
+    }
+    
+    /// Override save_presets to be a no-op in profile-susteen mode
+    fn save_presets(&self) -> Result<(), String> {
+        // In profile-susteen mode, never save to disk - presets are virtual/ephemeral
+        Ok(())
+    }
+    
+    /// Override add_preset to prevent disk persistence
+    pub fn add_preset(&mut self, _preset: ConfigurationPreset) -> Result<(), String> {
+        // In profile-susteen mode, don't allow adding presets
+        Err("Cannot add presets in profile-susteen mode".to_string())
+    }
+    
+    /// Override update_preset to prevent disk persistence
+    pub fn update_preset(&mut self, _index: usize, _preset: ConfigurationPreset) -> Result<(), String> {
+        // In profile-susteen mode, don't allow updating presets
+        Err("Cannot update presets in profile-susteen mode".to_string())
+    }
+    
+    /// Override set_default_preset to prevent disk persistence
+    pub fn set_default_preset(&mut self, _index: usize) -> Result<(), String> {
+        // In profile-susteen mode, don't allow changing default (susteen is always default)
+        Err("Cannot change default preset in profile-susteen mode".to_string())
+    }
+    
+    /// Override delete_preset to prevent disk persistence
+    pub fn delete_preset(&mut self, _index: usize) -> Result<(), String> {
+        // In profile-susteen mode, don't allow deleting presets
+        Err("Cannot delete presets in profile-susteen mode".to_string())
     }
 }

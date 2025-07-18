@@ -129,10 +129,19 @@ impl ImageRepo {
             ));
         }
 
-        let metadata: RepoMetadata = response
+        let mut metadata: RepoMetadata = response
             .json()
             .await
             .map_err(|e| format!("Failed to parse metadata: {}", e))?;
+
+        // In profile-susteen mode, filter channels to only show "susteen"
+        #[cfg(feature = "profile-susteen")]
+        {
+            metadata.channels = metadata.channels
+                .into_iter()
+                .filter(|channel| channel.name == "susteen")
+                .collect();
+        }
 
         // Cache the metadata
         if let Ok(mut cached_metadata) = self.metadata.lock() {

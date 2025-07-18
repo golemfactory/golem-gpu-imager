@@ -1,5 +1,6 @@
 use super::{DeviceMessage, DeviceSelectionState, StorageDevice};
 use iced::Task;
+use rs_drivelist::device::DeviceDescriptor;
 use tracing::{debug, error, info};
 
 pub fn handle_message(
@@ -11,6 +12,19 @@ pub fn handle_message(
             state.is_refreshing = true;
             state.error_message = None;
             debug!("Starting device refresh");
+
+            fn device_path(dd : &DeviceDescriptor) -> String {
+                if cfg!(target_os = "windows") {
+                    if dd.mountpoints.len() == 1 {
+                        let mut drive_letter = dd.mountpoints.first().map(|mp| mp.path.clone()).unwrap();
+                        if drive_letter.ends_with('\\') {
+                            drive_letter.pop();
+                        }
+                        return format!("\\\\.\\{drive_letter}")
+                    }                    
+                }
+                dd.device.clone()
+            }
 
             Task::perform(
                 async {
@@ -24,8 +38,8 @@ pub fn handle_message(
                                     .into_iter()
                                     .filter(|d| d.isRemovable && !d.isVirtual)
                                     .map(|d| StorageDevice {
-                                        name: d.description,
-                                        path: d.device,
+                                        path: device_path(&d),
+                                        name: d.description,                                        
                                         size: format!(
                                             "{:.2} GB",
                                             d.size as f64 / 1000.0 / 1000.0 / 1000.0

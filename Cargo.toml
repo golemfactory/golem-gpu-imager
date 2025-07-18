@@ -88,6 +88,7 @@ lto = false
 default = []
 enterprise = []
 debug = []
+profile-susteen = []
 
 [package.metadata.bundle]
 name = "Golem GPU Imager"
